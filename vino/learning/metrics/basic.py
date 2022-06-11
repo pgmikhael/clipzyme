@@ -1,7 +1,7 @@
 from typing import Dict
-from vino.utils.registry import register_object
+from nox.utils.registry import register_object
 from collections import OrderedDict
-from vino.utils.classes import Vino
+from nox.utils.classes import Nox
 import numpy as np
 import pdb
 from torchmetrics.functional import (
@@ -22,7 +22,7 @@ BINARY_CLASSIF_THRESHOLD = 0.5
 
 
 @register_object("classification", "metric")
-class BaseClassification(Vino):
+class BaseClassification(Nox):
     def __init__(self, args) -> None:
         super().__init__()
 

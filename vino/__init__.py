@@ -19,37 +19,37 @@ finally:
 
 
 # data
-import vino.datasets.mnist
+import nox.datasets.mnist
 
 # augmentation
-import vino.augmentations.rawinput
-import vino.augmentations.tensor
+import nox.augmentations.rawinput
+import nox.augmentations.tensor
 
 # loader
-import vino.loaders.image_loaders
+import nox.loaders.image_loaders
 
 # lightning
-import vino.lightning.base
+import nox.lightning.base
 
 # optimizers
-import vino.learning.optimizers.basic
+import nox.learning.optimizers.basic
 
 # scheduler
-import vino.learning.schedulers.basic
+import nox.learning.schedulers.basic
 
 # losses
-import vino.learning.losses.basic
+import nox.learning.losses.basic
 
 # metrics
-import vino.learning.metrics.basic
+import nox.learning.metrics.basic
 
 # callbacks
-import vino.callbacks.basic
-import vino.callbacks.swa
+import nox.callbacks.basic
+import nox.callbacks.swa
 
 # models
-import vino.models.vision
-import vino.models.classifier
+import nox.models.vision
+import nox.models.classifier
 
 # comet
-import vino.loggers.comet
+import nox.loggers.comet

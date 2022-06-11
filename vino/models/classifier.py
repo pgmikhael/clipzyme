@@ -1,9 +1,9 @@
 import torch
 import torch.nn as nn
 import copy
-from vino.utils.registry import register_object, get_object
-from vino.utils.classes import set_vino_type
-from vino.models.abstract import AbstractModel
+from nox.utils.registry import register_object, get_object
+from nox.utils.classes import set_nox_type
+from nox.models.abstract import AbstractModel
 
 
 @register_object("classifier", "model")
@@ -32,7 +32,7 @@ class Classifier(AbstractModel):
         parser.add_argument(
             "--model_name_for_encoder",
             type=str,
-            action=set_vino_type("model"),
+            action=set_nox_type("model"),
             default="resnet18",
             help="Name of encoder to use",
         )

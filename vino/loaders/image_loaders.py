@@ -1,5 +1,5 @@
-from vino.loaders.abstract import AbstractLoader
-from vino.utils.registry import register_object
+from nox.loaders.abstract import AbstractLoader
+from nox.utils.registry import register_object
 import os
 import cv2
 import torch

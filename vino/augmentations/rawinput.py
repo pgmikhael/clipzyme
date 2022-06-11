@@ -1,6 +1,6 @@
 import albumentations as A
-from vino.utils.registry import register_object
-from vino.augmentations.abstract import Abstract_augmentation
+from nox.utils.registry import register_object
+from nox.augmentations.abstract import Abstract_augmentation
 
 
 @register_object("scale_2d", "augmentation")

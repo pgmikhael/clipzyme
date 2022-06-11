@@ -1,5 +1,5 @@
-from vino.augmentations.basic import ToTensor
-from vino.utils.registry import get_object
+from nox.augmentations.basic import ToTensor
+from nox.utils.registry import get_object
 from typing import Literal
 from argparse import Namespace
 

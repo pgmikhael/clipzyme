@@ -1,13 +1,13 @@
 from abc import ABCMeta
 import argparse
-from vino.utils.registry import get_object
+from nox.utils.registry import get_object
 
 
-class Vino(object):
+class Nox(object):
     __metaclass__ = ABCMeta
 
     def __init__(self, **kwargs) -> None:
-        super(Vino, self).__init__()
+        super(Nox, self).__init__()
 
     @staticmethod
     def add_args(parser) -> None:
@@ -28,19 +28,19 @@ class Vino(object):
         pass
 
 
-def set_vino_type(object_name):
+def set_nox_type(object_name):
     """
     Build argparse action class for registry items
     Used to add and set object-level args
 
     Args:
-        object_name (str): kind of vino class uses (e.g., dataset, model, lightning)
+        object_name (str): kind of nox class uses (e.g., dataset, model, lightning)
 
     Returns:
-        argparse.Action: action for specific vino class
+        argparse.Action: action for specific nox class
     """
 
-    class VinoAction(argparse.Action):
+    class NoxAction(argparse.Action):
         def __init__(
             self,
             option_strings,
@@ -66,7 +66,7 @@ def set_vino_type(object_name):
                 help=help,
                 metavar=metavar,
             )
-            self.is_vino_action = True
+            self.is_nox_action = True
             self.object_name = object_name
 
         def __call__(self, parser, namespace, values, option_string=None) -> None:
@@ -77,7 +77,7 @@ def set_vino_type(object_name):
             Add object-level args when an add_argument is called
 
             Args:
-                parser (argparse.parser): vino parser object
+                parser (argparse.parser): nox parser object
                 values (Union[list, str]): argument values inputted
             """
             if isinstance(values, list):
@@ -100,4 +100,4 @@ def set_vino_type(object_name):
             elif isinstance(val, str):
                 get_object(val, object_name).set_args(args)
 
-    return VinoAction
+    return NoxAction

@@ -1,14 +1,14 @@
-from vino.utils.registry import register_object
+from nox.utils.registry import register_object
 import torch
 import torch.nn.functional as F
 import torch.nn as nn
 from collections import OrderedDict
 import pdb
-from vino.utils.classes import Vino
+from nox.utils.classes import Nox
 
 
 @register_object("cross_entropy", "loss")
-class CrossEntropyLoss(Vino):
+class CrossEntropyLoss(Nox):
     def __init__(self) -> None:
         super().__init__()
 
@@ -38,7 +38,7 @@ class CrossEntropyLoss(Vino):
 
 
 @register_object("survival", "loss")
-class SurvivalLoss(Vino):
+class SurvivalLoss(Nox):
     def __init__(self) -> None:
         super().__init__()
 
@@ -57,7 +57,7 @@ class SurvivalLoss(Vino):
 
 
 @register_object("ordinal_cross_entropy", "loss")
-class RankConsistentLoss(Vino):
+class RankConsistentLoss(Nox):
     def __init__(self) -> None:
         super().__init__()
 

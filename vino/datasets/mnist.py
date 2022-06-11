@@ -3,10 +3,10 @@ import warnings
 from typing import Literal, List
 import numpy as np
 import torchvision
-from vino.datasets.abstract import AbstractDataset
-from vino.utils.registry import register_object
-from vino.utils.augmentations import get_augmentations_by_split
-from vino.augmentations.basic import ComposeAug
+from nox.datasets.abstract import AbstractDataset
+from nox.utils.registry import register_object
+from nox.utils.augmentations import get_augmentations_by_split
+from nox.augmentations.basic import ComposeAug
 
 
 @register_object("mnist", "dataset")

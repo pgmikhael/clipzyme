@@ -4,13 +4,13 @@ import collections.abc as container_abcs
 import re
 from tabnanny import check
 from typing import Literal, Optional
-from vino.utils.registry import get_object
+from nox.utils.registry import get_object
 import torch
 from torch.utils import data
-from vino.utils.sampler import DistributedWeightedSampler
-from vino.utils.augmentations import get_augmentations_by_split
+from nox.utils.sampler import DistributedWeightedSampler
+from nox.utils.augmentations import get_augmentations_by_split
 from pytorch_lightning.utilities.cloud_io import load as pl_load
-from vino.loaders.image_loaders import OpenCVLoader, DicomLoader
+from nox.loaders.image_loaders import OpenCVLoader, DicomLoader
 from pytorch_lightning.utilities.cloud_io import load as pl_load
 
 string_classes = (str, bytes)

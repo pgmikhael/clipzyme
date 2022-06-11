@@ -1,5 +1,5 @@
 from pytorch_lightning.callbacks import Callback
-from vino.utils.registry import get_object
+from nox.utils.registry import get_object
 
 
 def set_callbacks(trainer, args):

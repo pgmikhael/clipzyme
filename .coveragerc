@@ -1,12 +1,12 @@
 # .coveragerc to control coverage.py
 [run]
 branch = True
-source = vino
+source = nox
 # omit = bad_file.py
 
 [paths]
 source =
-    vino/
+    nox/
     */site-packages/
 
 [report]

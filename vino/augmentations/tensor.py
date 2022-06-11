@@ -2,8 +2,8 @@ import torchvision
 import torch
 import numpy as np
 import random
-from vino.augmentations.abstract import Abstract_augmentation
-from vino.utils.registry import register_object
+from nox.augmentations.abstract import Abstract_augmentation
+from nox.utils.registry import register_object
 import torchio as tio
 
 

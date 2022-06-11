@@ -1,11 +1,11 @@
-from vino.utils.registry import register_object
+from nox.utils.registry import register_object
 import pytorch_lightning as pl
 import os
-from vino.utils.classes import Vino
+from nox.utils.classes import Nox
 
 
 @register_object("comet", "logger")
-class COMET(pl.loggers.CometLogger, Vino):
+class COMET(pl.loggers.CometLogger, Nox):
     def __init__(self, args) -> None:
         super().__init__(
             api_key=os.environ.get("COMET_API_KEY"),

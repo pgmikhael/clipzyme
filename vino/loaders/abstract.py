@@ -4,11 +4,11 @@ import os
 import sys
 import os.path
 import warnings
-from vino.augmentations.basic import ComposeAug
+from nox.augmentations.basic import ComposeAug
 import numpy as np
 from abc import ABCMeta, abstractmethod
-from vino.utils.classes import Vino
-from vino.utils.registry import md5
+from nox.utils.classes import Nox
+from nox.utils.registry import md5
 import copy
 
 CACHED_FILES_EXT = ".png"
@@ -122,7 +122,7 @@ class cache:
             pass
 
 
-class AbstractLoader(Vino):
+class AbstractLoader(Nox):
     __metaclass__ = ABCMeta
 
     def __init__(self, cache_path, augmentations, args):

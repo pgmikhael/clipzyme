@@ -1,5 +1,5 @@
 from abc import ABCMeta, abstractmethod
-from vino.utils.classes import Vino
+from nox.utils.classes import Nox
 import numpy as np
 import random
 import torch
@@ -8,7 +8,7 @@ TRANS_SEP = "@"
 ATTR_SEP = "#"
 
 
-class Abstract_augmentation(Vino):
+class Abstract_augmentation(Nox):
     """
     Abstract class for augmentations.
     Default - non cachable

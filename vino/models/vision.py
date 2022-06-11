@@ -1,8 +1,8 @@
 import torchvision.models as models
 import torch.nn as nn
 import torch
-from vino.utils.registry import register_object
-from vino.models.abstract import AbstractModel
+from nox.utils.registry import register_object
+from nox.models.abstract import AbstractModel
 
 # from efficientnet_pytorch import EfficientNet
 import math
@@ -28,7 +28,7 @@ class Resnet18(AbstractModel):
     @property
     def hidden_dim(self):
         return 512
-    
+
     @staticmethod
     def add_args(parser) -> None:
         """Add class specific args

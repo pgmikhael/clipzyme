@@ -1,11 +1,11 @@
 import torch
 from torch import optim
-from vino.utils.registry import register_object
-from vino.utils.classes import Vino
+from nox.utils.registry import register_object
+from nox.utils.classes import Nox
 
 
 @register_object("reduce_on_plateau", "scheduler")
-class ReduceLROnPlateau(optim.lr_scheduler.ReduceLROnPlateau, Vino):
+class ReduceLROnPlateau(optim.lr_scheduler.ReduceLROnPlateau, Nox):
     """
     https://pytorch.org/docs/stable/generated/torch.optim.lr_scheduler.ReduceLROnPlateau.html#torch.optim.lr_scheduler.ReduceLROnPlateau
     """
@@ -20,7 +20,7 @@ class ReduceLROnPlateau(optim.lr_scheduler.ReduceLROnPlateau, Vino):
 
 
 @register_object("exponential_decay", "scheduler")
-class ExponentialLR(optim.lr_scheduler.ExponentialLR, Vino):
+class ExponentialLR(optim.lr_scheduler.ExponentialLR, Nox):
     """
     https://pytorch.org/docs/stable/generated/torch.optim.lr_scheduler.ExponentialLR.html#torch.optim.lr_scheduler.ExponentialLR
     """
@@ -30,7 +30,7 @@ class ExponentialLR(optim.lr_scheduler.ExponentialLR, Vino):
 
 
 @register_object("cosine_annealing", "scheduler")
-class CosineAnnealingLR(optim.lr_scheduler.CosineAnnealingLR, Vino):
+class CosineAnnealingLR(optim.lr_scheduler.CosineAnnealingLR, Nox):
     """
     https://pytorch.org/docs/stable/generated/torch.optim.lr_scheduler.CosineAnnealingLR.html
     """
@@ -40,7 +40,7 @@ class CosineAnnealingLR(optim.lr_scheduler.CosineAnnealingLR, Vino):
 
 
 @register_object("cosine_annealing_restarts", "scheduler")
-class CosineAnnealingWarmRestarts(optim.lr_scheduler.CosineAnnealingWarmRestarts, Vino):
+class CosineAnnealingWarmRestarts(optim.lr_scheduler.CosineAnnealingWarmRestarts, Nox):
     """
     https://pytorch.org/docs/stable/generated/torch.optim.lr_scheduler.CosineAnnealingWarmRestarts.html#torch.optim.lr_scheduler.CosineAnnealingWarmRestarts
     """

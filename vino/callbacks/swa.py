@@ -1,10 +1,10 @@
-from vino.utils.registry import register_object
+from nox.utils.registry import register_object
 from pytorch_lightning.callbacks import StochasticWeightAveraging
-from vino.utils.classes import Vino
+from nox.utils.classes import Nox
 
 
 @register_object("swa", "callback")
-class SWA(StochasticWeightAveraging, Vino):
+class SWA(StochasticWeightAveraging, Nox):
     def __init__(self, args) -> None:
         if "." in args.swa_epoch:
             swa_epoch = float(args.swa_epoch)

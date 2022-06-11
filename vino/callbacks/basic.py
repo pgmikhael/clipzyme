@@ -1,13 +1,13 @@
 import os
-from vino.utils.registry import register_object
-from vino.utils.classes import Vino
+from nox.utils.registry import register_object
+from nox.utils.classes import Nox
 from pytorch_lightning.callbacks import ModelCheckpoint, LearningRateMonitor
 
 # TODO: add args for various callbacks -- currently hardcoded
 
 
 @register_object("checkpointer", "callback")
-class Checkpoint(ModelCheckpoint, Vino):
+class Checkpoint(ModelCheckpoint, Nox):
     def __init__(self, args) -> None:
         super().__init__(
             monitor=args.monitor,
@@ -21,6 +21,6 @@ class Checkpoint(ModelCheckpoint, Vino):
 
 
 @register_object("lr_monitor", "callback")
-class LRMonitor(LearningRateMonitor, Vino):
+class LRMonitor(LearningRateMonitor, Nox):
     def __init__(self, args) -> None:
         super().__init__(logging_interval="step")

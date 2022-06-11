@@ -1,6 +1,6 @@
 import torch
 import torchvision
-from vino.augmentations.abstract import Abstract_augmentation
+from nox.augmentations.abstract import Abstract_augmentation
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
 

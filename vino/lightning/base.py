@@ -5,12 +5,12 @@ import numpy as np
 from collections import OrderedDict
 import pickle
 import os
-from vino.utils.registry import get_object, register_object
-from vino.utils.classes import Vino, set_vino_type
+from nox.utils.registry import get_object, register_object
+from nox.utils.classes import Nox, set_nox_type
 
 
 @register_object("base", "lightning")
-class Base(pl.LightningModule, Vino):
+class Base(pl.LightningModule, Nox):
     """
     PyTorch Lightning module used as base for running training and test loops
 
@@ -391,7 +391,7 @@ class Base(pl.LightningModule, Vino):
         parser.add_argument(
             "--model_name",
             type=str,
-            action=set_vino_type("model"),
+            action=set_nox_type("model"),
             default="classifier",
             help="Name of parent model",
         )

@@ -3,10 +3,10 @@ import os
 import pwd
 from pytorch_lightning import Trainer
 import itertools
-from vino.utils.registry import md5
+from nox.utils.registry import md5
 import json
 import copy
-from vino.utils.classes import set_vino_type
+from nox.utils.classes import set_nox_type
 
 EMPTY_NAME_ERR = 'Name of augmentation or one of its arguments cant be empty\n\
                   Use "name/arg1=value/arg2=value" format'
@@ -207,7 +207,9 @@ def parse_augmentations(augmentations):
 def get_parser():
     global_namespace = GlobalNamespace(allow_abbrev=False)
 
-    parser = argparse.ArgumentParser(description="Vino Standard Args.", allow_abbrev=False)
+    parser = argparse.ArgumentParser(
+        description="Nox Standard Args.", allow_abbrev=False
+    )
 
     # -------------------------------------
     # Run Setup
@@ -249,7 +251,7 @@ def get_parser():
     parser.add_argument(
         "--dataset_name",
         type=str,
-        action=set_vino_type("dataset"),
+        action=set_nox_type("dataset"),
         default="mnist",
         help="Name of dataset",
     )
@@ -291,28 +293,28 @@ def get_parser():
     parser.add_argument(
         "--train_rawinput_augmentation_names",
         nargs="*",
-        action=set_vino_type("augmentation"),
+        action=set_nox_type("augmentation"),
         default=[],
         help='List of image-transformations to use. Usage: "--train_rawinput_augmentations trans1/arg1=5/arg2=2 trans2 trans3/arg4=val"',
     )
     parser.add_argument(
         "--train_tnsr_augmentation_names",
         nargs="*",
-        action=set_vino_type("augmentation"),
+        action=set_nox_type("augmentation"),
         default=[],
         help='List of image-transformations to use. Usage: "--train_tnsr_augmentations trans1/arg1=5/arg2=2 trans2 trans3/arg4=val"',
     )
     parser.add_argument(
         "--test_rawinput_augmentation_names",
         nargs="*",
-        action=set_vino_type("augmentation"),
+        action=set_nox_type("augmentation"),
         default=[],
         help="List of image-transformations to use for the dev and test dataset",
     )
     parser.add_argument(
         "--test_tnsr_augmentation_names",
         nargs="*",
-        action=set_vino_type("augmentation"),
+        action=set_nox_type("augmentation"),
         default=[],
         help="List of image-transformations to use for the dev and test dataset",
     )
@@ -325,7 +327,7 @@ def get_parser():
     parser.add_argument(
         "--loss_names",
         type=str,
-        action=set_vino_type("loss"),
+        action=set_nox_type("loss"),
         nargs="*",
         default=[],
         help="Name of loss",
@@ -333,7 +335,7 @@ def get_parser():
     parser.add_argument(
         "--loss_names_for_eval",
         type=str,
-        action=set_vino_type("loss"),
+        action=set_nox_type("loss"),
         nargs="*",
         default=None,
         help="Name of loss",
@@ -346,7 +348,7 @@ def get_parser():
     parser.add_argument(
         "--metric_names",
         type=str,
-        action=set_vino_type("metric"),
+        action=set_nox_type("metric"),
         nargs="*",
         default=[],
         help="Name of performance metric",
@@ -359,7 +361,7 @@ def get_parser():
     parser.add_argument(
         "--lightning_name",
         type=str,
-        action=set_vino_type("lightning"),
+        action=set_nox_type("lightning"),
         default="base",
         help="Name of lightning module",
     )
@@ -389,7 +391,7 @@ def get_parser():
     parser.add_argument(
         "--optimizer_name",
         type=str,
-        action=set_vino_type("optimizer"),
+        action=set_nox_type("optimizer"),
         default="adam",
         help="Optimizer to use [default: adam]",
     )
@@ -436,7 +438,7 @@ def get_parser():
     parser.add_argument(
         "--scheduler_name",
         type=str,
-        action=set_vino_type("scheduler"),
+        action=set_nox_type("scheduler"),
         default="reduce_on_plateau",
         help="Name of scheduler",
     )
@@ -472,7 +474,7 @@ def get_parser():
     parser.add_argument(
         "--callback_names",
         type=str,
-        action=set_vino_type("callback"),
+        action=set_nox_type("callback"),
         nargs="*",
         default=["checkpointer", "lr_monitor"],
         help="Lightning callbacks",
@@ -583,7 +585,7 @@ def get_parser():
     parser.add_argument(
         "--logger_name",
         type=str,
-        action=set_vino_type("logger"),
+        action=set_nox_type("logger"),
         default=None,
         help="List of tags for comet logger",
     )
@@ -610,23 +612,23 @@ def get_parser():
     # -------------------------------------
     # Add object-level args
     # -------------------------------------
-    
+
     def add_class_args(args_as_dict, parser):
         # for loop
         for argname, argval in args_as_dict.items():
-            args_for_vinos = {
-                    a.dest: a for a in parser._actions if hasattr(a, "is_vino_action")
-                    }
+            args_for_noxs = {
+                a.dest: a for a in parser._actions if hasattr(a, "is_nox_action")
+            }
             old_args = vars(parser.parse_known_args()[0])
-            if argname in args_for_vinos:
-                args_for_vinos[argname].add_args(parser, argval)
+            if argname in args_for_noxs:
+                args_for_noxs[argname].add_args(parser, argval)
                 newargs = vars(parser.parse_known_args()[0])
                 newargs = {k: v for k, v in newargs.items() if k not in old_args}
                 add_class_args(newargs, parser)
 
     parser.parse_known_args(namespace=global_namespace)
     add_class_args(vars(global_namespace), parser)
-    
+
     return parser
 
 
@@ -655,12 +657,10 @@ def parse_args(args_strings=None):
     args.step_indx = 1
 
     # set args
-    args_for_vinos = {
-        a.dest: a for a in parser._actions if hasattr(a, "is_vino_action")
-    }
+    args_for_noxs = {a.dest: a for a in parser._actions if hasattr(a, "is_nox_action")}
     for argname, argval in vars(args).items():
-        if argname in args_for_vinos:
-            args_for_vinos[argname].set_args(args, argval)
+        if argname in args_for_noxs:
+            args_for_noxs[argname].set_args(args, argval)
 
     # parse augmentations
     args.train_rawinput_augmentations = parse_augmentations(

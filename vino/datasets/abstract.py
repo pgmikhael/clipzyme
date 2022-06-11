@@ -6,12 +6,12 @@ import json
 from collections import Counter
 import numpy as np
 from torch.utils import data
-from vino.utils.loading import get_sample_loader
-from vino.utils.classes import Vino, set_vino_type
-from vino.datasets.utils import METAFILE_NOTFOUND_ERR, LOAD_FAIL_MSG
+from nox.utils.loading import get_sample_loader
+from nox.utils.classes import Nox, set_nox_type
+from nox.datasets.utils import METAFILE_NOTFOUND_ERR, LOAD_FAIL_MSG
 
 
-class AbstractDataset(data.Dataset, Vino):
+class AbstractDataset(data.Dataset, Nox):
     def __init__(self, args: argparse.ArgumentParser, split_group: str) -> None:
         """
         NLST Dataset
@@ -230,7 +230,7 @@ class AbstractDataset(data.Dataset, Vino):
         parser.add_argument(
             "--input_loader_name",
             type=str,
-            action=set_vino_type("input_loader"),
+            action=set_nox_type("input_loader"),
             default="default_image_loader",
             help="input loader",
         )

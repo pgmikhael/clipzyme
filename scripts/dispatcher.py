@@ -8,8 +8,8 @@ import subprocess
 import multiprocessing
 import pickle
 import json
-import vino.utils.parsing as parsing
-from vino.utils.registry import md5
+import nox.utils.parsing as parsing
+from nox.utils.registry import md5
 
 EXPERIMENT_CRASH_MSG = "ALERT! job:[{}] has crashed! Check logfile at:[{}]"
 CONFIG_NOT_FOUND_MSG = "ALERT! {} config {} file does not exist!"

@@ -10,10 +10,10 @@ import pytorch_lightning as pl
 from pytorch_lightning import _logger as log
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
-from vino.utils.parsing import parse_args
-from vino.utils.registry import get_object
-import vino.utils.loading as loaders
-from vino.utils.callbacks import set_callbacks
+from nox.utils.parsing import parse_args
+from nox.utils.registry import get_object
+import nox.utils.loading as loaders
+from nox.utils.callbacks import set_callbacks
 
 
 def cli_main(args):
