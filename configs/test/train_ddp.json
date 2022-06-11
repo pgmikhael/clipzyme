@@ -1,0 +1,119 @@
+{
+  "script": "main",
+  "cartesian_hyperparams": {
+    "batch_size": [
+      24
+    ],
+    "accumulate_grad_batches": [
+      1
+    ],
+    "precision": [
+      16
+    ],
+    "dataset_name": [
+      "mnist"
+    ],
+    "input_loader_name": [
+      "cv_loader"
+    ],
+    "lightning_name": [
+      "base"
+    ],
+    "weight_decay": [
+      1e-5
+    ],
+    "momentum": [
+      0.9
+    ],
+    "max_epochs": [
+      5
+    ],
+    "lr_decay": [
+      0.1
+    ],
+    "limit_train_batches": [
+      1.0
+    ],
+    "limit_val_batches": [
+      1.0
+    ],
+    "lr": [
+      1e-4
+    ],
+    "model_name": [
+      "classifier"
+    ],
+    "num_chan": [
+      3
+    ],
+    "loss_names": [
+      "cross_entropy"
+    ],
+    "metric_names": [
+      "classification"
+    ],
+    "checkpoint_save_last": [
+      false
+    ],
+    "monitor": [
+      "val_accuracy"
+    ],
+    "num_workers": [
+      3
+    ],
+    "optimizer_name": [
+      "sgd"
+    ],
+    "patience": [
+      5
+    ],
+    "train": [
+      true
+    ],
+    "dev": [
+      false
+    ],
+    "test": [
+      false
+    ],
+    "callback_names": [
+      "lr_monitor"
+    ],
+    "workspace": [
+      "pgmikhael"
+    ],
+    "project_name": [
+      "sanity-checks"
+    ],
+    "comet_tags": [
+      "vino"
+    ],
+    "num_sanity_val_steps": [
+      0
+    ],
+    "profiler": [
+      "simple"
+    ],
+    "logger_name": [
+      "comet"
+    ],
+    "gpus": [
+      2
+    ],
+    "val_check_interval": [
+      1.0
+    ],
+    "ignore_warnings": [
+      false
+    ],
+    "dropout": [
+      0.1
+    ],
+    "cache_path": [
+      "/Mounts/rbg-storage1/datasets/MNIST"
+    ]
+  },
+  "available_gpus": [
+    "0,1"
+  ]
+}
