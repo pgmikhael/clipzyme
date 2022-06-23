@@ -86,14 +86,14 @@ def link_metabolite_to_db(metabolite: Metabolite) -> dict:
     elif not meta_dict.get("smiles", False):
         ch = ChEBI()
         try:
-            name_search = ch.getLiteEntity(metabolite.name)
+            name_search = ch.getLiteEntity(metabolite.name, maximumResults=5000)
             name_search_ids = [str(r.chebiId) for r in name_search]
         except:
             name_search_ids = []
 
         try:
             formula_search = ch.getLiteEntity(
-                metabolite.formula, searchCategory="FORMULA"
+                metabolite.formula, searchCategory="FORMULA",  maximumResults=5000
             )
             formula_search_ids = [str(r.chebiId) for r in formula_search]
         except:
@@ -108,17 +108,28 @@ def link_metabolite_to_db(metabolite: Metabolite) -> dict:
             matched_ids = [m for m in name_search_ids if m in formula_search_ids]
         else:
             matched_ids = name_search_ids + formula_search_ids
-
-        complete_entities = ch.getCompleteEntityByList(matched_ids)
+        
+        all_complete_entities = []
+        for j in range(0, len(matched_ids), 50):
+            complete_entities = ch.getCompleteEntityByList(matched_ids[j:j+50])
+            all_complete_entities.extend(complete_entities)
 
         exact_matches = [
             i
-            for i, met in enumerate(complete_entities)
+            for i, met in enumerate(all_complete_entities)
             if met["Formulae"][0].data == metabolite.formula
-            or met["chebiAsciiName"][0] == metabolite.name
+            or met["chebiAsciiName"].lower() == metabolite.name.lower()
         ]
+        
+        # if no matches, then find the closest one
+        if len(exact_matches) == 0:
+            closest_mass = sorted(all_complete_entities, key=lambda x: abs(metabolite.formula_weight - float(x["mass"])))[0]
+            exact_matches = [all_complete_entities.index(closest_mass)]
+            meta_dict.setdefault("errors", [])
+            meta_dict['errors'].append("exact metabolite not found, metabolite with closes mass used")
+            warnings.warn(f"exact metabolite not found, metabolite with closes mass used for metabolite {metabolite.id}")
 
-        match = dict(complete_entities[exact_matches[0]])
+        match = dict(all_complete_entities[exact_matches[0]])
 
         for key in [
             "chebiId",
@@ -145,7 +156,7 @@ models = [v["bigg_id"] for v in models_json["results"]]
 # Get list of reactions
 
 # Load each organism .mat file
-for organism_name in tqdm(models):
+for organism_name in tqdm(models[1:]):
     model = load_matlab_model(
         f"/Mounts/rbg-storage1/datasets/Metabo/BiGG/{organism_name}.mat"
     )
