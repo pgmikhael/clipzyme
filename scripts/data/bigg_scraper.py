@@ -6,6 +6,7 @@ from collections import defaultdict
 from bioservices import ChEBI
 import warnings
 from tqdm import tqdm
+from xml.etree import cElementTree as ET
 
 BIGG_METABOLITES = pd.read_csv(
     "/Mounts/rbg-storage1/datasets/Metabo/BiGG/bigg_models_metabolites.txt", sep="\t"
@@ -19,6 +20,23 @@ METANETX_METABOLITES = pd.read_csv(
 HMDB_METABOLITES = json.load(
     open("/Mounts/rbg-storage1/datasets/Metabo/HMDB/metabolites.json", "r")
 )
+
+
+def xml2dict(t):
+    d = {}
+    children = list(t)
+    if children:
+        dd = defaultdict(list)
+        for dc in map(xml2dict, children):
+            for k, v in dc.items():
+                dd[k].append(v)
+        d = {t.tag: {k: v[0] if len(v) == 1 else v for k, v in dd.items()}}
+
+    if t.text:
+        text = t.text.strip()
+        if not text == "":
+            d[t.tag] = text
+    return d
 
 
 def get_from_metanetx(db_meta) -> dict:
@@ -61,20 +79,38 @@ def get_hmdb(db_meta, meta_dict) -> dict:
     return dict()
 
 
+def get_biocyc(db_meta, meta_dict) -> dict:
+    biocyc = [f for f in db_meta.values[0].split(";") if "biocyc" in f]
+    if len(biocyc):
+        biocycid = os.path.basename(biocyc[0].split(":")[-1])
+        page = requests.get(
+            f"https://websvc.biocyc.org/getxml?id={biocycid}&detail=full"
+        )
+        xml_data = xml2dict(ET.XML(page.text))["ptools-xml"]
+        return {
+            "biocyc_id": xml_data["metadata"]["query"],
+            "InChI": xml_data["Compound"]["inchi"],
+            "InChIKey": xml_data["Compound"]["inchi-key"],
+            "smiles": xml_data["Compound"]["cml"]["molecule"]["string"],
+        }
+    return
+
+
 def link_metabolite_to_db(metabolite: Metabolite) -> dict:
     """
     Link metabolite to external database
     In order, try:
-        1. MetaNetX
-        2. HMDB
-        3. BioCyc
-        4. ChEBI
-        5. Kegg
-        6. LipidMaps
-        7. InchiKey
-        8. Reactome
-        9. SEED
-        10. Unknown (Search ChEBI)
+        1. MetaNetX [x]
+        2. HMDB [x]
+        3. BioCyc [x]
+
+        6. InchiKey [x]
+        4. ChEBI [x]
+        5. Kegg [x]
+        7. Reactome [x]
+        - LipidMaps
+        - SEED
+        8. Unknown (Search ChEBI)
 
     Args:
         metabolite (cobra.Metabolite): metabolite object
@@ -94,6 +130,9 @@ def link_metabolite_to_db(metabolite: Metabolite) -> dict:
 
     # Try HMDB
     meta_dict.update(get_hmdb(db_meta, meta_dict))
+
+    # Try BioCyc
+    meta_dict.update(get_biocyc(db_meta, meta_dict))
 
     # Try to link to ChEBI
     if meta_dict.get("smiles", False):
