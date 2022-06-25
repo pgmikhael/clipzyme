@@ -4,6 +4,7 @@ from cobra.core.metabolite import Metabolite
 import pandas as pd
 from collections import defaultdict
 from bioservices import ChEBI
+import pubchempy
 import warnings
 from tqdm import tqdm
 from xml.etree import cElementTree as ET
@@ -40,6 +41,9 @@ def xml2dict(t):
 
 
 def get_from_metanetx(db_meta) -> dict:
+    """
+    Get the metabolite metdata from MetaNetX
+    """
     metanetx = [f for f in db_meta.values[0].split(";") if "MetaNetX" in f]
 
     if len(metanetx):
@@ -50,14 +54,14 @@ def get_from_metanetx(db_meta) -> dict:
                 "metanetx_id": metanetid,
                 "metanetx_name": row["name"].item(),
                 "metanetx_mass": row["mass"].item(),
-                "InChI": row["InChI"].item(),
-                "InChIKey": row["InChIKey"].item(),
-                "smiles": row["SMILES"].item(),
+                "metanetx_inchi": row["InChI"].item(),
+                "metanetx_inchikey": row["InChIKey"].item(),
+                "metanetx_smiles": row["SMILES"].item(),
             }
     return dict()
 
 
-def get_hmdb(db_meta, meta_dict) -> dict:
+def get_hmdb(db_meta) -> dict:
     hmdb = [f for f in db_meta.values[0].split(";") if "hmdb" in f]
     if len(hmdb):
         hmdbid = os.path.basename(hmdb[0].split(":")[-1])
@@ -66,20 +70,14 @@ def get_hmdb(db_meta, meta_dict) -> dict:
         if row:
             return {
                 "hmdb_id": hmdbid,
-                "InChI": row["inchi"]
-                if meta_dict.get("InChI", None) is None
-                else meta_dict["InChI"],
-                "InChIKey": row["inchikey"]
-                if meta_dict.get("InChIKey", None) is None
-                else meta_dict["InChIKey"],
-                "smiles": row["smiles"]
-                if meta_dict.get("smiles", None) is None
-                else meta_dict["smiles"],
+                "hmdb_inchi": row["inchi"],
+                "hmdb_inchikey": row["inchikey"],
+                "hmdb_smiles": row["smiles"],
             }
     return dict()
 
 
-def get_biocyc(db_meta, meta_dict) -> dict:
+def get_biocyc(db_meta) -> dict:
     biocyc = [f for f in db_meta.values[0].split(";") if "biocyc" in f]
     if len(biocyc):
         biocycid = os.path.basename(biocyc[0].split(":")[-1])
@@ -89,34 +87,74 @@ def get_biocyc(db_meta, meta_dict) -> dict:
         xml_data = xml2dict(ET.XML(page.text))["ptools-xml"]
         return {
             "biocyc_id": xml_data["metadata"]["query"],
-            "InChI": xml_data["Compound"]["inchi"],
-            "InChIKey": xml_data["Compound"]["inchi-key"],
-            "smiles": xml_data["Compound"]["cml"]["molecule"]["string"],
+            "biocyc_inchi": xml_data["Compound"]["inchi"],
+            "biocyc_inchikey": xml_data["Compound"]["inchi-key"],
+            "biocyc_smiles": xml_data["Compound"]["cml"]["molecule"]["string"],
         }
     return
+
+
+def get_kegg(db_meta) -> dict:
+    kegg_service = KEGG()
+    kegg = [f for f in db_meta.values[0].split(";") if "kegg" in f]
+    meta_dict = {}
+    if len(kegg):
+        keggid = os.path.basename(kegg[0].split(":")[-1])
+        map_kegg_chebi = kegg_service.conv("chebi", keggid)
+        chebi_id = map_kegg_chebi[f"cpd:{keggid}"]
+        ch = ChEBI()
+        mol = ch.getCompleteEntity(chebi_id.upper())
+        mol = dict(mol)
+
+        for dictkey, dbkey in [
+            ("id", "chebiId"),
+            ("ascii_ame", "chebiAsciiName"),
+            ("smiles", "smiles"),
+            ("inchi", "inchi"),
+            ("inchikey", "inchiKey"),
+            ("charge", "charge"),
+            ("mass", "mass"),
+            ("monoisotopic_mass", "monoisotopicMass"),
+        ]:
+            meta_dict[f"chebi_{dictkey}"] = mol[dbkey]
+
+        return meta_dict
+
+    return dict()
+
+
+def get_pubchem(db_meta) -> dict:
+    inchikey = [f for f in db_meta.values[0].split(";") if "inchikey" in f]
+    if len(inchikey):
+        inchikey_num = os.path.basename(inchikey[0].split(":")[-1])
+        compounds = pubchempy.get_compounds(inchikey_num, namespace="inchikey")
+        if len(compounds) == 0:
+            warnings.warn("Did not find compounds with inchikey: {inchikey_num}")
+            return dict()
+        if len(compounds) > 1:
+            warnings.warn("Found more than one compound for inchikey: {inchikey_num}")
+
+        return {
+            "pubchem_inchikey": compounds[0].inchikey,
+            "pubchem_inchi": compounds[0].inchi,
+            "pubchem_smiles": compounds[0].canonical_smiles,
+            "pubchem_isomeric_smiles": compounds[0].isomeric_smiles,
+        }
+    return dict()
 
 
 def link_metabolite_to_db(metabolite: Metabolite) -> dict:
     """
     Link metabolite to external database
-    In order, try:
-        1. MetaNetX [x]
-        2. HMDB [x]
-        3. BioCyc [x]
-
-        6. InchiKey [x]
-        4. ChEBI [x]
-        5. Kegg [x]
-        7. Reactome [x]
-        - LipidMaps
-        - SEED
-        8. Unknown (Search ChEBI)
-
+    Collect fit:
+        - MetaNetX
+        - HMDB
+        - BioCyc
+        - KEGG
+        - PubChem
+        - ChEBI DB Search
     Args:
         metabolite (cobra.Metabolite): metabolite object
-
-    Raises:
-        NotFoundErr: _description_
 
     Returns:
         dict: metadata for metabolite
@@ -129,10 +167,16 @@ def link_metabolite_to_db(metabolite: Metabolite) -> dict:
     meta_dict = get_from_metanetx(db_meta)
 
     # Try HMDB
-    meta_dict.update(get_hmdb(db_meta, meta_dict))
+    meta_dict.update(get_hmdb(db_meta))
 
     # Try BioCyc
-    meta_dict.update(get_biocyc(db_meta, meta_dict))
+    meta_dict.update(get_biocyc(db_meta))
+
+    # Try KEGG
+    meta_dict.update(get_kegg(db_meta))
+
+    # Try PubChem
+    meta_dict.update(get_pubchem(db_meta))
 
     # Try to link to ChEBI
     if meta_dict.get("smiles", False):
@@ -190,22 +234,23 @@ def link_metabolite_to_db(metabolite: Metabolite) -> dict:
 
         match = dict(all_complete_entities[exact_matches[0]])
 
-        for key in [
-            "chebiId",
-            "chebiAsciiName",
-            "smiles",
-            "inchi",
-            "inchiKey",
-            "charge",
-            "mass",
-            "monoisotopicMass",
+        for dictkey, dbkey in [
+            ("id", "chebiId"),
+            ("ascii_ame", "chebiAsciiName"),
+            ("smiles", "smiles"),
+            ("inchi", "inchi"),
+            ("inchikey", "inchiKey"),
+            ("charge", "charge"),
+            ("mass", "mass"),
+            ("monoisotopic_mass", "monoisotopicMass"),
         ]:
-            meta_dict[key] = match[key]
+            meta_dict[f"chebi_{dictkey}"] = match[dbkey]
 
     return meta_dict
 
 
 geneid2proteinmeta = dict()
+uniprot_service = UniProt()
 
 # Downloading reactions
 models_json = json.load(
@@ -254,6 +299,7 @@ for organism_name in tqdm(models[1:]):
 
         # 3. Get reaction sequences by gene id
         proteins = []
+        could_not_find_gene = []
         for gene in list(rxn.genes):
             if gene.id not in geneid2proteinmeta:
                 r = requests.get(
@@ -265,6 +311,7 @@ for organism_name in tqdm(models[1:]):
                     or len(protein_metadata["protein_sequence"]) == 0
                 ):
                     warnings.warn(f"No protein sequence found for gene {gene.id}")
+                    could_not_find_gene.append(gene)
                     protein_metadata.update(
                         {"protein_sequence": None, "errors": "gene not found"}
                     )
@@ -272,6 +319,10 @@ for organism_name in tqdm(models[1:]):
                 geneid2proteinmeta[gene.id] = protein_metadata
             else:
                 proteins.append(geneid2proteinmeta[gene.id])
+
+        # uniprot_service.mapping(fr="P_ENTREZGENEID", to="ID", query="55577")
+        # new_sequences = GEMPRO.uniprot - find - prot - gene - seq - now()
+        # proteins.extend(new_sequences)
 
         rxn_dict["proteins"] = proteins
 
