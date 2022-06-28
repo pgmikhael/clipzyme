@@ -395,6 +395,7 @@ if __name__ == "__main__":
     # For each reaction
     for rxn in tqdm(reactions, position=0):
         rxn_dict = defaultdict(list)
+        rxn_dict["rxn_id"] = rxn.id
         # Reaction metadata: compartments, id, name, reverse_id, reverse_variable, reversibility
         # Metabolite metadata: charge,formula,formula_weight,id,name
 
