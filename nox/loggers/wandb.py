@@ -10,7 +10,8 @@ class WandB(pl.loggers.WandbLogger, Nox):
         super().__init__(
             project=args.project_name,
             name=args.experiment_name,
-            workspace=args.workspace,
+            entity=args.workspace,
+            tags = args.comet_tags
         )
 
     def setup(self, **kwargs):
@@ -18,7 +19,6 @@ class WandB(pl.loggers.WandbLogger, Nox):
         # # change "log_freq" log frequency of gradients and parameters (100 steps by default)
         self.watch(kwargs["model"], log="all")
         self.experiment.config.update(kwargs["args"])
-        self.experiment.tags.add(kwargs["args"].comet_tags)
 
     def log_image(self, image, name):
         self.log_image(images=[image], caption=[name])
