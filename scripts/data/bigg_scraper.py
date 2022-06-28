@@ -9,6 +9,7 @@ import warnings
 from tqdm import tqdm
 from xml.etree import cElementTree as ET
 import argparse
+from rdkit import Chem
 
 parser = argparse.ArgumentParser(
     description="Scrape metabolite data from external databases"
@@ -364,6 +365,12 @@ def link_metabolite_to_db(metabolite: Metabolite) -> dict:
     # Try to link to ChEBI
     if not any("smiles" in k for k in meta_dict.keys()):
         meta_dict.update(search_chebi(metabolite))
+
+    # standardize SMILES
+    if any("smiles" in k for k in meta_dict.keys()):
+        m = Chem.MolFromSmiles(meta_dict["smiles"])
+        smile = Chem.MolToSmiles(m)
+        meta_dict["smiles"] = smile
 
     return meta_dict
 
