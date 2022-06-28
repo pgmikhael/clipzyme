@@ -8,6 +8,28 @@ import pubchempy
 import warnings
 from tqdm import tqdm
 from xml.etree import cElementTree as ET
+import argparse
+from rdkit import Chem
+
+parser = argparse.ArgumentParser(
+    description="Scrape metabolite data from external databases"
+)
+
+parser.add_argument(
+    "--organism_name",
+    type=str,
+    required=True,
+    default=None,
+    help="name of organism that exists in BiGG Models",
+)
+
+parser.add_argument(
+    "--save_dir",
+    type=str,
+    required=True,
+    default="./datasets/",
+    help="directory to save the dataset",
+)
 
 BIGG_METABOLITES = pd.read_csv(
     "/Mounts/rbg-storage1/datasets/Metabo/BiGG/bigg_models_metabolites.txt", sep="\t"
@@ -21,10 +43,6 @@ METANETX_METABOLITES.fillna("", inplace=True)
 HMDB_METABOLITES = json.load(
     open("/Mounts/rbg-storage1/datasets/Metabo/HMDB/metabolites.json", "r")
 )
-geneid2proteinmeta = dict()
-kegg_service = KEGG()
-chebi_service = ChEBI()
-uniprot_service = UniProt()
 
 
 def xml2dict(t):
@@ -348,21 +366,27 @@ def link_metabolite_to_db(metabolite: Metabolite) -> dict:
     if not any("smiles" in k for k in meta_dict.keys()):
         meta_dict.update(search_chebi(metabolite))
 
+    # standardize SMILES
+    if any("smiles" in k for k in meta_dict.keys()):
+        m = Chem.MolFromSmiles(meta_dict["smiles"])
+        smile = Chem.MolToSmiles(m)
+        meta_dict["smiles"] = smile
+
     return meta_dict
 
 
-# Downloading reactions
-models_json = json.load(
-    open("/Mounts/rbg-storage1/datasets/Metabo/BiGG/bigg_models.json", "rb")
-)
-models = [v["bigg_id"] for v in models_json["results"]]
+if __name__ == "__main__":
+    args = parser.parse_args()
 
+    geneid2proteinmeta = dict()
+    kegg_service = KEGG()
+    chebi_service = ChEBI()
+    uniprot_service = UniProt()
 
-dataset = defaultdict(list)
-# Load each organism .mat file
-for organism_name in tqdm(models):
+    dataset = defaultdict(list)
+
     model = load_matlab_model(
-        f"/Mounts/rbg-storage1/datasets/Metabo/BiGG/{organism_name}.mat"
+        f"/Mounts/rbg-storage1/datasets/Metabo/BiGG/{args.organism_name}.mat"
     )
 
     # Get list of reactions
@@ -371,6 +395,7 @@ for organism_name in tqdm(models):
     # For each reaction
     for rxn in tqdm(reactions, position=0):
         rxn_dict = defaultdict(list)
+        rxn_dict["rxn_id"] = rxn.id
         # Reaction metadata: compartments, id, name, reverse_id, reverse_variable, reversibility
         # Metabolite metadata: charge,formula,formula_weight,id,name
 
@@ -402,7 +427,7 @@ for organism_name in tqdm(models):
         for gene in list(rxn.genes):
             if gene.id not in geneid2proteinmeta:
                 r = requests.get(
-                    f"http://bigg.ucsd.edu/api/v2/models/{organism_name}/genes/{gene.id}"
+                    f"http://bigg.ucsd.edu/api/v2/models/{args.organism_name}/genes/{gene.id}"
                 )
                 protein_metadata = r.json()
                 if (
@@ -433,4 +458,6 @@ for organism_name in tqdm(models):
         # if r.status_code == 200:
         #     json.loads(r.content.decode("utf-8"))
 
-        dataset[organism_name].append(rxn_dict)
+        dataset.append(rxn_dict)
+
+json.dump(dataset, open(args.save_dir, "w"))
