@@ -21,9 +21,21 @@ METANETX_METABOLITES.fillna("", inplace=True)
 HMDB_METABOLITES = json.load(
     open("/Mounts/rbg-storage1/datasets/Metabo/HMDB/metabolites.json", "r")
 )
+geneid2proteinmeta = dict()
+kegg_service = KEGG()
+chebi_service = ChEBI()
+uniprot_service = UniProt()
 
 
 def xml2dict(t):
+    """Transform XML into dictionary
+
+    Args:
+        t (ET.XML): xml object
+
+    Returns:
+        dict: dictionary version of xml object
+    """
     d = {}
     children = list(t)
     if children:
@@ -40,9 +52,14 @@ def xml2dict(t):
     return d
 
 
-def get_from_metanetx(db_meta) -> dict:
-    """
-    Get the metabolite metdata from MetaNetX
+def get_from_metanetx(db_meta: pd.core.series.Series) -> dict:
+    """Get the metabolite metdata from local METANETX
+
+    Args:
+        db_meta (pandas row): pandas row matching metabolite to external links
+
+    Returns:
+        dict: metabolite properties
     """
     metanetx = [f for f in db_meta.values[0].split(";") if "MetaNetX" in f]
 
@@ -61,7 +78,15 @@ def get_from_metanetx(db_meta) -> dict:
     return dict()
 
 
-def get_hmdb(db_meta) -> dict:
+def get_hmdb(db_meta: pd.core.series.Serie) -> dict:
+    """Get the metabolite metdata from local HMDB
+
+    Args:
+        db_meta (pandas row): pandas row matching metabolite to external links
+
+    Returns:
+        dict: metabolite properties
+    """
     hmdb = [f for f in db_meta.values[0].split(";") if "hmdb" in f]
     if len(hmdb):
         hmdbid = os.path.basename(hmdb[0].split(":")[-1])
@@ -77,7 +102,15 @@ def get_hmdb(db_meta) -> dict:
     return dict()
 
 
-def get_biocyc(db_meta) -> dict:
+def get_biocyc(db_meta: pd.core.series.Serie) -> dict:
+    """Get the metabolite metdata from BioCyc website
+
+    Args:
+        db_meta (pandas row): pandas row matching metabolite to external links
+
+    Returns:
+        dict: metabolite properties
+    """
     biocyc = [f for f in db_meta.values[0].split(";") if "biocyc" in f]
     if len(biocyc):
         biocycid = os.path.basename(biocyc[0])
@@ -97,7 +130,15 @@ def get_biocyc(db_meta) -> dict:
     return dict()
 
 
-def get_kegg(db_meta) -> dict:
+def get_kegg(db_meta: pd.core.series.Serie) -> dict:
+    """Get the metabolite metdata from KEGG website
+
+    Args:
+        db_meta (pandas row): pandas row matching metabolite to external links
+
+    Returns:
+        dict: metabolite properties
+    """
     kegg = [f for f in db_meta.values[0].split(";") if "kegg" in f]
     meta_dict = {}
     if len(kegg):
@@ -152,7 +193,15 @@ def get_kegg(db_meta) -> dict:
     return dict()
 
 
-def get_pubchem(db_meta) -> dict:
+def get_pubchem(db_meta: pd.core.series.Serie) -> dict:
+    """Get the metabolite metdata from PubChem website based on Inchi Key
+
+    Args:
+        db_meta (pandas row): pandas row matching metabolite to external links
+
+    Returns:
+        dict: metabolite properties
+    """
     inchikey = [f for f in db_meta.values[0].split(";") if "inchikey" in f]
     if len(inchikey):
         inchikey_num = os.path.basename(inchikey[0].split(":")[-1])
@@ -170,6 +219,90 @@ def get_pubchem(db_meta) -> dict:
             "pubchem_isomeric_smiles": compounds[0].isomeric_smiles,
         }
     return dict()
+
+
+def search_chebi(metabolite: Metabolite) -> dict:
+    """Search for metabolite in ChEBI using name and/or formula
+
+    Args:
+        db_meta (pandas row): pandas row matching metabolite to external links
+
+    Returns:
+        dict: metabolite properties
+    """
+    meta_dict = dict()
+    try:
+        name_search = chebi_service.getLiteEntity(metabolite.name, maximumResults=5000)
+        name_search_ids = [str(r.chebiId) for r in name_search]
+    except:
+        name_search_ids = []
+
+    try:
+        formula_search = chebi_service.getLiteEntity(
+            metabolite.formula, searchCategory="FORMULA", maximumResults=5000
+        )
+        formula_search_ids = [str(r.chebiId) for r in formula_search]
+    except:
+        formula_search_ids = []
+
+    if len(formula_search_ids) == 0 and len(name_search_ids) == 0:
+        warnings.warn(f"No matches found for metabolite {metabolite.id}")
+        return {"smiles": None, "errors": "metabolite not found"}
+
+    # if formula and name exists and have matches, then find overlap, else use non-empty option
+    if len(formula_search_ids) > 0 and len(name_search_ids) > 0:
+        matched_ids = [m for m in name_search_ids if m in formula_search_ids]
+    else:
+        matched_ids = name_search_ids + formula_search_ids
+
+    all_complete_entities = []
+    for j in range(0, len(matched_ids), 50):
+        complete_entities = chebi_service.getCompleteEntityByList(
+            matched_ids[j : j + 50]
+        )
+        all_complete_entities.extend(complete_entities)
+
+    exact_matches = [
+        i
+        for i, met in enumerate(all_complete_entities)
+        if met["Formulae"][0].data == metabolite.formula
+        or met["chebiAsciiName"].lower() == metabolite.name.lower()
+    ]
+
+    # if no matches, then find the closest one
+    if len(exact_matches) == 0:
+        if metabolite.formula_weight:
+            closest_mass = sorted(
+                all_complete_entities,
+                key=lambda x: abs(metabolite.formula_weight - float(x["mass"])),
+            )[0]
+        else:
+            return meta_dict
+
+        exact_matches = [all_complete_entities.index(closest_mass)]
+        meta_dict.setdefault("errors", [])
+        meta_dict["errors"].append(
+            "exact metabolite not found, metabolite with closest mass used"
+        )
+        warnings.warn(
+            f"exact metabolite not found, metabolite with closest mass used for metabolite {metabolite.id}"
+        )
+
+    match = dict(all_complete_entities[exact_matches[0]])
+
+    for dictkey, dbkey in [
+        ("id", "chebiId"),
+        ("ascii_ame", "chebiAsciiName"),
+        ("smiles", "smiles"),
+        ("inchi", "inchi"),
+        ("inchikey", "inchiKey"),
+        ("charge", "charge"),
+        ("mass", "mass"),
+        ("monoisotopic_mass", "monoisotopicMass"),
+    ]:
+        meta_dict[f"chebi_{dictkey}"] = match[dbkey]
+
+    return meta_dict
 
 
 def link_metabolite_to_db(metabolite: Metabolite) -> dict:
@@ -213,86 +346,10 @@ def link_metabolite_to_db(metabolite: Metabolite) -> dict:
 
     # Try to link to ChEBI
     if not any("smiles" in k for k in meta_dict.keys()):
-        try:
-            name_search = chebi_service.getLiteEntity(
-                metabolite.name, maximumResults=5000
-            )
-            name_search_ids = [str(r.chebiId) for r in name_search]
-        except:
-            name_search_ids = []
-
-        try:
-            formula_search = chebi_service.getLiteEntity(
-                metabolite.formula, searchCategory="FORMULA", maximumResults=5000
-            )
-            formula_search_ids = [str(r.chebiId) for r in formula_search]
-        except:
-            formula_search_ids = []
-
-        if len(formula_search_ids) == 0 and len(name_search_ids) == 0:
-            warnings.warn(f"No matches found for metabolite {metabolite.id}")
-            return {"smiles": None, "errors": "metabolite not found"}
-
-        # if formula and name exists and have matches, then find overlap, else use non-empty option
-        if len(formula_search_ids) > 0 and len(name_search_ids) > 0:
-            matched_ids = [m for m in name_search_ids if m in formula_search_ids]
-        else:
-            matched_ids = name_search_ids + formula_search_ids
-
-        all_complete_entities = []
-        for j in range(0, len(matched_ids), 50):
-            complete_entities = chebi_service.getCompleteEntityByList(
-                matched_ids[j : j + 50]
-            )
-            all_complete_entities.extend(complete_entities)
-
-        exact_matches = [
-            i
-            for i, met in enumerate(all_complete_entities)
-            if met["Formulae"][0].data == metabolite.formula
-            or met["chebiAsciiName"].lower() == metabolite.name.lower()
-        ]
-
-        # if no matches, then find the closest one
-        if len(exact_matches) == 0:
-            if metabolite.formula_weight:
-                closest_mass = sorted(
-                    all_complete_entities,
-                    key=lambda x: abs(metabolite.formula_weight - float(x["mass"])),
-                )[0]
-            else:
-                return meta_dict
-
-            exact_matches = [all_complete_entities.index(closest_mass)]
-            meta_dict.setdefault("errors", [])
-            meta_dict["errors"].append(
-                "exact metabolite not found, metabolite with closest mass used"
-            )
-            warnings.warn(
-                f"exact metabolite not found, metabolite with closest mass used for metabolite {metabolite.id}"
-            )
-
-        match = dict(all_complete_entities[exact_matches[0]])
-
-        for dictkey, dbkey in [
-            ("id", "chebiId"),
-            ("ascii_ame", "chebiAsciiName"),
-            ("smiles", "smiles"),
-            ("inchi", "inchi"),
-            ("inchikey", "inchiKey"),
-            ("charge", "charge"),
-            ("mass", "mass"),
-            ("monoisotopic_mass", "monoisotopicMass"),
-        ]:
-            meta_dict[f"chebi_{dictkey}"] = match[dbkey]
+        meta_dict.update(search_chebi(metabolite))
 
     return meta_dict
 
-
-geneid2proteinmeta = dict()
-kegg_service = KEGG()
-chebi_service = ChEBI()
-uniprot_service = UniProt()
 
 # Downloading reactions
 models_json = json.load(
