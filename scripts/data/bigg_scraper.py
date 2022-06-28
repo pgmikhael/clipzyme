@@ -3,7 +3,7 @@ from cobra.io import load_matlab_model
 from cobra.core.metabolite import Metabolite
 import pandas as pd
 from collections import defaultdict
-from bioservices import ChEBI
+from bioservices import ChEBI, KEGG, UniProt
 import pubchempy
 import warnings
 from tqdm import tqdm
@@ -17,7 +17,7 @@ METANETX_METABOLITES = pd.read_csv(
     sep="\t",
     skiprows=351,
 )
-
+METANETX_METABOLITES.fillna("", inplace=True)
 HMDB_METABOLITES = json.load(
     open("/Mounts/rbg-storage1/datasets/Metabo/HMDB/metabolites.json", "r")
 )
@@ -49,7 +49,7 @@ def get_from_metanetx(db_meta) -> dict:
     if len(metanetx):
         metanetid = os.path.basename(metanetx[0].split(":")[-1])
         row = METANETX_METABOLITES[METANETX_METABOLITES["#ID"] == metanetid]
-        if len(row) > 0:
+        if (len(row) > 0) and len(row["SMILES"].item()):
             return {
                 "metanetx_id": metanetid,
                 "metanetx_name": row["name"].item(),
@@ -67,7 +67,7 @@ def get_hmdb(db_meta) -> dict:
         hmdbid = os.path.basename(hmdb[0].split(":")[-1])
         hmdbid = hmdbid[:4] + (11 - len(hmdbid)) * "0" + hmdbid[4:]
         row = HMDB_METABOLITES.get(hmdbid, False)
-        if row:
+        if row and len(row["smiles"]):
             return {
                 "hmdb_id": hmdbid,
                 "hmdb_inchi": row["inchi"],
@@ -80,45 +80,74 @@ def get_hmdb(db_meta) -> dict:
 def get_biocyc(db_meta) -> dict:
     biocyc = [f for f in db_meta.values[0].split(";") if "biocyc" in f]
     if len(biocyc):
-        biocycid = os.path.basename(biocyc[0].split(":")[-1])
+        biocycid = os.path.basename(biocyc[0])
         page = requests.get(
             f"https://websvc.biocyc.org/getxml?id={biocycid}&detail=full"
         )
         xml_data = xml2dict(ET.XML(page.text))["ptools-xml"]
-        return {
-            "biocyc_id": xml_data["metadata"]["query"],
-            "biocyc_inchi": xml_data["Compound"]["inchi"],
-            "biocyc_inchikey": xml_data["Compound"]["inchi-key"],
-            "biocyc_smiles": xml_data["Compound"]["cml"]["molecule"]["string"],
-        }
-    return
+        if xml_data.get("Compound", False) and len(
+            xml_data["Compound"]["cml"]["molecule"].get("string", "")
+        ):
+            return {
+                "biocyc_id": xml_data["metadata"]["query"],
+                "biocyc_inchi": xml_data["Compound"].get("inchi", None),
+                "biocyc_inchikey": xml_data["Compound"].get("inchi-key", None),
+                "biocyc_smiles": xml_data["Compound"]["cml"]["molecule"]["string"],
+            }
+    return dict()
 
 
 def get_kegg(db_meta) -> dict:
-    kegg_service = KEGG()
     kegg = [f for f in db_meta.values[0].split(";") if "kegg" in f]
     meta_dict = {}
     if len(kegg):
         keggid = os.path.basename(kegg[0].split(":")[-1])
-        map_kegg_chebi = kegg_service.conv("chebi", keggid)
-        chebi_id = map_kegg_chebi[f"cpd:{keggid}"]
-        ch = ChEBI()
-        mol = ch.getCompleteEntity(chebi_id.upper())
-        mol = dict(mol)
 
-        for dictkey, dbkey in [
-            ("id", "chebiId"),
-            ("ascii_ame", "chebiAsciiName"),
-            ("smiles", "smiles"),
-            ("inchi", "inchi"),
-            ("inchikey", "inchiKey"),
-            ("charge", "charge"),
-            ("mass", "mass"),
-            ("monoisotopic_mass", "monoisotopicMass"),
-        ]:
-            meta_dict[f"chebi_{dictkey}"] = mol[dbkey]
+        # map to pubchem
+        map_kegg_pubchem = kegg_service.conv("pubchem", keggid)
+        ktype, kname = list(map_kegg_pubchem.keys())[0].split(":")
+        assert kname == keggid
+        pubchem_id = map_kegg_pubchem[f"{ktype}:{keggid}"].split(":")[-1]
 
-        return meta_dict
+        compounds = pubchempy.get_compounds(pubchem_id, namespace="cid")
+        if len(compounds) > 1:
+            warnings.warn("Found more than one compound for cid: {pubchem_id}")
+
+        if len(compounds) == 1:
+            meta_dict = {
+                "pubchem_inchikey": compounds[0].inchikey,
+                "pubchem_inchi": compounds[0].inchi,
+                "pubchem_smiles": compounds[0].canonical_smiles,
+                "pubchem_isomeric_smiles": compounds[0].isomeric_smiles,
+            }
+            return meta_dict
+
+        else:
+            # map to chebi
+
+            map_kegg_chebi = kegg_service.conv("chebi", keggid)
+
+            # map to chebi
+            if isinstance(map_kegg_chebi, dict):
+                ktype, kname = list(map_kegg_chebi.keys())[0].split(":")
+                assert kname == keggid
+                chebi_id = map_kegg_chebi[f"{ktype}:{keggid}"]
+                mol = chebi_service.getCompleteEntity(chebi_id.upper())
+                mol = dict(mol)
+
+                if len(mol["smiles"]):
+                    for dictkey, dbkey in [
+                        ("id", "chebiId"),
+                        ("ascii_ame", "chebiAsciiName"),
+                        ("smiles", "smiles"),
+                        ("inchi", "inchi"),
+                        ("inchikey", "inchiKey"),
+                        ("charge", "charge"),
+                        ("mass", "mass"),
+                        ("monoisotopic_mass", "monoisotopicMass"),
+                    ]:
+                        meta_dict[f"chebi_{dictkey}"] = mol.get(dbkey, None)
+                return meta_dict
 
     return dict()
 
@@ -163,32 +192,37 @@ def link_metabolite_to_db(metabolite: Metabolite) -> dict:
         "database_links"
     ]
 
-    # Try MetaNetX
-    meta_dict = get_from_metanetx(db_meta)
-
     # Try HMDB
-    meta_dict.update(get_hmdb(db_meta))
+    meta_dict = get_hmdb(db_meta)
 
-    # Try BioCyc
-    meta_dict.update(get_biocyc(db_meta))
+    if not any("smiles" in k for k in meta_dict.keys()):
+        # Try MetaNetX
+        meta_dict.update(get_from_metanetx(db_meta))
 
-    # Try KEGG
-    meta_dict.update(get_kegg(db_meta))
+    if not any("smiles" in k for k in meta_dict.keys()):
+        # Try BioCyc
+        meta_dict.update(get_biocyc(db_meta))
 
-    # Try PubChem
-    meta_dict.update(get_pubchem(db_meta))
+    if not any("smiles" in k for k in meta_dict.keys()):
+        # Try KEGG
+        meta_dict.update(get_kegg(db_meta))
+
+    if not any("smiles" in k for k in meta_dict.keys()):
+        # Try PubChem
+        meta_dict.update(get_pubchem(db_meta))
 
     # Try to link to ChEBI
-    if meta_dict.get("smiles", False):
-        ch = ChEBI()
+    if not any("smiles" in k for k in meta_dict.keys()):
         try:
-            name_search = ch.getLiteEntity(metabolite.name, maximumResults=5000)
+            name_search = chebi_service.getLiteEntity(
+                metabolite.name, maximumResults=5000
+            )
             name_search_ids = [str(r.chebiId) for r in name_search]
         except:
             name_search_ids = []
 
         try:
-            formula_search = ch.getLiteEntity(
+            formula_search = chebi_service.getLiteEntity(
                 metabolite.formula, searchCategory="FORMULA", maximumResults=5000
             )
             formula_search_ids = [str(r.chebiId) for r in formula_search]
@@ -207,7 +241,9 @@ def link_metabolite_to_db(metabolite: Metabolite) -> dict:
 
         all_complete_entities = []
         for j in range(0, len(matched_ids), 50):
-            complete_entities = ch.getCompleteEntityByList(matched_ids[j : j + 50])
+            complete_entities = chebi_service.getCompleteEntityByList(
+                matched_ids[j : j + 50]
+            )
             all_complete_entities.extend(complete_entities)
 
         exact_matches = [
@@ -219,17 +255,21 @@ def link_metabolite_to_db(metabolite: Metabolite) -> dict:
 
         # if no matches, then find the closest one
         if len(exact_matches) == 0:
-            closest_mass = sorted(
-                all_complete_entities,
-                key=lambda x: abs(metabolite.formula_weight - float(x["mass"])),
-            )[0]
+            if metabolite.formula_weight:
+                closest_mass = sorted(
+                    all_complete_entities,
+                    key=lambda x: abs(metabolite.formula_weight - float(x["mass"])),
+                )[0]
+            else:
+                return meta_dict
+
             exact_matches = [all_complete_entities.index(closest_mass)]
             meta_dict.setdefault("errors", [])
             meta_dict["errors"].append(
-                "exact metabolite not found, metabolite with closes mass used"
+                "exact metabolite not found, metabolite with closest mass used"
             )
             warnings.warn(
-                f"exact metabolite not found, metabolite with closes mass used for metabolite {metabolite.id}"
+                f"exact metabolite not found, metabolite with closest mass used for metabolite {metabolite.id}"
             )
 
         match = dict(all_complete_entities[exact_matches[0]])
@@ -250,6 +290,8 @@ def link_metabolite_to_db(metabolite: Metabolite) -> dict:
 
 
 geneid2proteinmeta = dict()
+kegg_service = KEGG()
+chebi_service = ChEBI()
 uniprot_service = UniProt()
 
 # Downloading reactions
@@ -257,16 +299,16 @@ models_json = json.load(
     open("/Mounts/rbg-storage1/datasets/Metabo/BiGG/bigg_models.json", "rb")
 )
 models = [v["bigg_id"] for v in models_json["results"]]
-# Get list of reactions
 
+
+dataset = defaultdict(list)
 # Load each organism .mat file
-for organism_name in tqdm(models[1:]):
+for organism_name in tqdm(models):
     model = load_matlab_model(
         f"/Mounts/rbg-storage1/datasets/Metabo/BiGG/{organism_name}.mat"
     )
 
-    model_dataset = []
-
+    # Get list of reactions
     reactions = model.reactions
 
     # For each reaction
@@ -326,10 +368,12 @@ for organism_name in tqdm(models[1:]):
 
         rxn_dict["proteins"] = proteins
 
-# 3. Get reaction sequences by reaction id
-# r = requests.post(
-#     "http://bigg.ucsd.edu/advanced_search_sequences", data={"query": rxn.id}
-# )
+        # 3. Get reaction sequences by reaction id
+        # r = requests.post(
+        #     "http://bigg.ucsd.edu/advanced_search_sequences", data={"query": rxn.id}
+        # )
 
-# if r.status_code == 200:
-#     json.loads(r.content.decode("utf-8"))
+        # if r.status_code == 200:
+        #     json.loads(r.content.decode("utf-8"))
+
+        dataset[organism_name].append(rxn_dict)
