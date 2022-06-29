@@ -10,6 +10,7 @@ import requests
 import rdkit.Chem as Chem
 from typing import Union
 import warnings
+
 warnings.filterwarnings("ignore")
 
 RECON3_METABOLITES = pd.read_excel(
@@ -24,7 +25,9 @@ RECON3_PROTEINS = pd.read_excel(
 )
 RECON3_PROTEINS.fillna("", inplace=True)
 
-RECON3_DATASET_PATH = "/Mounts/rbg-storage1/datasets/Metabo/recon3d_dataset.json"
+RECON3_DATASET_PATH = (
+    "/Mounts/rbg-storage1/datasets/Metabo/datasets/recon3d_dataset.json"
+)
 
 uniprot_service = UniProt(verbose=False)
 
@@ -41,28 +44,29 @@ def get_metabolite_metadata(metabolite: Metabolite) -> dict:
 
     bigg_id = metabolite.id
     try:
-        meta_dict = RECON3_METABOLITES[RECON3_METABOLITES["BiGG ID"] == bigg_id].to_dict(
-            "records"
-        )[0]
+        meta_dict = RECON3_METABOLITES[
+            RECON3_METABOLITES["BiGG ID"] == bigg_id
+        ].to_dict("records")[0]
         meta_dict = {k.lower(): v for k, v in meta_dict.items()}
-        meta_dict['found_in_supplementary'] = True
+        meta_dict["found_in_supplementary"] = True
     except:
-        meta_dict = {'found_in_supplementary': False, "bigg id": bigg_id}
-
+        meta_dict = {"found_in_supplementary": False, "bigg id": bigg_id}
 
     molid = metabolite.id.split("[")[0]
     molfile = "/Mounts/rbg-storage1/datasets/Metabo/VMH/Recon3D/mol/{}.mol".format(
         molid
     )
-    if not len(meta_dict.get("smiles", "")): 
+    if not len(meta_dict.get("smiles", "")):
         try:
             mol = Chem.MolFromMolFile(molfile)
             smiles = Chem.MolToSmiles(mol)
             meta_dict["smiles"] = smiles
         except:
             try:
-                vmh_page = requests.get(f"https://www.vmh.life/_api/metabolites/?abbreviation={molid}&format=json").json()
-                meta_dict["smiles"] = vmh_page['results'][0]['smile']
+                vmh_page = requests.get(
+                    f"https://www.vmh.life/_api/metabolites/?abbreviation={molid}&format=json"
+                ).json()
+                meta_dict["smiles"] = vmh_page["results"][0]["smile"]
             except:
                 meta_dict["smiles"] = None
 
@@ -79,6 +83,7 @@ def populate_empty_with_none(x: str) -> Union[str, None]:
         Union[str, None]: string itself or None
     """
     return None if x == "" else x
+
 
 def get_reaction_elements(rxn: Reaction) -> dict:
     rxn_dict = defaultdict(list)
@@ -118,19 +123,24 @@ def get_reaction_elements(rxn: Reaction) -> dict:
         }
         if protein_dict["uniprot"]:
             try:
-                protein_dict['sequence'] = uniprot_service.get_fasta_sequence(protein_dict["uniprot"])
+                protein_dict["sequence"] = uniprot_service.get_fasta_sequence(
+                    protein_dict["uniprot"]
+                )
             except:
                 try:
-                    protein_dict['sequence'] = uniprot_service.get_fasta_sequence(protein_dict["uniprot"].split('-')[0])
+                    protein_dict["sequence"] = uniprot_service.get_fasta_sequence(
+                        protein_dict["uniprot"].split("-")[0]
+                    )
                 except:
-                    protein_dict['sequence'] = None
+                    protein_dict["sequence"] = None
         else:
-            protein_dict['sequence'] = None
+            protein_dict["sequence"] = None
 
         proteins.append(protein_dict)
 
     rxn_dict["proteins"] = proteins
     return rxn_dict
+
 
 # Init dataset
 dataset = []
