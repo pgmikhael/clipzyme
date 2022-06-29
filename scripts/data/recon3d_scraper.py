@@ -5,7 +5,8 @@ from cobra.core.reaction import Reaction
 import pandas as pd
 from collections import defaultdict
 from bioservices import UniProt
-from p_tqdm import p_umap
+from p_tqdm import p_map
+import requests
 import rdkit.Chem as Chem
 from typing import Union
 import warnings
@@ -53,12 +54,18 @@ def get_metabolite_metadata(metabolite: Metabolite) -> dict:
     molfile = "/Mounts/rbg-storage1/datasets/Metabo/VMH/Recon3D/mol/{}.mol".format(
         molid
     )
-    if not len(meta_dict.get("smiles", "")) and os.path.isfile(molfile):
-        mol = Chem.MolFromMolFile(molfile)
-        smiles = Chem.MolToSmiles(mol)
-        meta_dict["smiles"] = smiles
-    else:
-        meta_dict["smiles"] = None
+    if not len(meta_dict.get("smiles", "")): 
+        try:
+            mol = Chem.MolFromMolFile(molfile)
+            smiles = Chem.MolToSmiles(mol)
+            meta_dict["smiles"] = smiles
+        except:
+            try:
+                vmh_page = requests.get(f"https://www.vmh.life/_api/metabolites/?abbreviation={molid}&format=json").json()
+                meta_dict["smiles"] = vmh_page['results'][0]['smile']
+            except:
+                meta_dict["smiles"] = None
+
     return meta_dict
 
 
@@ -134,6 +141,6 @@ model = load_matlab_model(
 )
 
 # Get list of reactions
-dataset = p_umap(get_reaction_elements, model.reactions)
+dataset = p_map(get_reaction_elements, model.reactions)
 
 json.dump(dataset, open(RECON3_DATASET_PATH, "w"))
