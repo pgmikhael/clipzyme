@@ -27,7 +27,7 @@ parser.add_argument(
     "--save_dir",
     type=str,
     required=True,
-    default="./datasets/",
+    default="/Mounts/rbg-storage1/datasets/Metabo/datasets/",
     help="directory to save the dataset",
 )
 
@@ -460,4 +460,7 @@ if __name__ == "__main__":
 
         dataset.append(rxn_dict)
 
-json.dump(dataset, open(args.save_dir, "w"))
+    json.dump(
+        dataset,
+        open(os.path.join(args.save_dir, f"{args.organism_name}_dataset.json"), "w"),
+    )
