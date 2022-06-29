@@ -26,7 +26,6 @@ parser.add_argument(
 parser.add_argument(
     "--save_dir",
     type=str,
-    required=True,
     default="/Mounts/rbg-storage1/datasets/Metabo/datasets/",
     help="directory to save the dataset",
 )
@@ -70,7 +69,7 @@ def xml2dict(t):
     return d
 
 
-def get_metanetx(db_meta: pd.core.series.Series) -> dict:
+def get_metanetx(db_meta: pd.Series) -> dict:
     """Get the metabolite metdata from local METANETX
 
     Args:
@@ -96,7 +95,7 @@ def get_metanetx(db_meta: pd.core.series.Series) -> dict:
     return dict()
 
 
-def get_hmdb(db_meta: pd.core.series.Serie) -> dict:
+def get_hmdb(db_meta: pd.Series) -> dict:
     """Get the metabolite metdata from local HMDB
 
     Args:
@@ -166,7 +165,7 @@ def get_vmh(metabolite: Metabolite) -> dict:
         return dict()
 
 
-def get_biocyc(db_meta: pd.core.series.Serie) -> dict:
+def get_biocyc(db_meta: pd.Series) -> dict:
     """Get the metabolite metdata from BioCyc website
 
     Args:
@@ -194,7 +193,7 @@ def get_biocyc(db_meta: pd.core.series.Serie) -> dict:
     return dict()
 
 
-def get_kegg(db_meta: pd.core.series.Serie) -> dict:
+def get_kegg(db_meta: pd.Series) -> dict:
     """Get the metabolite metdata from KEGG website
 
     Args:
@@ -257,7 +256,7 @@ def get_kegg(db_meta: pd.core.series.Serie) -> dict:
     return dict()
 
 
-def get_pubchem(db_meta: pd.core.series.Serie) -> dict:
+def get_pubchem(db_meta: pd.Series) -> dict:
     """Get the metabolite metdata from PubChem website based on Inchi Key
 
     Args:
@@ -419,9 +418,10 @@ def link_metabolite_to_db(metabolite: Metabolite) -> dict:
 
     # standardize SMILES
     if any("smiles" in k for k in meta_dict.keys()):
-        m = Chem.MolFromSmiles(meta_dict["smiles"])
-        smile = Chem.MolToSmiles(m)
-        meta_dict["smiles"] = smile
+        smiles_key = [k for k in meta_dict.keys() if "smiles" in k][0]
+        meta_dict["smiles"] = Chem.CanonSmiles(meta_dict[smiles_key])
+    else:
+        meta_dict["smiles"] = None
 
     return meta_dict
 
@@ -434,7 +434,7 @@ if __name__ == "__main__":
     chebi_service = ChEBI()
     uniprot_service = UniProt()
 
-    dataset = defaultdict(list)
+    dataset = []
 
     model = load_matlab_model(
         f"/Mounts/rbg-storage1/datasets/Metabo/BiGG/{args.organism_name}.mat"
