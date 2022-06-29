@@ -70,7 +70,7 @@ def xml2dict(t):
     return d
 
 
-def get_from_metanetx(db_meta: pd.core.series.Series) -> dict:
+def get_metanetx(db_meta: pd.core.series.Series) -> dict:
     """Get the metabolite metdata from local METANETX
 
     Args:
@@ -118,6 +118,52 @@ def get_hmdb(db_meta: pd.core.series.Serie) -> dict:
                 "hmdb_smiles": row["smiles"],
             }
     return dict()
+
+
+def get_vmh(metabolite: Metabolite) -> dict:
+    """Get the metabolite metdata from local HMDB
+
+    Args:
+        db_meta (pandas row): pandas row matching metabolite to external links
+
+    Returns:
+        dict: metabolite properties
+    """
+    if metabolite.id.endswith(f"_{metabolite.compartment}"):
+        bigg_id = "_".join(metabolite.id.split("_")[:-1])
+    elif metabolite.id.endswith(f"[{metabolite.compartment}]"):
+        bigg_id = metabolite.id.split("[")[0]
+    else:
+        bigg_id = metabolite.id
+
+    vmh_page = requests.get(
+        f"https://www.vmh.life/_api/metabolites/?abbreviation={bigg_id}&format=json"
+    ).json()
+    try:
+        meta_dict = dict()
+        assert len(vmh_page["results"]) == 1
+        for key in (
+            "charge",
+            "avgmolweight",
+            "monoisotopicweight",
+            "biggId",
+            "keggId",
+            "pubChemId",
+            "cheBlId",
+            "chembl",
+            "inchiString",
+            "inchiKey",
+            "hmdb",
+            "food_db",
+            "biocyc",
+            "drugbank",
+        ):
+
+            meta_dict[f"vmh_{key}"] = vmh_page["results"][0].get(key, None)
+        meta_dict["vmh_smiles"] = vmh_page["results"][0]["smile"]
+        return meta_dict
+    except:
+        return dict()
 
 
 def get_biocyc(db_meta: pd.core.series.Serie) -> dict:
@@ -330,6 +376,7 @@ def link_metabolite_to_db(metabolite: Metabolite) -> dict:
         - MetaNetX
         - HMDB
         - BioCyc
+        - VMH
         - KEGG
         - PubChem
         - ChEBI DB Search
@@ -348,7 +395,11 @@ def link_metabolite_to_db(metabolite: Metabolite) -> dict:
 
     if not any("smiles" in k for k in meta_dict.keys()):
         # Try MetaNetX
-        meta_dict.update(get_from_metanetx(db_meta))
+        meta_dict.update(get_metanetx(db_meta))
+
+    if not any("smiles" in k for k in meta_dict.keys()):
+        # Try VMH
+        meta_dict.update(get_vmh(metabolite))
 
     if not any("smiles" in k for k in meta_dict.keys()):
         # Try BioCyc
