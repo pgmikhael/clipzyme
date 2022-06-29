@@ -87,7 +87,7 @@ def populate_empty_with_none(x: str) -> Union[str, None]:
 
 def get_reaction_elements(rxn: Reaction) -> dict:
     rxn_dict = defaultdict(list)
-
+    rxn_dict["rxn_id"] = rxn.id
     # 1. Get reactants
     reactants = rxn.reactants
     reactant_stoich = list(rxn.get_coefficients(reactants))
