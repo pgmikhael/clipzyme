@@ -439,6 +439,7 @@ if __name__ == "__main__":
                     protein_metadata.update(
                         {"protein_sequence": None, "errors": "gene not found"}
                     )
+                protein_metadata["bigg_gene_id"] = gene.id
                 proteins.append(protein_metadata)
                 geneid2proteinmeta[gene.id] = protein_metadata
             else:
