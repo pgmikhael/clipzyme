@@ -26,8 +26,7 @@ parser.add_argument(
 parser.add_argument(
     "--save_dir",
     type=str,
-    required=True,
-    default="./datasets/",
+    default="/Mounts/rbg-storage1/datasets/Metabo/datasets/",
     help="directory to save the dataset",
 )
 
@@ -70,7 +69,7 @@ def xml2dict(t):
     return d
 
 
-def get_from_metanetx(db_meta: pd.core.series.Series) -> dict:
+def get_metanetx(db_meta: pd.Series) -> dict:
     """Get the metabolite metdata from local METANETX
 
     Args:
@@ -96,7 +95,7 @@ def get_from_metanetx(db_meta: pd.core.series.Series) -> dict:
     return dict()
 
 
-def get_hmdb(db_meta: pd.core.series.Serie) -> dict:
+def get_hmdb(db_meta: pd.Series) -> dict:
     """Get the metabolite metdata from local HMDB
 
     Args:
@@ -120,7 +119,53 @@ def get_hmdb(db_meta: pd.core.series.Serie) -> dict:
     return dict()
 
 
-def get_biocyc(db_meta: pd.core.series.Serie) -> dict:
+def get_vmh(metabolite: Metabolite) -> dict:
+    """Get the metabolite metdata from local HMDB
+
+    Args:
+        db_meta (pandas row): pandas row matching metabolite to external links
+
+    Returns:
+        dict: metabolite properties
+    """
+    if metabolite.id.endswith(f"_{metabolite.compartment}"):
+        bigg_id = "_".join(metabolite.id.split("_")[:-1])
+    elif metabolite.id.endswith(f"[{metabolite.compartment}]"):
+        bigg_id = metabolite.id.split("[")[0]
+    else:
+        bigg_id = metabolite.id
+
+    vmh_page = requests.get(
+        f"https://www.vmh.life/_api/metabolites/?abbreviation={bigg_id}&format=json"
+    ).json()
+    try:
+        meta_dict = dict()
+        assert len(vmh_page["results"]) == 1
+        for key in (
+            "charge",
+            "avgmolweight",
+            "monoisotopicweight",
+            "biggId",
+            "keggId",
+            "pubChemId",
+            "cheBlId",
+            "chembl",
+            "inchiString",
+            "inchiKey",
+            "hmdb",
+            "food_db",
+            "biocyc",
+            "drugbank",
+        ):
+
+            meta_dict[f"vmh_{key}"] = vmh_page["results"][0].get(key, None)
+        meta_dict["vmh_smiles"] = vmh_page["results"][0]["smile"]
+        return meta_dict
+    except:
+        return dict()
+
+
+def get_biocyc(db_meta: pd.Series) -> dict:
     """Get the metabolite metdata from BioCyc website
 
     Args:
@@ -148,7 +193,7 @@ def get_biocyc(db_meta: pd.core.series.Serie) -> dict:
     return dict()
 
 
-def get_kegg(db_meta: pd.core.series.Serie) -> dict:
+def get_kegg(db_meta: pd.Series) -> dict:
     """Get the metabolite metdata from KEGG website
 
     Args:
@@ -211,7 +256,7 @@ def get_kegg(db_meta: pd.core.series.Serie) -> dict:
     return dict()
 
 
-def get_pubchem(db_meta: pd.core.series.Serie) -> dict:
+def get_pubchem(db_meta: pd.Series) -> dict:
     """Get the metabolite metdata from PubChem website based on Inchi Key
 
     Args:
@@ -330,6 +375,7 @@ def link_metabolite_to_db(metabolite: Metabolite) -> dict:
         - MetaNetX
         - HMDB
         - BioCyc
+        - VMH
         - KEGG
         - PubChem
         - ChEBI DB Search
@@ -348,7 +394,11 @@ def link_metabolite_to_db(metabolite: Metabolite) -> dict:
 
     if not any("smiles" in k for k in meta_dict.keys()):
         # Try MetaNetX
-        meta_dict.update(get_from_metanetx(db_meta))
+        meta_dict.update(get_metanetx(db_meta))
+
+    if not any("smiles" in k for k in meta_dict.keys()):
+        # Try VMH
+        meta_dict.update(get_vmh(metabolite))
 
     if not any("smiles" in k for k in meta_dict.keys()):
         # Try BioCyc
@@ -368,9 +418,10 @@ def link_metabolite_to_db(metabolite: Metabolite) -> dict:
 
     # standardize SMILES
     if any("smiles" in k for k in meta_dict.keys()):
-        m = Chem.MolFromSmiles(meta_dict["smiles"])
-        smile = Chem.MolToSmiles(m)
-        meta_dict["smiles"] = smile
+        smiles_key = [k for k in meta_dict.keys() if "smiles" in k][0]
+        meta_dict["smiles"] = Chem.CanonSmiles(meta_dict[smiles_key])
+    else:
+        meta_dict["smiles"] = None
 
     return meta_dict
 
@@ -383,7 +434,7 @@ if __name__ == "__main__":
     chebi_service = ChEBI()
     uniprot_service = UniProt()
 
-    dataset = defaultdict(list)
+    dataset = []
 
     model = load_matlab_model(
         f"/Mounts/rbg-storage1/datasets/Metabo/BiGG/{args.organism_name}.mat"
@@ -461,4 +512,7 @@ if __name__ == "__main__":
 
         dataset.append(rxn_dict)
 
-json.dump(dataset, open(args.save_dir, "w"))
+    json.dump(
+        dataset,
+        open(os.path.join(args.save_dir, f"{args.organism_name}_dataset.json"), "w"),
+    )
