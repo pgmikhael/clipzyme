@@ -220,7 +220,7 @@ class IndRelLinkPredDataset(InMemoryDataset, AbstractDataset):
         if self.args.dataset_variant == "FB15k-237":
             data = self.data.data
             if self.split_group == "train":
-                self.data = Data(
+                self.split_graph = Data(
                     edge_index=data.edge_index,
                     edge_type=data.edge_type,
                     num_nodes=data.num_nodes,
@@ -228,7 +228,7 @@ class IndRelLinkPredDataset(InMemoryDataset, AbstractDataset):
                     target_edge_type=data.train_edge_type,
                 )
             elif self.split_group == "dev":
-                self.data = Data(
+                self.split_graph = Data(
                     edge_index=data.edge_index,
                     edge_type=data.edge_type,
                     num_nodes=data.num_nodes,
@@ -236,7 +236,7 @@ class IndRelLinkPredDataset(InMemoryDataset, AbstractDataset):
                     target_edge_type=data.valid_edge_type,
                 )
             elif self.split_group == "test":
-                self.data = Data(
+                self.split_graph = Data(
                     edge_index=data.edge_index,
                     edge_type=data.edge_type,
                     num_nodes=data.num_nodes,
@@ -257,52 +257,56 @@ class IndRelLinkPredDataset(InMemoryDataset, AbstractDataset):
             edge_type = data.edge_type[data.train_mask]
             edge_index = torch.cat([edge_index, edge_index.flip(0)], dim=-1)
             edge_type = torch.cat([edge_type, edge_type + num_relations])
-            self.data = Data(
-                edge_index=edge_index,
-                edge_type=edge_type,
-                num_nodes=num_nodes,
-                target_edge_index=data.edge_index[:, data.train_mask],
-                target_edge_type=data.edge_type[data.train_mask],
-            )
-            self.data = Data(
-                edge_index=edge_index,
-                edge_type=edge_type,
-                num_nodes=num_nodes,
-                target_edge_index=data.edge_index[:, data.val_mask],
-                target_edge_type=data.edge_type[data.val_mask],
-            )
-            self.data = Data(
-                edge_index=edge_index,
-                edge_type=edge_type,
-                num_nodes=num_nodes,
-                target_edge_index=data.edge_index[:, data.test_mask],
-                target_edge_type=data.edge_type[data.test_mask],
-            )
             if self.split_group == "train":
-                sample["graph"] = self.train_data
+                self.split_graph = Data(
+                    edge_index=edge_index,
+                    edge_type=edge_type,
+                    num_nodes=num_nodes,
+                    target_edge_index=data.edge_index[:, data.train_mask],
+                    target_edge_type=data.edge_type[data.train_mask],
+                )
             elif self.split_group == "dev":
-                sample["graph"] = self.valid_data
+                self.split_graph = Data(
+                    edge_index=edge_index,
+                    edge_type=edge_type,
+                    num_nodes=num_nodes,
+                    target_edge_index=data.edge_index[:, data.val_mask],
+                    target_edge_type=data.edge_type[data.val_mask],
+                )
             elif self.split_group == "test":
-                sample["graph"] = self.test_data
+                self.split_graph = Data(
+                    edge_index=edge_index,
+                    edge_type=edge_type,
+                    num_nodes=num_nodes,
+                    target_edge_index=data.edge_index[:, data.test_mask],
+                    target_edge_type=data.edge_type[data.test_mask],
+                )
             else:
                 raise ValueError(f"Invalid split group: {self.split_group}")
-
+            
         else:
             raise ValueError("Unknown dataset `%s`" % self.args.dataset_variant)
 
 
-        sample["graph"] = self.data
-
+        # set data attributes
         self.data.num_relations = num_relations * 2
-       
+
+        self.filtered_data = Data(
+            edge_index=self.data.target_edge_index,
+            edge_type=self.data.target_edge_type,
+        )
+        
         triplets = torch.cat(
             [
-                sample["graph"].target_edge_index,
-                sample["graph"].target_edge_type.unsqueeze(0),
+                self.split_graph.target_edge_index,
+                self.split_graph.target_edge_type.unsqueeze(0),
             ]
         ).t()
+        
+        # make triplets
         for i,t in enumerate(triplets):
             dataset.append({"triplet": t})
+
         return dataset
 
 
@@ -330,5 +334,21 @@ class IndRelLinkPredDataset(InMemoryDataset, AbstractDataset):
         
         item = self.dataset[index]
         item["graph"] =  self.data
+        item["filtered_data"] = self.filtered_data
         return item
 
+    @staticmethod
+    def add_args(parser):
+        super(IndRelLinkPredDataset,IndRelLinkPredDataset).add_args(parser)
+        parser.add_argument(
+            "--num_negative",
+            type=int,
+            default=32,
+            description="number of negative samples to use",
+        )
+        parser.add_argument(
+            "--strict_negative",
+             action="store_true",
+            default=False,
+            description="whether to only consider samples with known no edges as negative examples",
+        )
