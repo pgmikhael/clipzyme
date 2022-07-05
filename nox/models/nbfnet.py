@@ -6,7 +6,7 @@ from torch import nn, autograd
 from torch_scatter import scatter_add
 
 from nox.utils.registry import register_object
-from nox.models.nbf import gen_rel_conv_layer, nbf_utils
+from nox.utils.nbf import gen_rel_conv_layer, nbf_utils
 from nox.models.abstract import AbstractModel
 
 
@@ -18,6 +18,8 @@ class NBFNet(AbstractModel):
         Code Adapted from: https://github.com/KiddoZhu/NBFNet-PyG
         """
         super(NBFNet, self).__init__()
+        self.num_negative = args.num_negative
+        self.strict_negative = args.strict_negative
 
         if not isinstance(hidden_dims, Sequence):
             hidden_dims = [hidden_dims]
@@ -155,8 +157,14 @@ class NBFNet(AbstractModel):
             "edge_weights": edge_weights,
         }
 
-    def forward(self, data, batch):
-        h_index, t_index, r_index = batch.unbind(-1)
+    def forward(self, batch):
+        # get full graph data
+        data = batch["graph"]
+        
+        # sample negatives
+        batch_with_negatives = batch["triplet"]
+        
+        h_index, t_index, r_index = batch_with_negatives.unbind(-1)
         if self.training:
             # Edge dropout in the training mode
             # here we want to remove immediate edges (head, relation, tail) from the edge_index and edge_types
@@ -185,7 +193,9 @@ class NBFNet(AbstractModel):
         # probability logit for each tail node in the batch
         # (batch_size, num_negative + 1, dim) -> (batch_size, num_negative + 1)
         score = self.mlp(feature).squeeze(-1)
-        return score.view(shape)
+
+        output = {"logit": score.view(shape)}
+        return output
 
     def visualize(self, data, batch):
         assert batch.shape == (1, 3)

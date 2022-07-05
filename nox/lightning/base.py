@@ -100,7 +100,7 @@ class Base(pl.LightningModule, Nox):
 
         return logged_output
 
-    def forward(self, batch, batch_idx):
+    def forward(self, batch, batch_idx=0):
         """
         Forward defines the prediction/inference actions
             Similar to self.step() but also allows for saving predictions and hiddens
@@ -114,8 +114,9 @@ class Base(pl.LightningModule, Nox):
         """
         logged_output = OrderedDict()
         model_output = self.model(batch)
-        loss, logging_dict, predictions = self.compute_loss(model_output, batch)
-        predictions = self.store_in_predictions(predictions, batch)
+        if not self.args.predict:
+            loss, logging_dict, predictions = self.compute_loss(model_output, batch)
+            predictions = self.store_in_predictions(predictions, batch)
         predictions = self.store_in_predictions(predictions, model_output)
         logged_output["loss"] = loss
         logged_output.update(logging_dict)
@@ -249,7 +250,7 @@ class Base(pl.LightningModule, Nox):
     def compute_metric(self, predictions):
         logging_dict = OrderedDict()
         for metric_fn in self.metrics:
-            l_dict = metric_fn(predictions, self.args)
+            l_dict = metric_fn(predictions, self, self.args)
             logging_dict.update(l_dict)
         return logging_dict
 
