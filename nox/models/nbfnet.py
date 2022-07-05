@@ -3,43 +3,38 @@ from collections.abc import Sequence
 
 import torch
 from torch import nn, autograd
-
 from torch_scatter import scatter_add
-from . import gen_rel_conv_layer, nbf_tasks
+
+from nox.utils.registry import register_object
+from nox.models.nbf import gen_rel_conv_layer, nbf_utils
+from nox.models.abstract import AbstractModel
 
 
-class NBFNet(nn.Module):
-    def __init__(
-        self,
-        input_dim,
-        hidden_dims,
-        num_relation,
-        message_func="distmult",
-        aggregate_func="pna",
-        short_cut=False,
-        layer_norm=False,
-        activation="relu",
-        concat_hidden=False,
-        num_mlp_layer=2,
-        dependent=True,
-        remove_one_hop=False,
-        num_beam=10,
-        path_topk=10,
-    ):
+@register_object("nbfnet", "model")
+class NBFNet(AbstractModel):
+    def __init__(self, args) -> None:
+        """
+        Initialize a Neural-Bellman Ford Model
+        Code Adapted from: https://github.com/KiddoZhu/NBFNet-PyG
+        """
         super(NBFNet, self).__init__()
 
         if not isinstance(hidden_dims, Sequence):
             hidden_dims = [hidden_dims]
 
-        self.dims = [input_dim] + list(hidden_dims)
-        self.num_relation = num_relation
+        self.dims = [args.input_dim] + list(hidden_dims)
+        self.num_relation = args.num_relation
         self.short_cut = (
-            short_cut  # whether to use residual connections between GNN layers
+            args.short_cut  # whether to use residual connections between GNN layers
         )
-        self.concat_hidden = concat_hidden  # whether to compute final states as a function of all layer outputs or last
-        self.remove_one_hop = remove_one_hop  # whether to dynamically remove one-hop edges from edge_index
-        self.num_beam = num_beam
-        self.path_topk = path_topk
+        self.concat_hidden = (
+            args.concat_hidden
+        )  # whether to compute final states as a function of all layer outputs or last
+        self.remove_one_hop = (
+            args.remove_one_hop
+        )  # whether to dynamically remove one-hop edges from edge_index
+        self.num_beam = args.num_beam
+        self.path_topk = args.path_topk
 
         self.layers = nn.ModuleList()
         for i in range(len(self.dims) - 1):
@@ -47,26 +42,26 @@ class NBFNet(nn.Module):
                 gen_rel_conv_layer.GeneralizedRelationalConv(
                     self.dims[i],
                     self.dims[i + 1],
-                    num_relation,
+                    args.num_relation,
                     self.dims[0],
-                    message_func,
-                    aggregate_func,
-                    layer_norm,
-                    activation,
-                    dependent,
+                    args.message_func,
+                    args.aggregate_func,
+                    args.layer_norm,
+                    args.activation_func,
+                    args.dependent,
                 )
             )
 
         feature_dim = (
-            sum(hidden_dims) if concat_hidden else hidden_dims[-1]
-        ) + input_dim
+            sum(hidden_dims) if args.concat_hidden else hidden_dims[-1]
+        ) + args.input_dim
 
         # additional relation embedding which serves as an initial 'query' for the NBFNet forward pass
         # each layer has its own learnable relations matrix, so we send the total number of relations, too
-        self.query = nn.Embedding(num_relation, input_dim)
+        self.query = nn.Embedding(args.num_relation, args.input_dim)
         self.mlp = nn.Sequential()
         mlp = []
-        for i in range(num_mlp_layer - 1):
+        for i in range(args.num_mlp_layer - 1):
             mlp.append(nn.Linear(feature_dim, feature_dim))
             mlp.append(nn.ReLU())
         mlp.append(nn.Linear(feature_dim, 1))
@@ -82,15 +77,15 @@ class NBFNet(nn.Module):
             # we remove all existing immediate edges between heads and tails in the batch
             edge_index = data.edge_index
             easy_edge = torch.stack([h_index_ext, t_index_ext]).flatten(1)
-            index = nbf_tasks.edge_match(edge_index, easy_edge)[0]
-            mask = ~index_to_mask(index, data.num_edges)
+            index = nbf_utils.edge_match(edge_index, easy_edge)[0]
+            mask = ~nbf_utils.index_to_mask(index, data.num_edges)
         else:
             # we remove existing immediate edges between heads and tails in the batch with the given relation
             edge_index = torch.cat([data.edge_index, data.edge_type.unsqueeze(0)])
             # note that here we add relation types r_index_ext to the matching query
             easy_edge = torch.stack([h_index_ext, t_index_ext, r_index_ext]).flatten(1)
-            index = nbf_tasks.edge_match(edge_index, easy_edge)[0]
-            mask = ~index_to_mask(index, data.num_edges)
+            index = nbf_utils.edge_match(edge_index, easy_edge)[0]
+            mask = ~nbf_utils.index_to_mask(index, data.num_edges)
 
         data = copy.copy(data)
         data.edge_index = data.edge_index[:, mask]
@@ -259,7 +254,7 @@ class NBFNet(nn.Module):
             message = message[order].flatten()  # (num_edges * num_beam)
             msg_source = msg_source[order].flatten(0, -2)  # (num_edges * num_beam, 4)
             size = node_out.bincount(minlength=num_nodes)
-            msg2out = size_to_index(size[node_out_set] * num_beam)
+            msg2out = nbf_utils.size_to_index(size[node_out_set] * num_beam)
             # deduplicate messages that are from the same source and the same beam
             is_duplicate = (msg_source[1:] == msg_source[:-1]).all(dim=-1)
             is_duplicate = torch.cat(
@@ -273,7 +268,7 @@ class NBFNet(nn.Module):
             if not torch.isinf(message).all():
                 # take the topk messages from the neighborhood
                 # distance: (len(node_out_set) * num_beam)
-                distance, rel_index = scatter_topk(message, size, k=num_beam)
+                distance, rel_index = nbf_utils.scatter_topk(message, size, k=num_beam)
                 abs_index = rel_index + (size.cumsum(0) - size).unsqueeze(-1)
                 # store msg_source for backtracking
                 back_edge = msg_source[abs_index]  # (len(node_out_set) * num_beam, 4)
@@ -327,79 +322,89 @@ class NBFNet(nn.Module):
 
         return paths, average_lengths
 
-
-def index_to_mask(index, size):
-    index = index.view(-1)
-    size = int(index.max()) + 1 if size is None else size
-    mask = index.new_zeros(size, dtype=torch.bool)
-    mask[index] = True
-    return mask
-
-
-def size_to_index(size):
-    range = torch.arange(len(size), device=size.device)
-    index2sample = range.repeat_interleave(size)
-    return index2sample
-
-
-def multi_slice_mask(starts, ends, length):
-    values = torch.cat([torch.ones_like(starts), -torch.ones_like(ends)])
-    slices = torch.cat([starts, ends])
-    mask = scatter_add(values, slices, dim=0, dim_size=length + 1)[:-1]
-    mask = mask.cumsum(0).bool()
-    return mask
-
-
-def scatter_extend(data, size, input, input_size):
-    new_size = size + input_size
-    new_cum_size = new_size.cumsum(0)
-    new_data = torch.zeros(
-        new_cum_size[-1], *data.shape[1:], dtype=data.dtype, device=data.device
-    )
-    starts = new_cum_size - new_size
-    ends = starts + size
-    index = multi_slice_mask(starts, ends, new_cum_size[-1])
-    new_data[index] = data
-    new_data[~index] = input
-    return new_data, new_size
-
-
-def scatter_topk(input, size, k, largest=True):
-    index2graph = size_to_index(size)
-    index2graph = index2graph.view([-1] + [1] * (input.ndim - 1))
-
-    mask = ~torch.isinf(input)
-    max = input[mask].max().item()
-    min = input[mask].min().item()
-    safe_input = input.clamp(2 * min - max, 2 * max - min)
-    offset = (max - min) * 4
-    if largest:
-        offset = -offset
-    input_ext = safe_input + offset * index2graph
-    index_ext = input_ext.argsort(dim=0, descending=largest)
-    num_actual = size.clamp(max=k)
-    num_padding = k - num_actual
-    starts = size.cumsum(0) - size
-    ends = starts + num_actual
-    mask = multi_slice_mask(starts, ends, len(index_ext)).nonzero().flatten()
-
-    if (num_padding > 0).any():
-        # special case: size < k, pad with the last valid index
-        padding = ends - 1
-        padding2graph = size_to_index(num_padding)
-        mask = scatter_extend(mask, num_actual, padding[padding2graph], num_padding)[0]
-
-    index = index_ext[mask]  # (N * k, ...)
-    value = input.gather(0, index)
-    if isinstance(k, torch.Tensor) and k.shape == size.shape:
-        value = value.view(-1, *input.shape[1:])
-        index = index.view(-1, *input.shape[1:])
-        index = index - (size.cumsum(0) - size).repeat_interleave(k).view(
-            [-1] + [1] * (index.ndim - 1)
+    @staticmethod
+    def add_args(parser) -> None:
+        parser.add_argument(
+            "--input_dim", type=int, default=32, description="size of input features"
         )
-    else:
-        value = value.view(-1, k, *input.shape[1:])
-        index = index.view(-1, k, *input.shape[1:])
-        index = index - (size.cumsum(0) - size).view([-1] + [1] * (index.ndim - 1))
-
-    return value, index
+        parser.add_argument(
+            "--hidden_dims",
+            type=int,
+            nargs="*",
+            default=[32, 32, 32, 32, 32, 32],
+            description="size of hidden dimensions features",
+        )
+        parser.add_argument(
+            "--num_relation",
+            type=int,
+            default=None,
+            description="number of relationships existing in the dataset",
+        )
+        parser.add_argument(
+            "--message_func",
+            type=str,
+            choices=["transe", "distmult", "rotate"],
+            default="distmult",
+            description="name of message function. one of [transe, distmult, rotate]",
+        )
+        parser.add_argument(
+            "--aggregate_func",
+            type=str,
+            choices=["sum", "mean", "max", "pna"],
+            default="pna",
+            description="name of message function. one of [sum, mean, max, pna]",
+        )
+        parser.add_argument(
+            "--short_cut",
+            action="store_true",
+            default=False,
+            description="whether to use skip connections",
+        )
+        parser.add_argument(
+            "--layer_norm",
+            action="store_true",
+            default=False,
+            description="whether to user layer normalization",
+        )
+        parser.add_argument(
+            "--activation_func",
+            type=str,
+            default="relu",
+            description="name of torch.nn.functional activation function",
+        )
+        parser.add_argument(
+            "--concat_hidden",
+            action="store_true",
+            default=False,
+            description="whether to concatenate hiddens of different layers",
+        )
+        parser.add_argument(
+            "--num_mlp_layer",
+            type=int,
+            default=2,
+            description="number of MLP layers",
+        )
+        parser.add_argument(
+            "--dependent",
+            action="store_true",
+            default=False,
+            description="whether to make relation embedding a projection of existing query or a learned embedding",
+        )
+        parser.add_argument(
+            "--remove_one_hop",
+            action="store_true",
+            default=False,
+            description="whether to remove all existing immediate edges between heads and tails in the batch",
+        )
+        parser.add_argument(
+            "--num_beam",
+            type=int,
+            default=10,
+            description="beam search the top-k distance from h to t (and to every other node)",
+        )
+        parser.add_argument(
+            "--path_topk",
+            type=int,
+            default=10,
+            description="number of paths to use to obtain average length of the top-k paths",
+        )

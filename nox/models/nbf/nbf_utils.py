@@ -1,5 +1,5 @@
 from functools import reduce
-
+from torch_scatter import scatter_add
 import torch
 
 
@@ -45,7 +45,7 @@ def negative_sampling(data, batch, num_negative, strict=True):
     # strict negative sampling vs random negative sampling
     if strict:
         t_mask, h_mask = strict_negative_mask(data, batch)
-        t_mask = t_mask[:batch_size // 2]
+        t_mask = t_mask[: batch_size // 2]
         neg_t_candidate = t_mask.nonzero()[:, 1]
         num_t_candidate = t_mask.sum(dim=-1)
         # draw samples for negative tails
@@ -54,7 +54,7 @@ def negative_sampling(data, batch, num_negative, strict=True):
         index = index + (num_t_candidate.cumsum(0) - num_t_candidate).unsqueeze(-1)
         neg_t_index = neg_t_candidate[index]
 
-        h_mask = h_mask[batch_size // 2:]
+        h_mask = h_mask[batch_size // 2 :]
         neg_h_candidate = h_mask.nonzero()[:, 1]
         num_h_candidate = h_mask.sum(dim=-1)
         # draw samples for negative heads
@@ -63,14 +63,19 @@ def negative_sampling(data, batch, num_negative, strict=True):
         index = index + (num_h_candidate.cumsum(0) - num_h_candidate).unsqueeze(-1)
         neg_h_index = neg_h_candidate[index]
     else:
-        neg_index = torch.randint(data.num_nodes, (batch_size, num_negative), device=batch.device)
-        neg_t_index, neg_h_index = neg_index[:batch_size // 2], neg_index[batch_size // 2:]
+        neg_index = torch.randint(
+            data.num_nodes, (batch_size, num_negative), device=batch.device
+        )
+        neg_t_index, neg_h_index = (
+            neg_index[: batch_size // 2],
+            neg_index[batch_size // 2 :],
+        )
 
     h_index = pos_h_index.unsqueeze(-1).repeat(1, num_negative + 1)
     t_index = pos_t_index.unsqueeze(-1).repeat(1, num_negative + 1)
     r_index = pos_r_index.unsqueeze(-1).repeat(1, num_negative + 1)
-    t_index[:batch_size // 2, 1:] = neg_t_index
-    h_index[batch_size // 2:, 1:] = neg_h_index
+    t_index[: batch_size // 2, 1:] = neg_t_index
+    h_index[batch_size // 2 :, 1:] = neg_h_index
 
     return torch.stack([h_index, t_index, r_index], dim=-1)
 
@@ -105,8 +110,12 @@ def strict_negative_mask(data, batch):
     edge_id, num_t_truth = edge_match(edge_index, query_index)
     # build an index from the found edges
     t_truth_index = data.edge_index[1, edge_id]
-    sample_id = torch.arange(len(num_t_truth), device=batch.device).repeat_interleave(num_t_truth)
-    t_mask = torch.ones(len(num_t_truth), data.num_nodes, dtype=torch.bool, device=batch.device)
+    sample_id = torch.arange(len(num_t_truth), device=batch.device).repeat_interleave(
+        num_t_truth
+    )
+    t_mask = torch.ones(
+        len(num_t_truth), data.num_nodes, dtype=torch.bool, device=batch.device
+    )
     # assign 0s to the mask with the found true tails
     t_mask[sample_id, t_truth_index] = 0
     t_mask.scatter_(1, pos_t_index.unsqueeze(-1), 0)
@@ -120,8 +129,12 @@ def strict_negative_mask(data, batch):
     edge_id, num_h_truth = edge_match(edge_index, query_index)
     # build an index from the found edges
     h_truth_index = data.edge_index[0, edge_id]
-    sample_id = torch.arange(len(num_h_truth), device=batch.device).repeat_interleave(num_h_truth)
-    h_mask = torch.ones(len(num_h_truth), data.num_nodes, dtype=torch.bool, device=batch.device)
+    sample_id = torch.arange(len(num_h_truth), device=batch.device).repeat_interleave(
+        num_h_truth
+    )
+    h_mask = torch.ones(
+        len(num_h_truth), data.num_nodes, dtype=torch.bool, device=batch.device
+    )
     # assign 0s to the mask with the found true heads
     h_mask[sample_id, h_truth_index] = 0
     h_mask.scatter_(1, pos_h_index.unsqueeze(-1), 0)
@@ -138,3 +151,80 @@ def compute_ranking(pred, target, mask=None):
         # unfiltered ranking
         ranking = torch.sum(pos_pred <= pred, dim=-1) + 1
     return ranking
+
+
+def index_to_mask(index, size):
+    index = index.view(-1)
+    size = int(index.max()) + 1 if size is None else size
+    mask = index.new_zeros(size, dtype=torch.bool)
+    mask[index] = True
+    return mask
+
+
+def size_to_index(size):
+    range = torch.arange(len(size), device=size.device)
+    index2sample = range.repeat_interleave(size)
+    return index2sample
+
+
+def multi_slice_mask(starts, ends, length):
+    values = torch.cat([torch.ones_like(starts), -torch.ones_like(ends)])
+    slices = torch.cat([starts, ends])
+    mask = scatter_add(values, slices, dim=0, dim_size=length + 1)[:-1]
+    mask = mask.cumsum(0).bool()
+    return mask
+
+
+def scatter_extend(data, size, input, input_size):
+    new_size = size + input_size
+    new_cum_size = new_size.cumsum(0)
+    new_data = torch.zeros(
+        new_cum_size[-1], *data.shape[1:], dtype=data.dtype, device=data.device
+    )
+    starts = new_cum_size - new_size
+    ends = starts + size
+    index = multi_slice_mask(starts, ends, new_cum_size[-1])
+    new_data[index] = data
+    new_data[~index] = input
+    return new_data, new_size
+
+
+def scatter_topk(input, size, k, largest=True):
+    index2graph = size_to_index(size)
+    index2graph = index2graph.view([-1] + [1] * (input.ndim - 1))
+
+    mask = ~torch.isinf(input)
+    max = input[mask].max().item()
+    min = input[mask].min().item()
+    safe_input = input.clamp(2 * min - max, 2 * max - min)
+    offset = (max - min) * 4
+    if largest:
+        offset = -offset
+    input_ext = safe_input + offset * index2graph
+    index_ext = input_ext.argsort(dim=0, descending=largest)
+    num_actual = size.clamp(max=k)
+    num_padding = k - num_actual
+    starts = size.cumsum(0) - size
+    ends = starts + num_actual
+    mask = multi_slice_mask(starts, ends, len(index_ext)).nonzero().flatten()
+
+    if (num_padding > 0).any():
+        # special case: size < k, pad with the last valid index
+        padding = ends - 1
+        padding2graph = size_to_index(num_padding)
+        mask = scatter_extend(mask, num_actual, padding[padding2graph], num_padding)[0]
+
+    index = index_ext[mask]  # (N * k, ...)
+    value = input.gather(0, index)
+    if isinstance(k, torch.Tensor) and k.shape == size.shape:
+        value = value.view(-1, *input.shape[1:])
+        index = index.view(-1, *input.shape[1:])
+        index = index - (size.cumsum(0) - size).repeat_interleave(k).view(
+            [-1] + [1] * (index.ndim - 1)
+        )
+    else:
+        value = value.view(-1, k, *input.shape[1:])
+        index = index.view(-1, k, *input.shape[1:])
+        index = index - (size.cumsum(0) - size).view([-1] + [1] * (index.ndim - 1))
+
+    return value, index
