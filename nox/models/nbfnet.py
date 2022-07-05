@@ -338,7 +338,7 @@ class NBFNet(AbstractModel):
             "--num_relation",
             type=int,
             default=None,
-            description="number of relationships existing in the dataset",
+            description="number of relationships set by the dataset",
         )
         parser.add_argument(
             "--message_func",

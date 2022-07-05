@@ -65,18 +65,8 @@ class IndRelLinkPredDataset(InMemoryDataset, AbstractDataset):
             return
 
         # self.set_sample_weights(args)
-
+        args.num_relations = self.num_relations
         self.print_summary_statement(self.dataset, split_group)
-
-    def init_class(self, args: argparse.ArgumentParser, split_group: str) -> None:
-        """Perform Class-Specific init methods
-           Default is to load JSON dataset
-
-        Args:
-            args (argparse.ArgumentParser)
-            split_group (str)
-        """
-        self.load_dataset(args)
 
     @property
     def num_relations(self):
@@ -229,39 +219,34 @@ class IndRelLinkPredDataset(InMemoryDataset, AbstractDataset):
         sample = {}
         if self.args.dataset_variant == "FB15k-237":
             data = self.data.data
-            self.train_data = Data(
-                edge_index=data.edge_index,
-                edge_type=data.edge_type,
-                num_nodes=data.num_nodes,
-                target_edge_index=data.train_edge_index,
-                target_edge_type=data.train_edge_type,
-            )
-            self.valid_data = Data(
-                edge_index=data.edge_index,
-                edge_type=data.edge_type,
-                num_nodes=data.num_nodes,
-                target_edge_index=data.valid_edge_index,
-                target_edge_type=data.valid_edge_type,
-            )
-            self.test_data = Data(
-                edge_index=data.edge_index,
-                edge_type=data.edge_type,
-                num_nodes=data.num_nodes,
-                target_edge_index=data.test_edge_index,
-                target_edge_type=data.test_edge_type,
-            )
-
             if self.split_group == "train":
-                sample["graph"] = self.train_data
+                self.data = Data(
+                    edge_index=data.edge_index,
+                    edge_type=data.edge_type,
+                    num_nodes=data.num_nodes,
+                    target_edge_index=data.train_edge_index,
+                    target_edge_type=data.train_edge_type,
+                )
             elif self.split_group == "dev":
-                sample["graph"] = self.valid_data
+                self.data = Data(
+                    edge_index=data.edge_index,
+                    edge_type=data.edge_type,
+                    num_nodes=data.num_nodes,
+                    target_edge_index=data.valid_edge_index,
+                    target_edge_type=data.valid_edge_type,
+                )
             elif self.split_group == "test":
-                sample["graph"] = self.test_data
+                self.data = Data(
+                    edge_index=data.edge_index,
+                    edge_type=data.edge_type,
+                    num_nodes=data.num_nodes,
+                    target_edge_index=data.test_edge_index,
+                    target_edge_type=data.test_edge_type,
+                )
             else:
                 raise ValueError(f"Invalid split group: {self.split_group}")
-            # self.dataset.data, self.dataset.slices = self.dataset.collate(
-            #    [train_data, valid_data, test_data]
-            # )
+           
+            
         elif self.args.dataset_variant == "WN18RR":
             # dataset = WordNet18RR(**cfg.dataset)
             # convert wn18rr into the same format as fb15k-237
@@ -272,21 +257,21 @@ class IndRelLinkPredDataset(InMemoryDataset, AbstractDataset):
             edge_type = data.edge_type[data.train_mask]
             edge_index = torch.cat([edge_index, edge_index.flip(0)], dim=-1)
             edge_type = torch.cat([edge_type, edge_type + num_relations])
-            self.train_data = Data(
+            self.data = Data(
                 edge_index=edge_index,
                 edge_type=edge_type,
                 num_nodes=num_nodes,
                 target_edge_index=data.edge_index[:, data.train_mask],
                 target_edge_type=data.edge_type[data.train_mask],
             )
-            self.valid_data = Data(
+            self.data = Data(
                 edge_index=edge_index,
                 edge_type=edge_type,
                 num_nodes=num_nodes,
                 target_edge_index=data.edge_index[:, data.val_mask],
                 target_edge_type=data.edge_type[data.val_mask],
             )
-            self.test_data = Data(
+            self.data = Data(
                 edge_index=edge_index,
                 edge_type=edge_type,
                 num_nodes=num_nodes,
@@ -305,26 +290,21 @@ class IndRelLinkPredDataset(InMemoryDataset, AbstractDataset):
         else:
             raise ValueError("Unknown dataset `%s`" % self.args.dataset_variant)
 
-        self.train_data.num_relations = num_relations * 2
-        self.test_data.num_relations = num_relations * 2
-        self.valid_data.num_relations = num_relations * 2
 
+        sample["graph"] = self.data
+
+        self.data.num_relations = num_relations * 2
+       
         triplets = torch.cat(
             [
                 sample["graph"].target_edge_index,
                 sample["graph"].target_edge_type.unsqueeze(0),
             ]
         ).t()
-
-        sample["triplets"] = triplets
-        dataset.append(sample)
+        for i,t in enumerate(triplets):
+            dataset.append({"triplet": t})
         return dataset
 
-    def skip_sample(self, sample) -> bool:
-        """
-        Return True if sample should be skipped and not included in data
-        """
-        return False
 
     @property
     def SUMMARY_STATEMENT(self) -> None:
@@ -336,11 +316,6 @@ class IndRelLinkPredDataset(InMemoryDataset, AbstractDataset):
         summary = f"Contructed {self.split_group} of {self.args.dataset_variant} dataset with length of {len(self.data)}"
         return summary
 
-    def print_summary_statement(self, dataset, split_group):
-        statement = "{} DATASET CREATED FOR {}\n.{}".format(
-            split_group.upper(), self.args.dataset_name.upper(), self.SUMMARY_STATEMENT
-        )
-        print(statement)
 
     def __getitem__(self, index):
         """
@@ -352,92 +327,8 @@ class IndRelLinkPredDataset(InMemoryDataset, AbstractDataset):
         Returns:
             sample (dict): a sample
         """
-        item = {}
-        item["graph"] = self.data
-        return self.dataset[0]
+        
+        item = self.dataset[index]
+        item["graph"] =  self.data
+        return item
 
-    def assign_splits(self, metadata_json) -> None:
-        """
-        Assign samples to data splits
-
-        Args:
-            metadata_json (dict): raw json dataset loaded
-        """
-        # TODO
-        # for idx in range(len(metadata_json)):
-        #     metadata_json[idx]["split"] = np.random.choice(
-        #         ["train", "dev", "test"], p=self.args.split_probs
-        #     )
-
-    @property
-    def DATASET_ITEM_KEYS(self) -> list:
-        """
-        List of keys to be included in sample when being batched
-
-        Returns:
-            list
-        """
-        # TODO
-        # standard = ["sample_id"]
-        # return standard
-
-    @staticmethod
-    def add_args(parser) -> None:
-        """Add class specific args
-
-        Args:
-            parser (argparse.ArgumentParser): argument parser
-        """
-        parser.add_argument(
-            "--class_bal", action="store_true", default=False, help="class balance"
-        )
-        parser.add_argument(
-            "--class_bal_key",
-            type=str,
-            default="y",
-            help="dataset key to use for class balancing",
-        )
-        parser.add_argument(
-            "--dataset_file_path",
-            type=str,
-            default="/Mounts/rbg-storage1/datasets/NLST/full_nlst_google.json",
-            help="Path to dataset file either as json or csv",
-        )
-        parser.add_argument(
-            "--data_dir",
-            type=str,
-            default="/Mounts/rbg-storage1/datasets/NLST/full_nlst_google.json",
-            help="Path to dataset file either as json or csv",
-        )
-        parser.add_argument(
-            "--num_classes", type=int, default=6, help="Number of classes to predict"
-        )
-        # Alternative training/testing schemes
-        parser.add_argument(
-            "--assign_splits",
-            action="store_true",
-            default=False,
-            help="Whether to assign different splits than those predetermined in dataset",
-        )
-        parser.add_argument(
-            "--split_type",
-            type=str,
-            default="random",
-            choices=["random", "institution_split"],
-            help="How to split dataset if assign_split = True. Usage: ['random', 'institution_split'].",
-        )
-        parser.add_argument(
-            "--split_probs",
-            type=float,
-            nargs="+",
-            default=[0.6, 0.2, 0.2],
-            help="Split probs for datasets without fixed train dev test. ",
-        )
-        # loader
-        parser.add_argument(
-            "--input_loader_name",
-            type=str,
-            action=set_nox_type("input_loader"),
-            default="default_image_loader",
-            help="input loader",
-        )

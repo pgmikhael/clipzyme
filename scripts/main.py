@@ -58,16 +58,6 @@ def cli_main(args):
 
     # add callbacks
     trainer.callbacks = set_callbacks(trainer, args)
-    """
-    # add ray plugin
-    trainer.plugins = [
-        RayPlugin(
-            num_workers=args.num_workers,
-            cpus_per_worker=1,
-            use_gpu=args.accelerator == "ddp",
-        )
-    ]
-    """
 
     # train model
     if args.train:
