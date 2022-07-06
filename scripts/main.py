@@ -34,7 +34,6 @@ def cli_main(args):
     if args.logger_name:
         trainer.logger = get_object(args.logger_name, "logger")(args)
 
-
     repo = git.Repo(search_parent_directories=True)
     commit = repo.head.object
     log.info(

@@ -586,8 +586,8 @@ def get_parser():
         "--logger_name",
         type=str,
         action=set_nox_type("logger"),
-        default=None,
-        help="List of tags for comet logger",
+        default="tensorboard",
+        help="experiment logger to use",
     )
 
     # comet
