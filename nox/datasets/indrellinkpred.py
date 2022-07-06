@@ -207,91 +207,15 @@ class IndRelLinkPredDataset(InMemoryDataset, AbstractDataset):
         Creates the dataset
         """
         dataset = []
-        sample = {}
-        if self.args.dataset_variant == "FB15k-237":
-            dataset = RelLinkPredDataset(
-                root=self.args.data_dir,
-                name=self.args.dataset_variant,
-                transform=None,
-                pre_transform=None,
-            )
-            data = dataset.data
-            if self.split_group == "train":
-                self.split_graph = Data(
-                    edge_index=data.edge_index,
-                    edge_type=data.edge_type,
-                    num_nodes=data.num_nodes,
-                    target_edge_index=data.train_edge_index,
-                    target_edge_type=data.train_edge_type,
-                )
-            elif self.split_group == "dev":
-                self.split_graph = Data(
-                    edge_index=data.edge_index,
-                    edge_type=data.edge_type,
-                    num_nodes=data.num_nodes,
-                    target_edge_index=data.valid_edge_index,
-                    target_edge_type=data.valid_edge_type,
-                )
-            elif self.split_group == "test":
-                self.split_graph = Data(
-                    edge_index=data.edge_index,
-                    edge_type=data.edge_type,
-                    num_nodes=data.num_nodes,
-                    target_edge_index=data.test_edge_index,
-                    target_edge_type=data.test_edge_type,
-                )
-            else:
-                raise ValueError(f"Invalid split group: {self.split_group}")
 
-        elif self.args.dataset_variant == "WN18RR":
-            dataset = WordNet18RR(
-                root=self.args.data_dir, transform=None, pre_transform=None
-            )
-            # convert wn18rr into the same format as fb15k-237
-            data = self.data.data
-            num_nodes = int(data.edge_index.max()) + 1
-            num_relations = int(data.edge_type.max()) + 1
-            edge_index = data.edge_index[:, data.train_mask]
-            edge_type = data.edge_type[data.train_mask]
-            edge_index = torch.cat([edge_index, edge_index.flip(0)], dim=-1)
-            edge_type = torch.cat([edge_type, edge_type + num_relations])
-            if self.split_group == "train":
-                self.split_graph = Data(
-                    edge_index=edge_index,
-                    edge_type=edge_type,
-                    num_nodes=num_nodes,
-                    target_edge_index=data.edge_index[:, data.train_mask],
-                    target_edge_type=data.edge_type[data.train_mask],
-                )
-            elif self.split_group == "dev":
-                self.split_graph = Data(
-                    edge_index=edge_index,
-                    edge_type=edge_type,
-                    num_nodes=num_nodes,
-                    target_edge_index=data.edge_index[:, data.val_mask],
-                    target_edge_type=data.edge_type[data.val_mask],
-                )
-            elif self.split_group == "test":
-                self.split_graph = Data(
-                    edge_index=edge_index,
-                    edge_type=edge_type,
-                    num_nodes=num_nodes,
-                    target_edge_index=data.edge_index[:, data.test_mask],
-                    target_edge_type=data.edge_type[data.test_mask],
-                )
-            else:
-                raise ValueError(f"Invalid split group: {self.split_group}")
-
+        if self.split_group == "train":
+            self.split_graph = self[0]
+        elif self.split_group == "dev":
+            self.split_graph = self[1]
+        elif self.split_group == "test":
+            self.split_graph = self[2]
         else:
-            raise ValueError("Unknown dataset `%s`" % self.args.dataset_variant)
-
-        # set data attributes
-        self.data.num_relations = num_relations * 2
-
-        self.filtered_data = Data(
-            edge_index=self.data.target_edge_index,
-            edge_type=self.data.target_edge_type,
-        )
+            raise ValueError(f"Invalid split group: {self.split_group}")
 
         triplets = torch.cat(
             [
