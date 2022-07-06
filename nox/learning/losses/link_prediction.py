@@ -7,7 +7,7 @@ import pdb
 from nox.utils.classes import Nox
 
 
-@register_object("cross_entropy", "loss")
+@register_object("linkpredictionloss", "loss")
 class LinkPredictionLoss(Nox):
     def __init__(self) -> None:
         super().__init__()
@@ -15,19 +15,21 @@ class LinkPredictionLoss(Nox):
     def __call__(self, model_output, batch, model, args):
         logging_dict, predictions = OrderedDict(), OrderedDict()
         logit = model_output["logit"]
-        
+
         # first column is positive examples and all others are negative examples
-        target = torch.zeros_like(pred)
+        target = torch.zeros_like(logit)
         target[:, 0] = 1
-        
+
         # calculate loss
-        loss = F.binary_cross_entropy_with_logits(pred, target, reduction="none")
+        loss = F.binary_cross_entropy_with_logits(logit, target, reduction="none")
 
         # attention weight over negative examples
-        neg_weight = torch.ones_like(pred)
+        neg_weight = torch.ones_like(logit)
         if args.adversarial_temperature > 0:
             with torch.no_grad():
-                neg_weight[:, 1:] = F.softmax(pred[:, 1:] / args.adversarial_temperature, dim=-1)
+                neg_weight[:, 1:] = F.softmax(
+                    logit[:, 1:] / args.adversarial_temperature, dim=-1
+                )
         else:
             neg_weight[:, 1:] = 1 / args.num_negative
 
