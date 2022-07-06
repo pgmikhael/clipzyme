@@ -48,8 +48,8 @@
     "dataset_version":["v1"],
     "num_negative": [32],
     "strict_negative":[true],
-    "adversarial_temperature": [0.5]
+    "adversarial_temperature": [0.5],
+    "data_dir": ["/Mounts/rbg-storage1/datasets/Metabo/pyg_datasets/"]
   },
-  
   "available_gpus": ["0,1,2,3,4,5,6,7"]
 }
