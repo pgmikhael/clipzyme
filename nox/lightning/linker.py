@@ -5,7 +5,7 @@ import numpy as np
 from collections import OrderedDict
 import pickle
 import os
-from nox.lightning import Base
+from nox.lightning.base import Base
 from nox.utils.registry import get_object, register_object
 from nox.utils.classes import Nox, set_nox_type
 from nox.utils.nbf import nbf_utils

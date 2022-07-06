@@ -1,6 +1,6 @@
 {
   "script": "main",
-  "grid_search_space": {
+  "cartesian_hyperparams": {
     "batch_size": [64],
     "accumulate_grad_batches": [1],
     "precision": [16],

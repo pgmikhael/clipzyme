@@ -4,7 +4,7 @@ import os
 import torch
 
 from nox.utils.registry import register_object
-from nox.datasets import AbstractDataset
+from nox.datasets.abstract import AbstractDataset
 
 from torch_geometric.data import InMemoryDataset, Data, download_url
 from torch_geometric.datasets import RelLinkPredDataset, WordNet18RR
@@ -35,7 +35,9 @@ class IndRelLinkPredDataset(InMemoryDataset, AbstractDataset):
 
         constructs: standard pytorch Dataset obj, which can be fed in a DataLoader for batching
         """
-        super(IndRelLinkPredDataset, self).__init__()
+        # super(IndRelLinkPredDataset, self).__init__()
+
+        InMemoryDataset.__init__(self, root=args.data_dir)
 
         self.split_group = split_group
         self.args = args
