@@ -46,9 +46,9 @@ class IndRelLinkPredDataset(AbstractDataset, InMemoryDataset):
         assert self.version in ["v1", "v2", "v3", "v4"]
         InMemoryDataset.__init__(self, root=args.data_dir)
 
-        self.init_class(args, split_group)
+        InMemoryDataset.__init__(self, root = args.data_dir)
 
-        # self.input_loader = get_sample_loader(split_group, args)
+        self.init_class(args, split_group)
 
         self.dataset = self.create_dataset(split_group)
         if len(self.dataset) == 0:
@@ -57,6 +57,9 @@ class IndRelLinkPredDataset(AbstractDataset, InMemoryDataset):
         # self.set_sample_weights(args)
         args.num_relations = self.num_relations
         self.print_summary_statement(self.dataset, split_group)
+    
+    def init_class(self, args: argparse.ArgumentParser, split_group: str) -> None:
+        self.load_dataset(args)
 
     @property
     def num_relations(self):
