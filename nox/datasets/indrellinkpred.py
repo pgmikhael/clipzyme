@@ -1,4 +1,5 @@
 import argparse
+import copy
 from typing import List, Literal
 import os
 import torch
@@ -8,7 +9,8 @@ from nox.datasets.abstract import AbstractDataset
 
 from torch_geometric.data import InMemoryDataset, Data, download_url
 from torch_geometric.datasets import RelLinkPredDataset, WordNet18RR
-from nox.utils.classes import Nox
+from torch_geometric.data.separate import separate
+
 
 @register_object("ind_rel_link_pred", "dataset")
 class IndRelLinkPredDataset(AbstractDataset, InMemoryDataset):
@@ -42,6 +44,7 @@ class IndRelLinkPredDataset(AbstractDataset, InMemoryDataset):
         self.version = args.dataset_version
         assert self.name in ["FB15k-237", "WN18RR"]
         assert self.version in ["v1", "v2", "v3", "v4"]
+        InMemoryDataset.__init__(self, root=args.data_dir)
 
         InMemoryDataset.__init__(self, root = args.data_dir)
 
@@ -206,91 +209,15 @@ class IndRelLinkPredDataset(AbstractDataset, InMemoryDataset):
         Creates the dataset
         """
         dataset = []
-        sample = {}
-        if self.args.dataset_variant == "FB15k-237":
-            dataset = RelLinkPredDataset(
-                root=self.args.data_dir,
-                name=self.args.dataset_variant,
-                transform=None,
-                pre_transform=None,
-            )
-            data = dataset.data
-            if self.split_group == "train":
-                self.split_graph = Data(
-                    edge_index=data.edge_index,
-                    edge_type=data.edge_type,
-                    num_nodes=data.num_nodes,
-                    target_edge_index=data.train_edge_index,
-                    target_edge_type=data.train_edge_type,
-                )
-            elif self.split_group == "dev":
-                self.split_graph = Data(
-                    edge_index=data.edge_index,
-                    edge_type=data.edge_type,
-                    num_nodes=data.num_nodes,
-                    target_edge_index=data.valid_edge_index,
-                    target_edge_type=data.valid_edge_type,
-                )
-            elif self.split_group == "test":
-                self.split_graph = Data(
-                    edge_index=data.edge_index,
-                    edge_type=data.edge_type,
-                    num_nodes=data.num_nodes,
-                    target_edge_index=data.test_edge_index,
-                    target_edge_type=data.test_edge_type,
-                )
-            else:
-                raise ValueError(f"Invalid split group: {self.split_group}")
 
-        elif self.args.dataset_variant == "WN18RR":
-            dataset = WordNet18RR(
-                root=self.args.data_dir, transform=None, pre_transform=None
-            )
-            # convert wn18rr into the same format as fb15k-237
-            data = self.data.data
-            num_nodes = int(data.edge_index.max()) + 1
-            num_relations = int(data.edge_type.max()) + 1
-            edge_index = data.edge_index[:, data.train_mask]
-            edge_type = data.edge_type[data.train_mask]
-            edge_index = torch.cat([edge_index, edge_index.flip(0)], dim=-1)
-            edge_type = torch.cat([edge_type, edge_type + num_relations])
-            if self.split_group == "train":
-                self.split_graph = Data(
-                    edge_index=edge_index,
-                    edge_type=edge_type,
-                    num_nodes=num_nodes,
-                    target_edge_index=data.edge_index[:, data.train_mask],
-                    target_edge_type=data.edge_type[data.train_mask],
-                )
-            elif self.split_group == "dev":
-                self.split_graph = Data(
-                    edge_index=edge_index,
-                    edge_type=edge_type,
-                    num_nodes=num_nodes,
-                    target_edge_index=data.edge_index[:, data.val_mask],
-                    target_edge_type=data.edge_type[data.val_mask],
-                )
-            elif self.split_group == "test":
-                self.split_graph = Data(
-                    edge_index=edge_index,
-                    edge_type=edge_type,
-                    num_nodes=num_nodes,
-                    target_edge_index=data.edge_index[:, data.test_mask],
-                    target_edge_type=data.edge_type[data.test_mask],
-                )
-            else:
-                raise ValueError(f"Invalid split group: {self.split_group}")
-
+        if self.split_group == "train":
+            self.split_graph = self.seperate_collated_data(0)
+        elif self.split_group == "dev":
+            self.split_graph = self.seperate_collated_data(1)
+        elif self.split_group == "test":
+            self.split_graph = self.seperate_collated_data(2)
         else:
-            raise ValueError("Unknown dataset `%s`" % self.args.dataset_variant)
-
-        # set data attributes
-        self.data.num_relations = num_relations * 2
-
-        self.filtered_data = Data(
-            edge_index=self.data.target_edge_index,
-            edge_type=self.data.target_edge_type,
-        )
+            raise ValueError(f"Invalid split group: {self.split_group}")
 
         triplets = torch.cat(
             [
@@ -304,6 +231,27 @@ class IndRelLinkPredDataset(AbstractDataset, InMemoryDataset):
             dataset.append({"triplet": t})
 
         return dataset
+
+    def seperate_collated_data(self, idx: int) -> Data:
+        if self.len() == 1:
+            return copy.copy(self.data)
+
+        if not hasattr(self, "_data_list") or self._data_list is None:
+            self._data_list = self.len() * [None]
+        elif self._data_list[idx] is not None:
+            return copy.copy(self._data_list[idx])
+
+        data = separate(
+            cls=self.data.__class__,
+            batch=self.data,
+            idx=idx,
+            slice_dict=self.slices,
+            decrement=False,
+        )
+
+        self._data_list[idx] = copy.copy(data)
+
+        return data
 
     @property
     def SUMMARY_STATEMENT(self) -> None:
