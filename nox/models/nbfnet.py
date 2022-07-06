@@ -160,10 +160,10 @@ class NBFNet(AbstractModel):
     def forward(self, batch):
         # get full graph data
         data = batch["graph"]
-        
+
         # sample negatives
         batch_with_negatives = batch["triplet"]
-        
+
         h_index, t_index, r_index = batch_with_negatives.unbind(-1)
         if self.training:
             # Edge dropout in the training mode
@@ -335,86 +335,86 @@ class NBFNet(AbstractModel):
     @staticmethod
     def add_args(parser) -> None:
         parser.add_argument(
-            "--input_dim", type=int, default=32, description="size of input features"
+            "--input_dim", type=int, default=32, help="size of input features"
         )
         parser.add_argument(
             "--hidden_dims",
             type=int,
             nargs="*",
             default=[32, 32, 32, 32, 32, 32],
-            description="size of hidden dimensions features",
+            help="size of hidden dimensions features",
         )
         parser.add_argument(
             "--num_relation",
             type=int,
             default=None,
-            description="number of relationships set by the dataset",
+            help="number of relationships set by the dataset",
         )
         parser.add_argument(
             "--message_func",
             type=str,
             choices=["transe", "distmult", "rotate"],
             default="distmult",
-            description="name of message function. one of [transe, distmult, rotate]",
+            help="name of message function. one of [transe, distmult, rotate]",
         )
         parser.add_argument(
             "--aggregate_func",
             type=str,
             choices=["sum", "mean", "max", "pna"],
             default="pna",
-            description="name of message function. one of [sum, mean, max, pna]",
+            help="name of message function. one of [sum, mean, max, pna]",
         )
         parser.add_argument(
             "--short_cut",
             action="store_true",
             default=False,
-            description="whether to use skip connections",
+            help="whether to use skip connections",
         )
         parser.add_argument(
             "--layer_norm",
             action="store_true",
             default=False,
-            description="whether to user layer normalization",
+            help="whether to user layer normalization",
         )
         parser.add_argument(
             "--activation_func",
             type=str,
             default="relu",
-            description="name of torch.nn.functional activation function",
+            help="name of torch.nn.functional activation function",
         )
         parser.add_argument(
             "--concat_hidden",
             action="store_true",
             default=False,
-            description="whether to concatenate hiddens of different layers",
+            help="whether to concatenate hiddens of different layers",
         )
         parser.add_argument(
             "--num_mlp_layer",
             type=int,
             default=2,
-            description="number of MLP layers",
+            help="number of MLP layers",
         )
         parser.add_argument(
             "--dependent",
             action="store_true",
             default=False,
-            description="whether to make relation embedding a projection of existing query or a learned embedding",
+            help="whether to make relation embedding a projection of existing query or a learned embedding",
         )
         parser.add_argument(
             "--remove_one_hop",
             action="store_true",
             default=False,
-            description="whether to remove all existing immediate edges between heads and tails in the batch",
+            help="whether to remove all existing immediate edges between heads and tails in the batch",
         )
         parser.add_argument(
             "--num_beam",
             type=int,
             default=10,
-            description="beam search the top-k distance from h to t (and to every other node)",
+            help="beam search the top-k distance from h to t (and to every other node)",
         )
         parser.add_argument(
             "--path_topk",
             type=int,
             default=10,
-            description="number of paths to use to obtain average length of the top-k paths",
+            help="number of paths to use to obtain average length of the top-k paths",
         )
