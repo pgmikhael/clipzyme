@@ -3,7 +3,6 @@
   "cartesian_hyperparams": {
     "batch_size": [64],
     "accumulate_grad_batches": [1],
-    "precision": [16],
     "dataset_name": ["ind_rel_link_pred"],
     "lightning_name": ["linker"],
     "weight_decay": [1e-2],
