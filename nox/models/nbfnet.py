@@ -27,7 +27,7 @@ class NBFNet(AbstractModel):
             hidden_dims = args.hidden_dims
 
         self.dims = [args.input_dim] + list(hidden_dims)
-        self.num_relation = args.num_relation
+        self.num_relation = args.num_relations
         self.short_cut = (
             args.short_cut  # whether to use residual connections between GNN layers
         )
@@ -46,7 +46,7 @@ class NBFNet(AbstractModel):
                 gen_rel_conv_layer.GeneralizedRelationalConv(
                     self.dims[i],
                     self.dims[i + 1],
-                    args.num_relation,
+                    args.num_relations,
                     self.dims[0],
                     args.message_func,
                     args.aggregate_func,
@@ -62,7 +62,7 @@ class NBFNet(AbstractModel):
 
         # additional relation embedding which serves as an initial 'query' for the NBFNet forward pass
         # each layer has its own learnable relations matrix, so we send the total number of relations, too
-        self.query = nn.Embedding(args.num_relation, args.input_dim)
+        self.query = nn.Embedding(args.num_relations, args.input_dim)
         self.mlp = nn.Sequential()
         mlp = []
         for i in range(args.num_mlp_layer - 1):
@@ -347,7 +347,7 @@ class NBFNet(AbstractModel):
             help="size of hidden dimensions features",
         )
         parser.add_argument(
-            "--num_relation",
+            "--num_relations",
             type=int,
             default=None,
             help="number of relationships set by the dataset",
