@@ -1,15 +1,17 @@
+import sys
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
+
 from ast import arg
 from collections import OrderedDict
 import pickle
 import os
-import sys
 import time
 import git
 import comet_ml
 import pytorch_lightning as pl
 from pytorch_lightning import _logger as log
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
 from nox.utils.parsing import parse_args
 from nox.utils.registry import get_object
 import nox.utils.loading as loaders
