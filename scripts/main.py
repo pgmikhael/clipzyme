@@ -1,11 +1,10 @@
-import sys
+import sys, os
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
 
 from ast import arg
 from collections import OrderedDict
 import pickle
-import os
 import time
 import git
 import comet_ml
@@ -32,7 +31,9 @@ def cli_main(args):
     args.local_rank = trainer.local_rank
 
     # logger
-    trainer.logger = get_object(args.logger_name, "logger")(args)
+    if args.logger_name:
+        trainer.logger = get_object(args.logger_name, "logger")(args)
+
 
     repo = git.Repo(search_parent_directories=True)
     commit = repo.head.object
