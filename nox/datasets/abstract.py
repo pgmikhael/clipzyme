@@ -30,8 +30,6 @@ class AbstractDataset(data.Dataset, Nox):
 
         self.init_class(args, split_group)
 
-        self.input_loader = get_sample_loader(split_group, args)
-
         self.dataset = self.create_dataset(split_group)
         if len(self.dataset) == 0:
             return
@@ -48,6 +46,7 @@ class AbstractDataset(data.Dataset, Nox):
             args (argparse.ArgumentParser)
             split_group (str)
         """
+        self.input_loader = get_sample_loader(split_group, args)
         self.load_dataset(args)
 
     def load_dataset(self, args: argparse.ArgumentParser) -> None:
@@ -231,6 +230,6 @@ class AbstractDataset(data.Dataset, Nox):
             "--input_loader_name",
             type=str,
             action=set_nox_type("input_loader"),
-            default="default_image_loader",
+            default="cv_loader",
             help="input loader",
         )
