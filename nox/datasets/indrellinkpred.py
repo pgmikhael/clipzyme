@@ -245,8 +245,7 @@ class IndRelLinkPredDataset(InMemoryDataset, AbstractDataset):
                 )
             else:
                 raise ValueError(f"Invalid split group: {self.split_group}")
-           
-            
+
         elif self.args.dataset_variant == "WN18RR":
             # dataset = WordNet18RR(**cfg.dataset)
             # convert wn18rr into the same format as fb15k-237
@@ -283,10 +282,9 @@ class IndRelLinkPredDataset(InMemoryDataset, AbstractDataset):
                 )
             else:
                 raise ValueError(f"Invalid split group: {self.split_group}")
-            
+
         else:
             raise ValueError("Unknown dataset `%s`" % self.args.dataset_variant)
-
 
         # set data attributes
         self.data.num_relations = num_relations * 2
@@ -295,20 +293,19 @@ class IndRelLinkPredDataset(InMemoryDataset, AbstractDataset):
             edge_index=self.data.target_edge_index,
             edge_type=self.data.target_edge_type,
         )
-        
+
         triplets = torch.cat(
             [
                 self.split_graph.target_edge_index,
                 self.split_graph.target_edge_type.unsqueeze(0),
             ]
         ).t()
-        
+
         # make triplets
-        for i,t in enumerate(triplets):
+        for i, t in enumerate(triplets):
             dataset.append({"triplet": t})
 
         return dataset
-
 
     @property
     def SUMMARY_STATEMENT(self) -> None:
@@ -320,7 +317,6 @@ class IndRelLinkPredDataset(InMemoryDataset, AbstractDataset):
         summary = f"Contructed {self.split_group} of {self.args.dataset_variant} dataset with length of {len(self.data)}"
         return summary
 
-
     def __getitem__(self, index):
         """
         Fetch single sample from dataset
@@ -331,15 +327,21 @@ class IndRelLinkPredDataset(InMemoryDataset, AbstractDataset):
         Returns:
             sample (dict): a sample
         """
-        
+
         item = self.dataset[index]
-        item["graph"] =  self.data
+        item["graph"] = self.data
         item["filtered_data"] = self.filtered_data
         return item
 
     @staticmethod
     def add_args(parser):
-        super(IndRelLinkPredDataset,IndRelLinkPredDataset).add_args(parser)
+        super(IndRelLinkPredDataset, IndRelLinkPredDataset).add_args(parser)
+        parser.add_argument(
+            "--dataset_variant", type=str, default="FB15k-237", help="Dataset variant"
+        )
+        parser.add_argument(
+            "--dataset_version", type=str, default="v1", help="Dataset version"
+        )
         parser.add_argument(
             "--num_negative",
             type=int,
@@ -348,7 +350,7 @@ class IndRelLinkPredDataset(InMemoryDataset, AbstractDataset):
         )
         parser.add_argument(
             "--strict_negative",
-             action="store_true",
+            action="store_true",
             default=False,
             description="whether to only consider samples with known no edges as negative examples",
         )
