@@ -1,22 +1,13 @@
-import traceback, warnings
 import argparse
-from typing import List, Literal, Any, Callable, Optional, Tuple, Union
-from abc import ABCMeta, abstractmethod
-import json, os
-from collections import Counter
-import numpy as np
+from typing import List, Literal
+import os
 import torch
-from torch.utils import data
-from nox.utils.loading import get_sample_loader
-from nox.utils.registry import register_object, md5
-from nox.utils.classes import Nox, set_nox_type
-from nox.datasets.utils import METAFILE_NOTFOUND_ERR, LOAD_FAIL_MSG
+
+from nox.utils.registry import register_object
 from nox.datasets import AbstractDataset
-from torch_geometric.data import HeteroData, InMemoryDataset, Data, download_url
-from collections.abc import Sequence
-from torch_geometric.data.makedirs import makedirs
-import tqdm
-import re
+
+from torch_geometric.data import InMemoryDataset, Data, download_url
+from torch_geometric.datasets import RelLinkPredDataset, WordNet18RR
 
 
 @register_object("ind_rel_link_pred", "dataset")
@@ -44,8 +35,6 @@ class IndRelLinkPredDataset(InMemoryDataset, AbstractDataset):
 
         constructs: standard pytorch Dataset obj, which can be fed in a DataLoader for batching
         """
-        __metaclass__ = ABCMeta
-
         super(IndRelLinkPredDataset, self).__init__()
 
         self.split_group = split_group
@@ -218,7 +207,13 @@ class IndRelLinkPredDataset(InMemoryDataset, AbstractDataset):
         dataset = []
         sample = {}
         if self.args.dataset_variant == "FB15k-237":
-            data = self.data.data
+            dataset = RelLinkPredDataset(
+                root=self.args.data_dir,
+                name=self.args.dataset_variant,
+                transform=None,
+                pre_transform=None,
+            )
+            data = dataset.data
             if self.split_group == "train":
                 self.split_graph = Data(
                     edge_index=data.edge_index,
@@ -247,7 +242,9 @@ class IndRelLinkPredDataset(InMemoryDataset, AbstractDataset):
                 raise ValueError(f"Invalid split group: {self.split_group}")
 
         elif self.args.dataset_variant == "WN18RR":
-            # dataset = WordNet18RR(**cfg.dataset)
+            dataset = WordNet18RR(
+                root=self.args.data_dir, transform=None, pre_transform=None
+            )
             # convert wn18rr into the same format as fb15k-237
             data = self.data.data
             num_nodes = int(data.edge_index.max()) + 1
