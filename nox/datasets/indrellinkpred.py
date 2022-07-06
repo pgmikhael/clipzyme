@@ -1,4 +1,5 @@
 import argparse
+import copy
 from typing import List, Literal
 import os
 import torch
@@ -8,10 +9,11 @@ from nox.datasets.abstract import AbstractDataset
 
 from torch_geometric.data import InMemoryDataset, Data, download_url
 from torch_geometric.datasets import RelLinkPredDataset, WordNet18RR
+from torch_geometric.data.separate import separate
 
 
 @register_object("ind_rel_link_pred", "dataset")
-class IndRelLinkPredDataset(InMemoryDataset, AbstractDataset):
+class IndRelLinkPredDataset(AbstractDataset, InMemoryDataset):
     urls = {
         "FB15k-237": [
             "https://raw.githubusercontent.com/kkteru/grail/master/data/fb237_%s_ind/train.txt",
@@ -35,9 +37,6 @@ class IndRelLinkPredDataset(InMemoryDataset, AbstractDataset):
 
         constructs: standard pytorch Dataset obj, which can be fed in a DataLoader for batching
         """
-        super(IndRelLinkPredDataset, self).__init__(args, split_group)
-
-
         self.split_group = split_group
         self.args = args
 
@@ -45,6 +44,7 @@ class IndRelLinkPredDataset(InMemoryDataset, AbstractDataset):
         self.version = args.dataset_version
         assert self.name in ["FB15k-237", "WN18RR"]
         assert self.version in ["v1", "v2", "v3", "v4"]
+        InMemoryDataset.__init__(self, root=args.data_dir)
 
         self.init_class(args, split_group)
 
@@ -208,11 +208,11 @@ class IndRelLinkPredDataset(InMemoryDataset, AbstractDataset):
         dataset = []
 
         if self.split_group == "train":
-            self.split_graph = self[0]
+            self.split_graph = self.seperate_collated_data(0)
         elif self.split_group == "dev":
-            self.split_graph = self[1]
+            self.split_graph = self.seperate_collated_data(1)
         elif self.split_group == "test":
-            self.split_graph = self[2]
+            self.split_graph = self.seperate_collated_data(2)
         else:
             raise ValueError(f"Invalid split group: {self.split_group}")
 
@@ -228,6 +228,27 @@ class IndRelLinkPredDataset(InMemoryDataset, AbstractDataset):
             dataset.append({"triplet": t})
 
         return dataset
+
+    def seperate_collated_data(self, idx: int) -> Data:
+        if self.len() == 1:
+            return copy.copy(self.data)
+
+        if not hasattr(self, "_data_list") or self._data_list is None:
+            self._data_list = self.len() * [None]
+        elif self._data_list[idx] is not None:
+            return copy.copy(self._data_list[idx])
+
+        data = separate(
+            cls=self.data.__class__,
+            batch=self.data,
+            idx=idx,
+            slice_dict=self.slices,
+            decrement=False,
+        )
+
+        self._data_list[idx] = copy.copy(data)
+
+        return data
 
     @property
     def SUMMARY_STATEMENT(self) -> None:
