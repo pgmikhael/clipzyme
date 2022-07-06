@@ -21,8 +21,10 @@ class NBFNet(AbstractModel):
         self.num_negative = args.num_negative
         self.strict_negative = args.strict_negative
 
-        if not isinstance(hidden_dims, Sequence):
-            hidden_dims = [hidden_dims]
+        if not isinstance(args.hidden_dims, Sequence):
+            hidden_dims = [args.hidden_dims]
+        else:
+            hidden_dims = args.hidden_dims
 
         self.dims = [args.input_dim] + list(hidden_dims)
         self.num_relation = args.num_relation
