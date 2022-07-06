@@ -48,7 +48,7 @@ class RankingMetrics(Nox):
             stats_dict["mean_rank"] = all_ranking.float().mean()
             stats_dict["mean reciprocal rank"] = (1 / all_ranking.float()).mean()
 
-            for hit_n in hits_at_n:
+            for hit_n in args.hits_at_n:
                 stats_dict[hit_n] = self.calc_hits_at(
                     all_ranking, all_num_negative, hit_n
                 )
