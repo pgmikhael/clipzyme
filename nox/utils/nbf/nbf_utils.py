@@ -17,7 +17,7 @@ def edge_match(edge_index, query_index):
     # given a tuple (h, r), we will search for all other existing edges starting from head h
     assert reduce(int.__mul__, base.tolist()) < torch.iinfo(torch.long).max
     scale = base.cumprod(0)
-    scale = scale[-1] // scale
+    scale = torch.div(scale[-1], scale, rounding_mode='trunc')
 
     # hash both the original edge index and the query index to unique integers
     edge_hash = (edge_index * scale.unsqueeze(-1)).sum(dim=0)
