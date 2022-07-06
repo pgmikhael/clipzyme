@@ -35,9 +35,8 @@ class IndRelLinkPredDataset(InMemoryDataset, AbstractDataset):
 
         constructs: standard pytorch Dataset obj, which can be fed in a DataLoader for batching
         """
-        # super(IndRelLinkPredDataset, self).__init__()
+        super(IndRelLinkPredDataset, self).__init__(args, split_group)
 
-        InMemoryDataset.__init__(self, root=args.data_dir)
 
         self.split_group = split_group
         self.args = args
@@ -345,11 +344,11 @@ class IndRelLinkPredDataset(InMemoryDataset, AbstractDataset):
             "--num_negative",
             type=int,
             default=32,
-            description="number of negative samples to use",
+            help="number of negative samples to use",
         )
         parser.add_argument(
             "--strict_negative",
             action="store_true",
             default=False,
-            description="whether to only consider samples with known no edges as negative examples",
+            help="whether to only consider samples with known no edges as negative examples",
         )
