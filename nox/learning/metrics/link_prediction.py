@@ -4,7 +4,8 @@ from nox.utils.classes import Nox
 import numpy as np
 import torch
 from torch import distributed as dist
-import math 
+import math
+
 
 @register_object("ranking_metrics", "metric")
 class RankingMetrics(Nox):
@@ -17,32 +18,41 @@ class RankingMetrics(Nox):
 
     def __call__(self, logging_dict, model, args) -> Dict:
         stats_dict = dict()
-        rankings = logging_dict['rankings']
-        num_negatives = logging_dict['num_negatives']
+        rankings = logging_dict["rankings"]
+        ########### for debugging purposes ##########
+        rank = 0
+        world_size = 1
+        device = rankings.device
+        #############################################
+        num_negatives = logging_dict["num_negatives"]
 
         ranking = torch.cat(rankings)
         num_negative = torch.cat(num_negatives)
         all_size = torch.zeros(world_size, dtype=torch.long, device=device)
         all_size[rank] = len(ranking)
-        if world_size > 1: # TODO
+        if world_size > 1:  # TODO
             dist.all_reduce(all_size, op=dist.ReduceOp.SUM)
         cum_size = all_size.cumsum(0)
         all_ranking = torch.zeros(all_size.sum(), dtype=torch.long, device=device)
         all_ranking[cum_size[rank] - all_size[rank] : cum_size[rank]] = ranking
         all_num_negative = torch.zeros(all_size.sum(), dtype=torch.long, device=device)
-        all_num_negative[cum_size[rank] - all_size[rank] : cum_size[rank]] = num_negative
+        all_num_negative[
+            cum_size[rank] - all_size[rank] : cum_size[rank]
+        ] = num_negative
 
-        if world_size > 1: # TODO
+        if world_size > 1:  # TODO
             dist.all_reduce(all_ranking, op=dist.ReduceOp.SUM)
             dist.all_reduce(all_num_negative, op=dist.ReduceOp.SUM)
-        
-        if rank == 0: # TODO
-            stats_dict['mean_rank'] = all_ranking.float().mean()
-            stats_dict['mean reciprocal rank'] = (1 / all_ranking.float()).mean()
-            
+
+        if rank == 0:  # TODO
+            stats_dict["mean_rank"] = all_ranking.float().mean()
+            stats_dict["mean reciprocal rank"] = (1 / all_ranking.float()).mean()
+
             for hit_n in hits_at_n:
-                stats_dict[hit_n]=self.calc_hits_at(all_ranking, all_num_negative, hit_n)
-                
+                stats_dict[hit_n] = self.calc_hits_at(
+                    all_ranking, all_num_negative, hit_n
+                )
+
         return stats_dict
 
     def calc_hits_at(self, all_ranking, all_num_negative, hit_n):
@@ -61,9 +71,7 @@ class RankingMetrics(Nox):
                     / math.factorial(num_sample - i - 1)
                 )
                 score += (
-                    num_comb
-                    * (fp_rate**i)
-                    * ((1 - fp_rate) ** (num_sample - i - 1))
+                    num_comb * (fp_rate**i) * ((1 - fp_rate) ** (num_sample - i - 1))
                 )
             return score.mean()
         else:
@@ -79,7 +87,7 @@ class RankingMetrics(Nox):
         parser.add_argument(
             "--hits_at_n",
             type=str,
-            nargs = "*",
-            default = ['hits@1', 'hits@3', 'hits@10', 'hits@10_50'],
+            nargs="*",
+            default=["hits@1", "hits@3", "hits@10", "hits@10_50"],
             help="Whether to log metrics per class or just log average across classes",
         )
