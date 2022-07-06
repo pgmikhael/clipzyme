@@ -21,7 +21,7 @@ class Linker(Base):
     """
 
     def __init__(self, args):
-        super(Linker, self).__init__()
+        super(Linker, self).__init__(args)
         self.num_negative = args.num_negative
         self.strict_negative = args.strict_negative
 
@@ -30,7 +30,7 @@ class Linker(Base):
         Single training step
         """
         self.phase = "train"
-        batch["graph"] = self.trainer.train_dataloaders[0].split_graph
+        batch["graph"] = self.trainer.train_dataloader.dataset.datasets.split_graph
 
         batch["triplet"] = nbf_utils.negative_sampling(
             batch["graph"],

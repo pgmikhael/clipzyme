@@ -275,8 +275,6 @@ class IndRelLinkPredDataset(AbstractDataset, InMemoryDataset):
         """
 
         item = self.dataset[index]
-        item["graph"] = self.data
-        item["filtered_data"] = self.filtered_data
         return item
 
     @staticmethod
