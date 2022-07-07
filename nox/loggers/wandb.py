@@ -11,7 +11,7 @@ class WandB(pl.loggers.WandbLogger, Nox):
             project=args.project_name,
             name=args.experiment_name,
             entity=args.workspace,
-            tags = args.comet_tags
+            tags = args.logger_tags
         )
 
     def setup(self, **kwargs):
