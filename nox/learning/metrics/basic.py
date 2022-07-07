@@ -30,12 +30,12 @@ class BaseClassification(Nox):
     def metric_keys(self):
         return ["probs", "preds", "golds"]
 
-    def __call__(self, logging_dict, model, args) -> Dict:
+    def __call__(self, predictions_dict, model, args) -> Dict:
         """
         Computes standard classification metrics
 
         Args:
-            logging_dict: dictionary obtained from computing loss and model outputs
+            predictions_dict: dictionary obtained from computing loss and model outputs
                 * should contain the keys ['probs', 'preds', 'golds']
             args: argparser Namespace
 
@@ -48,9 +48,9 @@ class BaseClassification(Nox):
         """
         stats_dict = OrderedDict()
 
-        probs = logging_dict["probs"]  # B, C (float)
-        preds = logging_dict["preds"]  # B
-        golds = logging_dict["golds"]  # B
+        probs = predictions_dict["probs"]  # B, C (float)
+        preds = predictions_dict["preds"]  # B
+        golds = predictions_dict["golds"]  # B
         stats_dict["accuracy"] = accuracy(golds, preds)
         stats_dict["confusion_matrix"] = confusion_matrix(
             preds, golds, args.num_classes
@@ -160,12 +160,12 @@ class BaseClassification(Nox):
 
 @register_object("ordinal_classification", "metric")
 class Ordinal_Classification(BaseClassification):
-    def __call__(self, logging_dict, model, args) -> Dict:
+    def __call__(self, predictions_dict, model, args) -> Dict:
         """
         Computes classification for metrics when predicting multiple independent classes
 
         Args:
-            logging_dict: dictionary obtained from computing loss and model outputs
+            predictions_dict: dictionary obtained from computing loss and model outputs
             args: argparser Namespace
 
         Returns:
@@ -173,9 +173,9 @@ class Ordinal_Classification(BaseClassification):
         """
         stats_dict = OrderedDict()
 
-        probs = logging_dict["probs"]  # B, C (float)
-        preds = logging_dict["preds"]  # B
-        golds = logging_dict["golds"]  # B
+        probs = predictions_dict["probs"]  # B, C (float)
+        preds = predictions_dict["preds"]  # B
+        golds = predictions_dict["golds"]  # B
         stats_dict["accuracy"] = accuracy(golds, preds)
         stats_dict["confusion_matrix"] = confusion_matrix(
             preds, golds, args.num_classes + 1
@@ -201,11 +201,11 @@ class Ordinal_Classification(BaseClassification):
 
 @register_object("survival_classification", "metric")
 class Survival_Classification(BaseClassification):
-    def __call__(self, logging_dict, model, args):
+    def __call__(self, predictions_dict, model, args):
         stats_dict = OrderedDict()
 
-        golds = logging_dict["golds"]
-        probs = logging_dict["probs"]
+        golds = predictions_dict["golds"]
+        probs = predictions_dict["probs"]
         preds = probs[:, -1].view(-1) > 0.5
         probs = probs.reshape((-1, probs.shape[-1]))[:, -1]
 
@@ -236,12 +236,12 @@ class Discriminator_Classification(BaseClassification):
     def metric_keys(self):
         return ["discrim_probs", "discrim_golds"]
 
-    def __call__(self, logging_dict, model, args):
+    def __call__(self, predictions_dict, model, args):
         stats_dict = OrderedDict()
 
-        golds = logging_dict["discrim_golds"]
-        probs = logging_dict["discrim_probs"]
-        preds = logging_dict["discrim_probs"].argmax(axis=-1).reshape(-1)
+        golds = predictions_dict["discrim_golds"]
+        probs = predictions_dict["discrim_probs"]
+        preds = predictions_dict["discrim_probs"].argmax(axis=-1).reshape(-1)
 
         nargs = copy.deepcopy(args)
         nargs.num_classes = probs.shape[-1]
@@ -262,13 +262,13 @@ class MultiDiscriminator_Classification(BaseClassification):
     def metric_keys(self):
         return ["device_probs", "device_golds", "thickness_probs", "thickness_golds"]
 
-    def __call__(self, logging_dict, model, args):
+    def __call__(self, predictions_dict, model, args):
         stats_dict = OrderedDict()
 
         for key in ["device", "thickness"]:
-            golds = logging_dict["{}_golds".format(key)]
-            probs = logging_dict["{}_probs".format(key)]
-            preds = logging_dict["{}_probs".format(key)].argmax(axis=-1).reshape(-1)
+            golds = predictions_dict["{}_golds".format(key)]
+            probs = predictions_dict["{}_probs".format(key)]
+            preds = predictions_dict["{}_probs".format(key)].argmax(axis=-1).reshape(-1)
 
             nargs = copy.deepcopy(args)
             nargs.num_classes = probs.shape[-1]

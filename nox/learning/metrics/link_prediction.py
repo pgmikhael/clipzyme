@@ -14,18 +14,20 @@ class RankingMetrics(Nox):
 
     @property
     def metric_keys(self):
-        return []
+        return ["logit"]
 
-    def __call__(self, logging_dict, model, args) -> Dict:
+    def __call__(self, predictions_dict, model, args) -> Dict:
         stats_dict = dict()
-        rankings = logging_dict["rankings"][0] # TODO: Understand why this is len 1
+        rankings = predictions_dict["rankings"][0]  # TODO: Understand why this is len 1
         ranking = torch.cat(rankings)
         ########### for debugging purposes ##########
         rank = 0
         world_size = 1
-        device = logging_dict['num_negatives'][0][0].device 
+        device = predictions_dict["num_negatives"][0][0].device
         #############################################
-        num_negatives = logging_dict["num_negatives"][0] # TODO: Understand why this is len 1
+        num_negatives = predictions_dict["num_negatives"][
+            0
+        ]  # TODO: Understand why this is len 1
 
         num_negative = torch.cat(num_negatives)
         all_size = torch.zeros(world_size, dtype=torch.long, device=device)

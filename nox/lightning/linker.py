@@ -30,7 +30,9 @@ class Linker(Base):
         Single training step
         """
         self.phase = "train"
-        batch["graph"] = self.trainer.train_dataloader.dataset.datasets.split_graph.to(self.device)
+        batch["graph"] = self.trainer.train_dataloader.dataset.datasets.split_graph.to(
+            self.device
+        )
 
         batch["triplet"] = nbf_utils.negative_sampling(
             batch["graph"],
@@ -49,7 +51,9 @@ class Linker(Base):
         self.phase = "val"
         output = dict()
 
-        batch["graph"] = self.trainer.val_dataloaders[0].dataset.split_graph.to(self.device)
+        batch["graph"] = self.trainer.val_dataloaders[0].dataset.split_graph.to(
+            self.device
+        )
 
         t_triplet, h_triplet = nbf_utils.all_negative(batch["graph"], batch["triplet"])
 
@@ -68,10 +72,10 @@ class Linker(Base):
         pos_h_index, pos_t_index, _ = batch["triplet"].t()
 
         t_ranking = nbf_utils.compute_ranking(
-            t_output["model_output"]["logit"], pos_t_index, t_mask
+            t_output["preds_dict"]["logit"], pos_t_index, t_mask
         )
         h_ranking = nbf_utils.compute_ranking(
-            h_output["model_output"]["logit"], pos_h_index, h_mask
+            h_output["preds_dict"]["logit"], pos_h_index, h_mask
         )
 
         num_t_negative = t_mask.sum(dim=-1)
@@ -96,7 +100,9 @@ class Linker(Base):
 
         output = dict()
 
-        batch["graph"] = self.trainer.test_dataloaders[0].dataset.split_graph.to(self.device)
+        batch["graph"] = self.trainer.test_dataloaders[0].dataset.split_graph.to(
+            self.device
+        )
 
         t_triplet, h_triplet = nbf_utils.all_negative(batch["graph"], batch["triplet"])
 
@@ -141,4 +147,3 @@ class Linker(Base):
             k: v for k, v in output["preds_dict"].items() if k not in self.UNLOG_KEYS
         }
         return output
-
