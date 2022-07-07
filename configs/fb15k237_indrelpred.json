@@ -17,7 +17,7 @@
     "metric_names": ["ranking_metrics"],
     "checkpoint_save_last": [false],
     "monitor": ["val_loss"],
-    "num_workers": [3],
+    "num_workers": [8],
     "optimizer_name": ["adam"],
     "patience": [5],
     "train": [true],
@@ -49,7 +49,12 @@
     "strict_negative":[true],
     "adversarial_temperature": [0.5],
     "data_dir": ["/Mounts/rbg-storage1/datasets/Metabo/pyg_datasets/"],
-    "logger_dir": ["Mounts/rbg-storage1/logs/metabolomics/"]
+    "logger_dir": ["Mounts/rbg-storage1/logs/metabolomics/"],
+    "logger": ["wandb"],
+    "workspace": ["peteranditamar"],
+    "project_name": ["metabolomics"],
+    "logger_tags": ["nbfnet debug"],
+    "gpus": [1]
   },
   "available_gpus": ["0,1,2,3,4,5,6,7"]
 }
