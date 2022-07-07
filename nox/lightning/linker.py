@@ -42,6 +42,44 @@ class Linker(Base):
         )
 
         output = self.step(batch, batch_idx, optimizer_idx)
+
+        # everything below is computed for metrics:
+
+        t_triplet, h_triplet = nbf_utils.all_negative(batch["graph"], batch["triplet"])
+
+        t_batch = {"triplet": t_triplet, "graph": batch["graph"]}
+        h_batch = {"triplet": h_triplet, "graph": batch["graph"]}
+
+        t_output = self.step(t_batch, batch_idx, optimizer_idx)
+        h_output = self.step(h_batch, batch_idx, optimizer_idx)
+
+        filtered_data = getattr(
+            self.trainer.val_dataloaders[0], "filtered_data", batch["graph"]
+        )
+
+        t_mask, h_mask = nbf_utils.strict_negative_mask(filtered_data, batch["triplet"])
+
+        pos_h_index, pos_t_index, _ = batch["triplet"].t()
+
+        t_ranking = nbf_utils.compute_ranking(
+            t_output["preds_dict"]["logit"], pos_t_index, t_mask
+        )
+        h_ranking = nbf_utils.compute_ranking(
+            h_output["preds_dict"]["logit"], pos_h_index, h_mask
+        )
+
+        num_t_negative = t_mask.sum(dim=-1)
+        num_h_negative = h_mask.sum(dim=-1)
+
+        # update preds dict instead of replace
+
+        output["preds_dict"].update(
+            {
+                "rankings": [t_ranking, h_ranking],
+                "num_negatives": [num_t_negative, num_h_negative],
+            }
+        )
+
         return output
 
     def validation_step(self, batch, batch_idx, optimizer_idx=None):
