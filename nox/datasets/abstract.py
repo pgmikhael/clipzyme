@@ -7,7 +7,7 @@ from collections import Counter
 import numpy as np
 from torch.utils import data
 from nox.utils.loading import get_sample_loader
-from nox.utils.classes import Nox, set_nox_type
+from nox.utils.classes import Nox, set_nox_type, classproperty
 from nox.datasets.utils import METAFILE_NOTFOUND_ERR, LOAD_FAIL_MSG
 
 
@@ -30,8 +30,6 @@ class AbstractDataset(data.Dataset, Nox):
 
         self.init_class(args, split_group)
 
-        self.input_loader = get_sample_loader(split_group, args)
-
         self.dataset = self.create_dataset(split_group)
         if len(self.dataset) == 0:
             return
@@ -48,6 +46,7 @@ class AbstractDataset(data.Dataset, Nox):
             args (argparse.ArgumentParser)
             split_group (str)
         """
+        self.input_loader = get_sample_loader(split_group, args)
         self.load_dataset(args)
 
     def load_dataset(self, args: argparse.ArgumentParser) -> None:
@@ -163,8 +162,8 @@ class AbstractDataset(data.Dataset, Nox):
         else:
             pass
 
-    @property
-    def DATASET_ITEM_KEYS(self) -> list:
+    @classproperty
+    def DATASET_ITEM_KEYS(cls) -> list:
         """
         List of keys to be included in sample when being batched
 
@@ -231,6 +230,6 @@ class AbstractDataset(data.Dataset, Nox):
             "--input_loader_name",
             type=str,
             action=set_nox_type("input_loader"),
-            default="default_image_loader",
+            default="cv_loader",
             help="input loader",
         )
