@@ -37,7 +37,7 @@ class LinkPredictionLoss(Nox):
         loss = loss.mean()
 
         logging_dict["cross_entropy_loss"] = loss.detach()
-        predictions["probs"] = F.sigmoid(logit).detach()
+        predictions["probs"] = torch.sigmoid(logit).detach()
         predictions["golds"] = target
         predictions["preds"] = (predictions["probs"] > 0.5).reshape(-1)
         return loss, logging_dict, predictions
