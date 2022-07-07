@@ -18,7 +18,7 @@ class COMET(pl.loggers.CometLogger, Nox):
 
     def setup(self, **kwargs):
         self.experiment.set_model_graph(kwargs["model"])
-        self.experiment.add_tags(kwargs["args"].comet_tags)
+        self.experiment.add_tags(kwargs["args"].logger_tags)
         self.experiment.log_parameters(kwargs["args"])
 
     def log_image(self, image, name):
