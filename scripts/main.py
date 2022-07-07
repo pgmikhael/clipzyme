@@ -18,6 +18,7 @@ from nox.utils.registry import get_object
 import nox.utils.loading as loaders
 from nox.utils.callbacks import set_callbacks
 
+from pytorch_lightning.callbacks import RichProgressBar
 
 def cli_main(args):
 
@@ -62,7 +63,7 @@ def cli_main(args):
 
     # add callbacks
     trainer.callbacks = set_callbacks(trainer, args)
-
+    
     # train model
     if args.train:
         log.info("\nTraining Phase...")
@@ -70,28 +71,29 @@ def cli_main(args):
         if trainer.checkpoint_callback:
             args.model_path = trainer.checkpoint_callback.best_model_path
 
-    # move to one machine if using DDP and want to evaluate model
-    if (args.accelerator == "ddp") and (args.dev or args.test or args.eval_on_train):
-        torch.distributed.destroy_process_group()
-        if trainer.global_rank == 0:
-            # eval_args = copy.deepcopy(args)
-            # eval_args.gpus = 1
-            # eval_args.accelerator = None
-            trainer = pl.Trainer.from_argparse_args(gpus=1)
-            trainer.logger = get_object(args.logger_name, "logger")(args)
-            trainer.logger.setup(**{"args": args, "model": model})
-            trainer.callbacks = set_callbacks(trainer, args)
+    # save args
+    if args.local_rank == 0:
+        print("Saving args to {}.args".format(args.results_path))
+        pickle.dump(vars(args), open("{}.args".format(args.results_path), "wb"))
 
-    # eval on dev
-    if args.dev:
-        log.info("\nValidation Phase...")
-        if args.train and trainer.checkpoint_callback:
-            trainer.test(model, dev_dataset, ckpt_path=args.model_path)
-        else:
-            trainer.test(model, dev_dataset)
+    return model, args
 
-    # eval on test
-    if args.test:
+if __name__ == "__main__":
+    args = parse_args()
+    model,args = cli_main(args)
+
+    torch.distributed.destroy_process_group()
+    print("destroyed groups")
+
+    if args.global_rank == 0:
+        args.gpus = 1
+        args.strategy = None
+        trainer = pl.Trainer(gpus=1) #.from_argparse_args(args)
+        #trainer.logger = get_object(args.logger_name, "logger")(args)
+        #trainer.logger.setup(**{"args": args, "model": model})
+        #trainer.callbacks = [RichProgressBar()]
+        trainer.callbacks = set_callbacks(trainer, args)
+
         log.info("\nInference Phase on test set...")
         test_dataset = loaders.get_eval_dataset_loader(args, split="test")
 
@@ -100,21 +102,3 @@ def cli_main(args):
         else:
             trainer.test(model, test_dataset)
 
-    # eval on train
-    if args.eval_on_train:
-        log.info("\nInference Phase on train set...")
-        train_dataset = loaders.get_eval_dataset_loader(args, split="train")
-
-        if args.train and trainer.checkpoint_callback:
-            trainer.test(model, train_dataset, ckpt_path=args.model_path)
-        else:
-            trainer.test(model, train_dataset)
-
-    # save args
-    print("Saving args to {}.args".format(args.results_path))
-    pickle.dump(vars(args), open("{}.args".format(args.results_path), "wb"))
-
-
-if __name__ == "__main__":
-    args = parse_args()
-    cli_main(args)
