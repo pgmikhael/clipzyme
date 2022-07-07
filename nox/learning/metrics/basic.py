@@ -30,7 +30,7 @@ class BaseClassification(Nox):
     def metric_keys(self):
         return ["probs", "preds", "golds"]
 
-    def __call__(self, predictions_dict, model, args) -> Dict:
+    def __call__(self, predictions_dict, args) -> Dict:
         """
         Computes standard classification metrics
 
@@ -160,7 +160,7 @@ class BaseClassification(Nox):
 
 @register_object("ordinal_classification", "metric")
 class Ordinal_Classification(BaseClassification):
-    def __call__(self, predictions_dict, model, args) -> Dict:
+    def __call__(self, predictions_dict, args) -> Dict:
         """
         Computes classification for metrics when predicting multiple independent classes
 
@@ -201,7 +201,7 @@ class Ordinal_Classification(BaseClassification):
 
 @register_object("survival_classification", "metric")
 class Survival_Classification(BaseClassification):
-    def __call__(self, predictions_dict, model, args):
+    def __call__(self, predictions_dict, args):
         stats_dict = OrderedDict()
 
         golds = predictions_dict["golds"]
@@ -236,7 +236,7 @@ class Discriminator_Classification(BaseClassification):
     def metric_keys(self):
         return ["discrim_probs", "discrim_golds"]
 
-    def __call__(self, predictions_dict, model, args):
+    def __call__(self, predictions_dict, args):
         stats_dict = OrderedDict()
 
         golds = predictions_dict["discrim_golds"]
@@ -262,7 +262,7 @@ class MultiDiscriminator_Classification(BaseClassification):
     def metric_keys(self):
         return ["device_probs", "device_golds", "thickness_probs", "thickness_golds"]
 
-    def __call__(self, predictions_dict, model, args):
+    def __call__(self, predictions_dict, args):
         stats_dict = OrderedDict()
 
         for key in ["device", "thickness"]:

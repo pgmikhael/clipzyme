@@ -252,7 +252,7 @@ class Base(pl.LightningModule, Nox):
     def compute_metric(self, predictions):
         logging_dict = OrderedDict()
         for metric_fn in self.metrics:
-            l_dict = metric_fn(predictions, self, self.args)
+            l_dict = metric_fn(predictions, self.args)
             logging_dict.update(l_dict)
         return logging_dict
 
