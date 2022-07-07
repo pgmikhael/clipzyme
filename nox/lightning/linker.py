@@ -33,6 +33,7 @@ class Linker(Base):
         batch["graph"] = self.trainer.train_dataloader.dataset.datasets.split_graph.to(
             self.device
         )
+        old_triplets = batch['triplet']
 
         batch["triplet"] = nbf_utils.negative_sampling(
             batch["graph"],
@@ -45,7 +46,7 @@ class Linker(Base):
 
         # everything below is computed for metrics:
 
-        t_triplet, h_triplet = nbf_utils.all_negative(batch["graph"], batch["triplet"])
+        t_triplet, h_triplet = nbf_utils.all_negative(batch["graph"], old_triplets)
 
         t_batch = {"triplet": t_triplet, "graph": batch["graph"]}
         h_batch = {"triplet": h_triplet, "graph": batch["graph"]}
@@ -57,9 +58,9 @@ class Linker(Base):
             self.trainer.val_dataloaders[0], "filtered_data", batch["graph"]
         )
 
-        t_mask, h_mask = nbf_utils.strict_negative_mask(filtered_data, batch["triplet"])
+        t_mask, h_mask = nbf_utils.strict_negative_mask(filtered_data, old_triplets)
 
-        pos_h_index, pos_t_index, _ = batch["triplet"].t()
+        pos_h_index, pos_t_index, _ = old_triplets.t()
 
         t_ranking = nbf_utils.compute_ranking(
             t_output["preds_dict"]["logit"], pos_t_index, t_mask
