@@ -10,8 +10,6 @@ from torch.utils import data
 from nox.utils.sampler import DistributedWeightedSampler
 from nox.utils.augmentations import get_augmentations_by_split
 from pytorch_lightning.utilities.cloud_io import load as pl_load
-from nox.loaders.image_loaders import OpenCVLoader, DicomLoader
-from pytorch_lightning.utilities.cloud_io import load as pl_load
 
 string_classes = (str, bytes)
 int_classes = int

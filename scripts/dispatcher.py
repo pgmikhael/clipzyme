@@ -18,6 +18,7 @@ SUCESSFUL_SEARCH_STR = "SUCCESS! Grid search results dumped to {}."
 parser = argparse.ArgumentParser(description="Dispatcher.")
 parser.add_argument(
     "--config_path",
+    "-c",
     type=str,
     required=True,
     default="configs/config_file.json",
@@ -25,6 +26,7 @@ parser.add_argument(
 )
 parser.add_argument(
     "--log_dir",
+    "-l",
     type=str,
     default="/path/to/results/dir",
     help="path to store logs and detailed job level result files",

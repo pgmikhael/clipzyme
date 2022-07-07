@@ -4,7 +4,6 @@ import numpy as np
 import random
 from nox.augmentations.abstract import Abstract_augmentation
 from nox.utils.registry import register_object
-import torchio as tio
 
 
 @register_object("normalize_2d", "augmentation")
