@@ -59,5 +59,4 @@ import nox.models.nbfnet
 # comet
 import nox.loggers.comet
 import nox.loggers.tensorboard
-
-# import nox.loggers.wandb
+import nox.loggers.wandb
