@@ -590,10 +590,8 @@ def get_parser():
         default="tensorboard",
         help="experiment logger to use",
     )
-
-    # comet
     parser.add_argument(
-        "--comet_tags", nargs="*", default=[], help="List of tags for comet logger"
+        "--logger_tags", nargs="*", default=[], help="List of tags for logger"
     )
     parser.add_argument("--project_name", default="CancerCures", help="Comet project")
     parser.add_argument("--workspace", default="pgmikhael", help="Comet workspace")
