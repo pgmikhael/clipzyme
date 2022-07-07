@@ -7,7 +7,9 @@ from collections import OrderedDict
 import pickle
 import time
 import git
+import copy
 import comet_ml
+import torch
 import pytorch_lightning as pl
 from pytorch_lightning import _logger as log
 
@@ -67,6 +69,18 @@ def cli_main(args):
         trainer.fit(model, train_dataset, dev_dataset)
         if trainer.checkpoint_callback:
             args.model_path = trainer.checkpoint_callback.best_model_path
+
+    # move to one machine if using DDP and want to evaluate model
+    if (args.accelerator == "ddp") and (args.dev or args.test or args.eval_on_train):
+        torch.distributed.destroy_process_group()
+        if trainer.global_rank == 0:
+            # eval_args = copy.deepcopy(args)
+            # eval_args.gpus = 1
+            # eval_args.accelerator = None
+            trainer = pl.Trainer.from_argparse_args(gpus=1)
+            trainer.logger = get_object(args.logger_name, "logger")(args)
+            trainer.logger.setup(**{"args": args, "model": model})
+            trainer.callbacks = set_callbacks(trainer, args)
 
     # eval on dev
     if args.dev:
