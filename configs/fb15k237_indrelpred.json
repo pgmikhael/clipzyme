@@ -52,7 +52,7 @@
     "logger_name": ["wandb"],
     "workspace": ["peteranditamar"],
     "project_name": ["metabolomics"],
-    "logger_tags": ["nbfnet debug"],
+    "logger_tags": ["nbfnet debug"]
   },
   "available_gpus": ["0,1,2,3,4,5,6,7"]
 }
