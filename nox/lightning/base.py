@@ -263,7 +263,10 @@ class Base(pl.LightningModule, Nox):
 
         for m in self.metric_keys:
             if m in storage_dict:
-                preds[m] = storage_dict[m]
+                if torch.is_tensor(storage_dict[m]) and storage_dict[m].requires_grad:
+                    preds[m] = storage_dict[m].detach()
+                else:
+                    preds[m] = storage_dict[m]
         return preds
 
     def log_outputs(self, outputs, key):
