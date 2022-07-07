@@ -20,6 +20,8 @@ from nox.utils.callbacks import set_callbacks
 def cli_main(args):
 
     args.enable_checkpointing = False
+    if args.logger_name:
+        logger = get_object(args.logger_name, "logger")(args)
 
     trainer = pl.Trainer.from_argparse_args(args)
     # Remove callbacks from args for safe pickling later
@@ -31,9 +33,7 @@ def cli_main(args):
     args.local_rank = trainer.local_rank
 
     # logger
-    if args.logger_name:
-        trainer.logger = get_object(args.logger_name, "logger")(args)
-
+    trainer.logger = logger
     repo = git.Repo(search_parent_directories=True)
     commit = repo.head.object
     log.info(
