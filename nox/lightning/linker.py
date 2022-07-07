@@ -68,10 +68,10 @@ class Linker(Base):
         pos_h_index, pos_t_index, _ = batch["triplet"].t()
 
         t_ranking = nbf_utils.compute_ranking(
-            t_output["preds_dict"]["logit"], pos_t_index, t_mask
+            t_output["model_output"]["logit"], pos_t_index, t_mask
         )
         h_ranking = nbf_utils.compute_ranking(
-            h_output["preds_dict"]["logit"], pos_h_index, h_mask
+            h_output["model_output"]["logit"], pos_h_index, h_mask
         )
 
         num_t_negative = t_mask.sum(dim=-1)

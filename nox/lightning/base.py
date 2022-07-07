@@ -98,6 +98,8 @@ class Base(pl.LightningModule, Nox):
         ):
             self.log_image(model_output, batch)
 
+        logged_output["model_output"] = model_output
+
         return logged_output
 
     def forward(self, batch, batch_idx=0):
