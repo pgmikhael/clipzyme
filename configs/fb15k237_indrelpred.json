@@ -16,7 +16,7 @@
     "loss_names": ["linkpredictionloss"],
     "metric_names": ["ranking_metrics"],
     "checkpoint_save_last": [false],
-    "monitor": ["val_accuracy"],
+    "monitor": ["val_loss"],
     "num_workers": [3],
     "optimizer_name": ["adam"],
     "patience": [5],
