@@ -163,7 +163,7 @@ class AbstractDataset(data.Dataset, Nox):
             pass
 
     @classproperty
-    def DATASET_ITEM_KEYS(self) -> list:
+    def DATASET_ITEM_KEYS(cls) -> list:
         """
         List of keys to be included in sample when being batched
 
