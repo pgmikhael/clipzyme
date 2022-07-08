@@ -125,7 +125,7 @@ class Linker(Base):
             "num_negatives": [num_t_negative, num_h_negative],
         }
         # this loss is wrong
-        # output["loss"] = (t_output["loss"] + h_output["loss"]) / 2
+        output["loss"] = (t_output["loss"] + h_output["loss"]) / 2
 
         return output
 
@@ -178,7 +178,7 @@ class Linker(Base):
         }
 
         # this loss is wrong
-        # output["loss"] = (t_output["loss"] + h_output["loss"]) / 2
+        output["loss"] = (t_output["loss"] + h_output["loss"]) / 2
 
         if self.args.save_predictions:
             self.save_predictions(output["preds_dict"])
