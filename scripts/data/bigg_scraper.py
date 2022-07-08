@@ -1,4 +1,4 @@
-import requests, os, json
+import requests, os, json, wget
 from cobra.io import load_matlab_model
 from cobra.core.metabolite import Metabolite
 import pandas as pd
@@ -13,6 +13,20 @@ from rdkit import Chem
 
 parser = argparse.ArgumentParser(
     description="Scrape metabolite data from external databases"
+)
+
+parser.add_argument(
+    "--download_bigg_models",
+    action="store_true",
+    default=False,
+    help="whether to download models",
+)
+
+parser.add_argument(
+    "--bigg_model_dir",
+    type=str,
+    default="/Mounts/rbg-storage1/datasets/Metabo/BiGG",
+    help="path to metabolites metadata json file",
 )
 
 parser.add_argument(
@@ -429,6 +443,27 @@ def link_metabolite_to_db(metabolite: Metabolite) -> dict:
 if __name__ == "__main__":
     args = parser.parse_args()
 
+    if args.download_bigg_models:
+        # get list of non-multistrain models
+        model_list = requests.get("http://bigg.ucsd.edu/api/v2/models?multistrain=off")
+        json.dump(
+            model_list.json(),
+            open(
+                os.path.join(args.bigg_model_dir, "bigg_models_single_strain.json"), "w"
+            ),
+        )
+
+        # download all models
+        model_list = requests.get("http://bigg.ucsd.edu/api/v2/models")
+        model_list = model_list.json()
+        json.dump(
+            model_list, open(os.path.join(args.bigg_model_dir, "bigg_models.json"), "w")
+        )
+
+        for model in model_list["results"]:
+            wget.download(f"http://bigg.ucsd.edu/static/models/{model["bigg_id"]}.mat",  args.bigg_model_dir)
+                
+
     geneid2proteinmeta = dict()
     kegg_service = KEGG()
     chebi_service = ChEBI()
@@ -437,7 +472,7 @@ if __name__ == "__main__":
     dataset = []
 
     model = load_matlab_model(
-        f"/Mounts/rbg-storage1/datasets/Metabo/BiGG/{args.organism_name}.mat"
+        os.path.join(args.bigg_model_dir, f"{args.organism_name}.mat")
     )
 
     # Get list of reactions
