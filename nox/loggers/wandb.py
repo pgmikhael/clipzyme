@@ -17,8 +17,9 @@ class WandB(pl.loggers.WandbLogger, Nox):
     def setup(self, **kwargs):
         # "gradients", "parameters", "all", or None
         # # change "log_freq" log frequency of gradients and parameters (100 steps by default)
-        self.watch(kwargs["model"], log="all")
-        self.experiment.config.update(kwargs["args"])
+        if kwargs["args"].local_rank == 0:
+            self.watch(kwargs["model"], log="all")
+            self.experiment.config.update(kwargs["args"])
 
     def log_image(self, image, name):
         self.log_image(images=[image], caption=[name])

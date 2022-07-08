@@ -20,20 +20,14 @@ from nox.utils.callbacks import set_callbacks
 
 def train(args):
 
-    args.enable_checkpointing = False
-
-    trainer = pl.Trainer.from_argparse_args(args)
     # Remove callbacks from args for safe pickling later
+    trainer = pl.Trainer.from_argparse_args(args)
     args.callbacks = None
     args.num_nodes = trainer.num_nodes
-    args.num_processes = trainer.num_processes
+    args.num_processes = trainer.num_devices
     args.world_size = args.num_nodes * args.num_processes
     args.global_rank = trainer.global_rank
     args.local_rank = trainer.local_rank
-
-    # logger
-    if args.logger_name:
-        trainer.logger = get_object(args.logger_name, "logger")(args)
 
     repo = git.Repo(search_parent_directories=True)
     commit = repo.head.object
@@ -55,7 +49,10 @@ def train(args):
 
     # create or load lightning model from checkpoint
     model = loaders.get_lightning_model(args)
-
+     
+    # logger
+    trainer.logger = get_object(args.logger_name, "logger")(args)
+    
     # push to logger
     trainer.logger.setup(**{"args": args, "model": model})
 
@@ -74,16 +71,18 @@ def train(args):
         print("Saving args to {}.args".format(args.results_path))
         pickle.dump(vars(args), open("{}.args".format(args.results_path), "wb"))
 
-    return model
+    return model, trainer.logger
 
-def eval(model, args):
+def eval(model, logger, args):
 
     # reinit trainer
     trainer = pl.Trainer(gpus=1)
 
-    # connect to logger
-    trainer.logger = get_object(args.logger_name, "logger")(args)
-    trainer.logger.setup(**{"args": args, "model": model})
+    # reset ddp
+    args.strategy = None
+
+    # connect to same logger as in training
+    trainer.logger = logger 
 
     # set callbacks
     trainer.callbacks = set_callbacks(trainer, args)
@@ -120,12 +119,16 @@ def eval(model, args):
 
 if __name__ == "__main__":
     args = parse_args()
-    model = train(args)
+    model, logger = train(args)
 
     if args.dev or args.test or args.eval_on_train:
         if args.strategy == "ddp":
             torch.distributed.destroy_process_group()
-            log.info("\n\nDestroyed process groups for eval")
+            log.info("\n\n")
+            log.info(">"*33)
+            log.info("Destroyed process groups for eval")
+            log.info("<"*33)
+            log.info("\n\n")
     
         if args.global_rank == 0:
-            eval(model, args)
+            eval(model, logger, args)
