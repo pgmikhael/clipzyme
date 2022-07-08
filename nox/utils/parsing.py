@@ -643,10 +643,10 @@ def parse_args(args_strings=None):
     if (isinstance(args.gpus, str) and len(args.gpus.split(",")) > 1) or (
         isinstance(args.gpus, int) and args.gpus > 1
     ):
-        args.accelerator = "ddp"
+        args.strategy = "ddp"
         args.replace_sampler_ddp = False
     else:
-        args.accelerator = None
+        args.strategy  = None 
         args.replace_sampler_ddp = False
 
     # username

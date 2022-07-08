@@ -74,7 +74,7 @@
       false
     ],
     "test": [
-      false
+      true
     ],
     "callback_names": [
       "lr_monitor"
@@ -86,7 +86,7 @@
       "sanity-checks"
     ],
     "comet_tags": [
-      "nox"
+      "nox args"
     ],
     "num_sanity_val_steps": [
       0
@@ -114,6 +114,6 @@
     ]
   },
   "available_gpus": [
-    "0,1"
+    0
   ]
 }
