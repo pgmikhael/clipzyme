@@ -76,9 +76,15 @@ def train(args):
 
 
 def eval(model, logger, args):
-
     # reinit trainer
     trainer = pl.Trainer(gpus=1)
+
+    # change model args
+    model.args.num_nodes = trainer.num_nodes
+    model.args.num_processes = trainer.num_devices
+    model.args.world_size = trainer.num_nodes * trainer.num_devices
+    model.args.global_rank = trainer.global_rank
+    model.args.local_rank = trainer.local_rank
 
     # reset ddp
     args.strategy = None
