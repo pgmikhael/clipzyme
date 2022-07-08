@@ -100,6 +100,7 @@ def eval(model, logger, args):
     # eval on dev
     if args.dev:
         log.info("\nValidation Phase...")
+        dev_dataset = loaders.get_eval_dataset_loader(args, split="dev")
         if args.train and trainer.checkpoint_callback:
             trainer.test(model, dev_dataset, ckpt_path=args.model_path)
         else:
