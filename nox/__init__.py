@@ -54,3 +54,4 @@ import nox.models.classifier
 # comet
 import nox.loggers.comet
 import nox.loggers.wandb
+import nox.loggers.tensorboard

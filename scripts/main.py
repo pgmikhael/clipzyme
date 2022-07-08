@@ -18,9 +18,7 @@ from nox.utils.registry import get_object
 import nox.utils.loading as loaders
 from nox.utils.callbacks import set_callbacks
 
-from pytorch_lightning.callbacks import RichProgressBar
-
-def cli_main(args):
+def train(args):
 
     args.enable_checkpointing = False
 
@@ -76,24 +74,40 @@ def cli_main(args):
         print("Saving args to {}.args".format(args.results_path))
         pickle.dump(vars(args), open("{}.args".format(args.results_path), "wb"))
 
-    return model, args
+    return model
 
-if __name__ == "__main__":
-    args = parse_args()
-    model,args = cli_main(args)
+def eval(model, args):
 
-    torch.distributed.destroy_process_group()
-    print("destroyed groups")
+    # reinit trainer
+    trainer = pl.Trainer(gpus=1)
 
-    if args.global_rank == 0:
-        args.gpus = 1
-        args.strategy = None
-        trainer = pl.Trainer(gpus=1) #.from_argparse_args(args)
-        #trainer.logger = get_object(args.logger_name, "logger")(args)
-        #trainer.logger.setup(**{"args": args, "model": model})
-        #trainer.callbacks = [RichProgressBar()]
-        trainer.callbacks = set_callbacks(trainer, args)
+    # connect to logger
+    trainer.logger = get_object(args.logger_name, "logger")(args)
+    trainer.logger.setup(**{"args": args, "model": model})
 
+    # set callbacks
+    trainer.callbacks = set_callbacks(trainer, args)
+
+    # eval on train
+    if args.eval_on_train:
+        log.info("\nInference Phase on train set...")
+        train_dataset = loaders.get_eval_dataset_loader(args, split="train")
+
+        if args.train and trainer.checkpoint_callback:
+            trainer.test(model, train_dataset, ckpt_path=args.model_path)
+        else:
+            trainer.test(model, train_dataset)
+
+    # eval on dev
+    if args.dev:
+        log.info("\nValidation Phase...")
+        if args.train and trainer.checkpoint_callback:
+            trainer.test(model, dev_dataset, ckpt_path=args.model_path)
+        else:
+            trainer.test(model, dev_dataset)
+
+    # eval on test
+    if args.test:
         log.info("\nInference Phase on test set...")
         test_dataset = loaders.get_eval_dataset_loader(args, split="test")
 
@@ -102,3 +116,16 @@ if __name__ == "__main__":
         else:
             trainer.test(model, test_dataset)
 
+
+
+if __name__ == "__main__":
+    args = parse_args()
+    model = train(args)
+
+    if args.dev or args.test or args.eval_on_train:
+        if args.strategy == "ddp":
+            torch.distributed.destroy_process_group()
+            log.info("\n\nDestroyed process groups for eval")
+    
+        if args.global_rank == 0:
+            eval(model, args)
