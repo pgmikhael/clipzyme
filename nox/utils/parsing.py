@@ -149,7 +149,7 @@ def prepare_training_config_for_eval(train_config):
     eval_args["cartesian_hyperparams"]["test"] = [True]
     eval_args["cartesian_hyperparams"]["from_checkpoint"] = [True]
     eval_args["cartesian_hyperparams"]["gpus"] = [1]
-    eval_args["cartesian_hyperparams"]["comet_tags"][0] += " eval"
+    eval_args["cartesian_hyperparams"]["logger_tags"][0] += " eval"
     eval_args["available_gpus"] = train_config["available_gpus"]
     eval_args["script"] = train_config["script"]
 

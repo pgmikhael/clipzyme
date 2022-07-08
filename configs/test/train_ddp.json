@@ -26,16 +26,16 @@
       0.9
     ],
     "max_epochs": [
-      5
+      1
     ],
     "lr_decay": [
       0.1
     ],
     "limit_train_batches": [
-      1.0
+      10
     ],
     "limit_val_batches": [
-      1.0
+      10
     ],
     "lr": [
       1e-4
@@ -80,12 +80,12 @@
       "lr_monitor"
     ],
     "workspace": [
-      "pgmikhael"
+      "peteranditamar"
     ],
     "project_name": [
       "sanity-checks"
     ],
-    "comet_tags": [
+    "logger_tags": [
       "nox args"
     ],
     "num_sanity_val_steps": [
@@ -95,7 +95,7 @@
       "simple"
     ],
     "logger_name": [
-      "comet"
+      "wandb"
     ],
     "gpus": [
       2
@@ -114,6 +114,6 @@
     ]
   },
   "available_gpus": [
-    0
+    "0,1,2,3,4,5,6,7"
   ]
 }

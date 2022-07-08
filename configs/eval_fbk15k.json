@@ -1,0 +1,9 @@
+{
+	"train_config": "configs/fb15k237_indrelpred.json",
+	"log_dir": "/Mounts/rbg-storage1/logs/metabo/",
+	"available_gpus": ["0,1,2,3,4,5,6,7"],
+	"script": "main",
+	"eval_args": {
+		"test": [true]
+	}
+}
