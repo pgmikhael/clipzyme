@@ -18,6 +18,7 @@ from nox.utils.registry import get_object
 import nox.utils.loading as loaders
 from nox.utils.callbacks import set_callbacks
 
+
 def train(args):
 
     # Remove callbacks from args for safe pickling later
@@ -49,16 +50,16 @@ def train(args):
 
     # create or load lightning model from checkpoint
     model = loaders.get_lightning_model(args)
-     
+
     # logger
     trainer.logger = get_object(args.logger_name, "logger")(args)
-    
+
     # push to logger
     trainer.logger.setup(**{"args": args, "model": model})
 
     # add callbacks
     trainer.callbacks = set_callbacks(trainer, args)
-    
+
     # train model
     if args.train:
         log.info("\nTraining Phase...")
@@ -73,6 +74,7 @@ def train(args):
 
     return model, trainer.logger
 
+
 def eval(model, logger, args):
 
     # reinit trainer
@@ -82,7 +84,7 @@ def eval(model, logger, args):
     args.strategy = None
 
     # connect to same logger as in training
-    trainer.logger = logger 
+    trainer.logger = logger
 
     # set callbacks
     trainer.callbacks = set_callbacks(trainer, args)
@@ -117,7 +119,6 @@ def eval(model, logger, args):
             trainer.test(model, test_dataset)
 
 
-
 if __name__ == "__main__":
     args = parse_args()
     model, logger = train(args)
@@ -126,10 +127,10 @@ if __name__ == "__main__":
         if args.strategy == "ddp":
             torch.distributed.destroy_process_group()
             log.info("\n\n")
-            log.info(">"*33)
+            log.info(">" * 33)
             log.info("Destroyed process groups for eval")
-            log.info("<"*33)
+            log.info("<" * 33)
             log.info("\n\n")
-    
+
         if args.global_rank == 0:
             eval(model, logger, args)
