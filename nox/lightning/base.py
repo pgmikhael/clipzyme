@@ -82,13 +82,13 @@ class Base(pl.LightningModule, Nox):
         """
         logged_output = OrderedDict()
         model_output = self.model(batch)
-        loss, logging_dict, predictions = self.compute_loss(model_output, batch)
-        predictions = self.store_in_predictions(predictions, batch)
-        predictions = self.store_in_predictions(predictions, model_output)
+        loss, logging_dict, predictions_dict = self.compute_loss(model_output, batch)
+        predictions_dict = self.store_in_predictions(predictions_dict, batch)
+        predictions_dict = self.store_in_predictions(predictions_dict, model_output)
 
         logged_output["loss"] = loss
         logged_output.update(logging_dict)
-        logged_output["preds_dict"] = predictions
+        logged_output["preds_dict"] = predictions_dict
 
         if (
             (self.args.log_gen_image)
@@ -100,7 +100,7 @@ class Base(pl.LightningModule, Nox):
 
         return logged_output
 
-    def forward(self, batch, batch_idx):
+    def forward(self, batch, batch_idx=0):
         """
         Forward defines the prediction/inference actions
             Similar to self.step() but also allows for saving predictions and hiddens
@@ -114,12 +114,15 @@ class Base(pl.LightningModule, Nox):
         """
         logged_output = OrderedDict()
         model_output = self.model(batch)
-        loss, logging_dict, predictions = self.compute_loss(model_output, batch)
-        predictions = self.store_in_predictions(predictions, batch)
-        predictions = self.store_in_predictions(predictions, model_output)
+        if not self.args.predict:
+            loss, logging_dict, predictions_dict = self.compute_loss(
+                model_output, batch
+            )
+            predictions_dict = self.store_in_predictions(predictions_dict, batch)
+        predictions_dict = self.store_in_predictions(predictions_dict, model_output)
         logged_output["loss"] = loss
         logged_output.update(logging_dict)
-        logged_output["preds_dict"] = predictions
+        logged_output["preds_dict"] = predictions_dict
         if self.args.save_hiddens:
             logged_output["preds_dict"].update(model_output)
 
@@ -254,13 +257,16 @@ class Base(pl.LightningModule, Nox):
         return logging_dict
 
     def store_in_predictions(self, preds, storage_dict):
-        for m in ["exam"]:
+        for m in get_object(self.args.dataset_name, "dataset").DATASET_ITEM_KEYS:
             if m in storage_dict:
                 preds[m] = storage_dict[m]
 
         for m in self.metric_keys:
             if m in storage_dict:
-                preds[m] = storage_dict[m]
+                if torch.is_tensor(storage_dict[m]) and storage_dict[m].requires_grad:
+                    preds[m] = storage_dict[m].detach()
+                else:
+                    preds[m] = storage_dict[m]
         return preds
 
     def log_outputs(self, outputs, key):

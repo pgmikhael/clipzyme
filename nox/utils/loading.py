@@ -10,8 +10,6 @@ from torch.utils import data
 from nox.utils.sampler import DistributedWeightedSampler
 from nox.utils.augmentations import get_augmentations_by_split
 from pytorch_lightning.utilities.cloud_io import load as pl_load
-from nox.loaders.image_loaders import OpenCVLoader, DicomLoader
-from pytorch_lightning.utilities.cloud_io import load as pl_load
 
 string_classes = (str, bytes)
 int_classes = int
@@ -98,7 +96,7 @@ def get_train_dataset_loader(args: Namespace, split: Optional[str] = "train"):
     train_data = get_object(args.dataset_name, "dataset")(args, split)
 
     if args.class_bal:
-        if args.accelerator == "ddp":
+        if args.strategy=="ddp":
             sampler = DistributedWeightedSampler(
                 train_data,
                 weights=train_data.weights,
@@ -113,7 +111,7 @@ def get_train_dataset_loader(args: Namespace, split: Optional[str] = "train"):
                 replacement=True,
             )
     else:
-        if args.accelerator == "ddp":
+        if args.strategy == "ddp": 
             sampler = torch.utils.data.distributed.DistributedSampler(
                 train_data,
                 shuffle=True,
@@ -151,7 +149,7 @@ def get_eval_dataset_loader(
 
     eval_data = get_object(args.dataset_name, "dataset")(args, split)
 
-    if args.accelerator == "ddp":
+    if args.strategy == "ddp": 
         sampler = torch.utils.data.distributed.DistributedSampler(
             eval_data,
             shuffle=shuffle,

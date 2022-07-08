@@ -3,6 +3,18 @@ import argparse
 from nox.utils.registry import get_object
 
 
+class classproperty(object):
+    """
+    Method decorator behaves as @classmethod + @property
+    """
+
+    def __init__(self, fget):
+        self.fget = fget
+
+    def __get__(self, owner_self, owner_cls):
+        return self.fget(owner_cls)
+
+
 class Nox(object):
     __metaclass__ = ABCMeta
 

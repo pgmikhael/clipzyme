@@ -586,13 +586,12 @@ def get_parser():
         "--logger_name",
         type=str,
         action=set_nox_type("logger"),
-        default=None,
-        help="List of tags for comet logger",
+        choices=["tensorboard", "comet", "wandb"],
+        default="tensorboard",
+        help="experiment logger to use",
     )
-
-    # comet
     parser.add_argument(
-        "--comet_tags", nargs="*", default=[], help="List of tags for comet logger"
+        "--logger_tags", nargs="*", default=[], help="List of tags for logger"
     )
     parser.add_argument("--project_name", default="CancerCures", help="Comet project")
     parser.add_argument("--workspace", default="pgmikhael", help="Comet workspace")
@@ -644,10 +643,10 @@ def parse_args(args_strings=None):
     if (isinstance(args.gpus, str) and len(args.gpus.split(",")) > 1) or (
         isinstance(args.gpus, int) and args.gpus > 1
     ):
-        args.accelerator = "ddp"
+        args.strategy = "ddp"
         args.replace_sampler_ddp = False
     else:
-        args.accelerator = None
+        args.strategy  = None 
         args.replace_sampler_ddp = False
 
     # username
