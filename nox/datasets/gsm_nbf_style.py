@@ -14,6 +14,7 @@ from nox.datasets.utils import METAFILE_NOTFOUND_ERR, LOAD_FAIL_MSG
 from nox.datasets import AbstractDataset
 from torch_geometric.data import HeteroData, InMemoryDataset, Data
 import tqdm
+import itertools
 
 
 @register_object("gsm_nbf", "dataset")
@@ -47,7 +48,6 @@ class GSMNBFDataset(AbstractDataset, InMemoryDataset):
     def init_class(self, args: argparse.ArgumentParser, split_group: str) -> None:
         self.load_dataset(args)
 
-
     @property
     def num_relations(self):
         return int(self.data.edge_type.max()) + 1
@@ -68,6 +68,7 @@ class GSMNBFDataset(AbstractDataset, InMemoryDataset):
     def raw_file_names(self):
         # TODO: implement
         # return ["train_ind.txt", "test_ind.txt", "train.txt", "valid.txt"]
+        pass
 
     def download(self):
         pass
@@ -142,103 +143,138 @@ class GSMNBFDataset(AbstractDataset, InMemoryDataset):
         train_slice = slice(None, sum(num_samples[:1]))
         valid_slice = slice(sum(num_samples[:1]), sum(num_samples[:2]))
         test_slice = slice(sum(num_samples[:3]), sum(num_samples))
-        train_data = Data(
-            edge_index=train_fact_index,
-            edge_type=train_fact_type,
-            num_nodes=len(inv_train_entity_vocab),
-            target_edge_index=edge_index[:, train_slice],
-            target_edge_type=edge_type[train_slice],
-        )
-        valid_data = Data(
-            edge_index=train_fact_index,
-            edge_type=train_fact_type,
-            num_nodes=len(inv_train_entity_vocab),
-            target_edge_index=edge_index[:, valid_slice],
-            target_edge_type=edge_type[valid_slice],
-        )
-        test_data = Data(
-            edge_index=test_fact_index,
-            edge_type=test_fact_type,
-            num_nodes=len(inv_test_entity_vocab),
-            target_edge_index=edge_index[:, test_slice],
-            target_edge_type=edge_type[test_slice],
-        )
-
-        if self.pre_transform is not None:
-            train_data = self.pre_transform(train_data)
-            valid_data = self.pre_transform(valid_data)
-            test_data = self.pre_transform(test_data)
-
-        torch.save(
-            (self.collate([train_data, valid_data, test_data])), self.processed_paths[0]
-        )
 
         ################## OLD ##################################
         ###### GOAL is to covert below code to above format
-        # node types: metabolite, protein, reaction
-        # edge types: reactants_of, creates_products
+        # node types: reactant, product, enzyme,
+        # edge types:
+        # (m1, m2, is_co_reactant_of), bi-directional
+        # (p1, p2, is_co_product_of), bi-directional
+        # (e1, e2, is_co_enzyme_of), bi-directional
+        # (m1, e1, is_co_reactant_enzyme), bi-directional
+        # (m1, p1, is_metabolite_reactant_for)
+        # (p1, m1, is_product_of_metabolite)
+        # (e1, p1, is_enzyme_reactant_for)
+        # (p1, e1, is_enzyme_for_product)
 
-        # protein2id = {}
-        # metabolite2id = {}
-        # reaction2id = {}
+        node2id = {}
+        relation2id = {
+            "is_co_reactant_of": 0,
+            "is_co_product_of": 1,
+            "is_co_enzyme_of": 2,
+            "is_co_reactant_enzyme": 3,
+            "is_metabolite_reactant_for": 4,
+            "is_product_of_metabolite": 5,
+            "is_enzyme_reactant_for": 6,
+            "is_enzyme_for_product": 7,
+        }
 
-        # metabolite_counter = 0
-        # protein_counter = 0
-        # reaction_counter = 0
+        triplets = []
 
-        # metabolites_reactants_of_reactions = []
-        # reactions_creates_products_metabolites = []
-        # proteins_reactants_of_reactions = []
+        for rxn_dict in tqdm(self.metadata_json, position=0):
+            reactants = rxn_dict["reactants"]
+            products = rxn_dict["products"]
+            enzymes = rxn_dict["proteins"]
 
-        # for rxn_dict in tqdm(self.metadata_json, position=0):
-        #     # give each node a unique id
-        #     if rxn_dict["rxn_id"] not in reaction2id:
-        #         reaction2id[rxn_dict["rxn_id"]] = reaction_counter
-        #         reaction_counter += 1
+            is_co_reactant_of = (
+                set()
+            )  # used to make (m1, m2, is_co_reactant_of), bi-directional
+            is_co_product_of = (
+                set()
+            )  # used to make (p1, p2, is_co_product_of), bi-directional
+            is_co_enzyme_of = (
+                set()
+            )  # used to make (e1, e2, is_co_enzyme_of), bi-directional
 
-        #     reactants = rxn_dict["reactants"]
-        #     for reactant in reactants:
-        #         if reactant not in metabolite2id:
-        #             metabolite2id[reactant["metabolite"]] = metabolite_counter
-        #             metabolite_counter += 1
-        #         # create edges "metabolites", "reactants_of", "reactions"
-        #         metabolites_reactants_of_reactions.append(
-        #             [
-        #                 metabolite2id[reactant["metabolite"]],
-        #                 reaction2id[rxn_dict["rxn_id"]],
-        #             ]
-        #         )
+            is_co_reactant_enzyme = (
+                []
+            )  # (m1, e1, is_co_reactant_enzyme), bi-directional
+            is_metabolite_reactant_for = (
+                []
+            )  # (m1, p1, is_metabolite_reactant_for), bi-directional called is_product_of_metabolite
+            is_enzyme_for_product = (
+                []
+            )  # (p1, e1, is_enzyme_for_product) bi-directional called is_enzyme_reactant_for
 
-        #     products = rxn_dict["products"]
-        #     for product in products:
-        #         if product not in metabolite2id:
-        #             metabolite2id[product["metabolite"]] = metabolite_counter
-        #             metabolite_counter += 1
-        #         # create edges "reactions", "creates_products", "metabolites"
-        #         reactions_creates_products_metabolites.append(
-        #             [
-        #                 metabolite2id[product["metabolite"]],
-        #                 reaction2id[rxn_dict["rxn_id"]],
-        #             ]
-        #         )
+            for reactant in reactants:
+                if reactant not in node2id:
+                    node2id[reactant["metabolite"]] = len(node2id)
 
-        #     proteins = rxn_dict["proteins"]
-        #     for protein in proteins:
-        #         if protein not in protein2id:
-        #             protein2id[protein["bigg_gene_id"]] = protein_counter
-        #             protein_counter += 1
-        #         # create edges "proteins", "reactants_of", "reactions"
-        #         proteins_reactants_of_reactions.append(
-        #             [
-        #                 protein2id[protein["bigg_gene_id"]],
-        #                 reaction2id[rxn_dict["rxn_id"]],
-        #             ]
-        #         )
+                node_id = node2id[reactant["metabolite"]]
+
+                # add reactants (metabolites) to any relevant relations
+                is_co_reactant_of.add(node_id)
+                is_metabolite_reactant_for.append(
+                    [node_id, relation2id["is_metabolite_reactant_for"]] * len(products)
+                )
+                is_co_reactant_enzyme.append(
+                    [node_id, relation2id["is_co_reactant_enzyme"]] * len(enzymes)
+                )
+
+            for product in products:
+                if product not in node2id:
+                    node2id[product["metabolite"]] = len(node2id)
+
+                node_id = node2id[product["metabolite"]]
+
+                # add products (metabolites) to any relevant relations
+                is_co_product_of.add(node_id)
+                is_enzyme_for_product.append(
+                    [node_id, relation2id["is_enzyme_for_product"]] * len(enzymes)
+                )
+
+                # for each relation already created that requires a product, add those products
+                for indx in range(len(is_metabolite_reactant_for)):
+                    is_metabolite_reactant_for[indx].append(node_id)
+
+            for enzyme in enzymes:
+                if enzyme not in node2id:
+                    node2id[enzyme["bigg_gene_id"]] = len(node2id)
+
+                node_id = node2id[enzyme["bigg_gene_id"]]
+
+                # add enzymes (proteins) to any relevant relations
+                is_co_enzyme_of.add(node_id)
+
+                # for each relation already created that requires a product, add those products
+                for indx in range(len(is_co_reactant_enzyme)):
+                    is_co_reactant_enzyme[indx].append(node_id)
+
+                for indx in range(len(is_enzyme_for_product)):
+                    is_enzyme_for_product[indx].append(node_id)
+
+        # Add flip directions
+        # used to make (m1, m2, is_co_reactant_of), bi-directional
+        perms_is_co_reactant_of = [
+            [h, relation2id["is_co_reactant_of"], t]
+            for h, t in itertools.permutations(is_co_reactant_of, 2)
+        ]
+
+        # used to make (p1, p2, is_co_product_of), bi-directional
+        perms_is_co_product_of = [
+            [h, relation2id["is_co_product_of"], t]
+            for h, t in itertools.permutations(is_co_product_of, 2)
+        ]
+
+        # used to make (e1, e2, is_co_enzyme_of), bi-directional
+        perms_is_co_enzyme_of = [
+            [h, relation2id["is_co_enzyme_of"], t]
+            for h, t in itertools.permutations(is_co_enzyme_of, 2)
+        ]
+
+        # (m1, e1, is_co_reactant_enzyme), bi-directional
+        perms_co_reactant_enzymes = is_co_reactant_enzyme + [
+            l.reverse() for l in is_co_reactant_enzyme
+        ]
+
+        # (m1, p1, is_metabolite_reactant_for), bi-directional called is_product_of_metabolite
+        # is_product_of_metabolite = is_metabolite_reactant_for + [
+        # (p1, e1, is_enzyme_for_product) bi-directional called is_enzyme_reactant_for
 
         # graph = HeteroData()
 
-        # graph["metabolites"].num_nodes = len(metabolite2id)
-        # graph["proteins"].num_nodes = len(protein2id)
+        # graph["metabolites"].num_nodes = len(node2id)
+        # graph["proteins"].num_nodes = len(node2id)
         # graph["reactions"].num_nodes = len(reaction2id)
 
         # graph["metabolites", "reactants_of", "reactions"].edge_index = (
@@ -271,9 +307,39 @@ class GSMNBFDataset(AbstractDataset, InMemoryDataset):
 
         # return sample
 
+        train_data = Data(
+            edge_index=train_fact_index,
+            edge_type=train_fact_type,
+            num_nodes=len(inv_train_entity_vocab),
+            target_edge_index=edge_index[:, train_slice],
+            target_edge_type=edge_type[train_slice],
+        )
+        valid_data = Data(
+            edge_index=train_fact_index,
+            edge_type=train_fact_type,
+            num_nodes=len(inv_train_entity_vocab),
+            target_edge_index=edge_index[:, valid_slice],
+            target_edge_type=edge_type[valid_slice],
+        )
+        test_data = Data(
+            edge_index=test_fact_index,
+            edge_type=test_fact_type,
+            num_nodes=len(inv_test_entity_vocab),
+            target_edge_index=edge_index[:, test_slice],
+            target_edge_type=edge_type[test_slice],
+        )
+
+        if self.pre_transform is not None:
+            train_data = self.pre_transform(train_data)
+            valid_data = self.pre_transform(valid_data)
+            test_data = self.pre_transform(test_data)
+
+        torch.save(
+            (self.collate([train_data, valid_data, test_data])), self.processed_paths[0]
+        )
+
     def __repr__(self):
         return "%s()" % self.name
-
 
     def load_dataset(self, args: argparse.ArgumentParser) -> None:
         """Loads dataset file
@@ -319,7 +385,6 @@ class GSMNBFDataset(AbstractDataset, InMemoryDataset):
             dataset.append({"triplet": t})
 
         return dataset
-        
 
     def skip_sample(self, sample) -> bool:
         """
