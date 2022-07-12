@@ -1,6 +1,6 @@
 import traceback, warnings
 import argparse
-from typing import List, Literal
+from typing import List, Literal, Dict
 from abc import ABCMeta, abstractmethod
 import json
 from collections import Counter
@@ -29,8 +29,6 @@ class GSMNBFDataset(AbstractDataset, InMemoryDataset):
         constructs: standard pytorch Dataset obj, which can be fed in a DataLoader for batching
         """
         self.split_group = split_group
-        self.args = args
-
         self.args = args
 
         self.name = "gsm_nbf"
@@ -78,7 +76,7 @@ class GSMNBFDataset(AbstractDataset, InMemoryDataset):
         # this function converts the raw data into triplets
         # the key thing is that test and train files are organised in a specific order
 
-        if args.split_by_reactions:
+        if self.args.split_by_reactions:
             train_reactions, val_reactions, test_reactions = self.splitter(
                 self.metadata_json
             )
@@ -87,138 +85,9 @@ class GSMNBFDataset(AbstractDataset, InMemoryDataset):
             test_triplets = self.get_triplets(test_reactions)
         else:
             all_triplets = self.get_triplets(self.metadata_json)
-            ### HERE DO YOUR SPLITING
             train_triplets, val_triplets, test_triplets = self.splitter(all_triplets)
 
-        ################## OLD ##################################
-        ###### GOAL is to covert below code to above format
-        # node types: reactant, product, enzyme,
-        # edge types:
-        # (m1, m2, is_co_reactant_of), bi-directional
-        # (p1, p2, is_co_product_of), bi-directional
-        # (e1, e2, is_co_enzyme_of), bi-directional
-        # (m1, e1, is_co_reactant_enzyme), bi-directional
-        # (m1, p1, is_metabolite_reactant_for)
-        # (p1, m1, is_product_of_metabolite)
-        # (e1, p1, is_enzyme_reactant_for)
-        # (p1, e1, is_enzyme_for_product)
-
-        node2id = {}
-        relation2id = {
-            "is_co_reactant_of": 0,
-            "is_co_product_of": 1,
-            "is_co_enzyme_of": 2,
-            "is_co_reactant_enzyme": 3,
-            "is_metabolite_reactant_for": 4,
-            "is_product_of_metabolite": 5,
-            "is_enzyme_reactant_for": 6,
-            "is_enzyme_for_product": 7,
-        }
-
-        triplets = []
-
-        for rxn_dict in tqdm(self.metadata_json, position=0):
-            reactants = rxn_dict["reactants"]
-            products = rxn_dict["products"]
-            enzymes = rxn_dict["proteins"]
-
-            is_co_reactant_of = (
-                set()
-            )  # used to make (m1, m2, is_co_reactant_of), bi-directional
-            is_co_product_of = (
-                set()
-            )  # used to make (p1, p2, is_co_product_of), bi-directional
-            is_co_enzyme_of = (
-                set()
-            )  # used to make (e1, e2, is_co_enzyme_of), bi-directional
-
-            is_co_reactant_enzyme = (
-                []
-            )  # (m1, e1, is_co_reactant_enzyme), bi-directional
-            is_metabolite_reactant_for = (
-                []
-            )  # (m1, p1, is_metabolite_reactant_for), bi-directional called is_product_of_metabolite
-            is_enzyme_for_product = (
-                []
-            )  # (p1, e1, is_enzyme_for_product) bi-directional called is_enzyme_reactant_for
-
-            for reactant in reactants:
-                if reactant not in node2id:
-                    node2id[reactant["metabolite"]] = len(node2id)
-
-                node_id = node2id[reactant["metabolite"]]
-
-                # add reactants (metabolites) to any relevant relations
-                is_co_reactant_of.add(node_id)
-                is_metabolite_reactant_for.append(
-                    [node_id, relation2id["is_metabolite_reactant_for"]] * len(products)
-                )
-                is_co_reactant_enzyme.append(
-                    [node_id, relation2id["is_co_reactant_enzyme"]] * len(enzymes)
-                )
-
-            for product in products:
-                if product not in node2id:
-                    node2id[product["metabolite"]] = len(node2id)
-
-                node_id = node2id[product["metabolite"]]
-
-                # add products (metabolites) to any relevant relations
-                is_co_product_of.add(node_id)
-                is_enzyme_for_product.append(
-                    [node_id, relation2id["is_enzyme_for_product"]] * len(enzymes)
-                )
-
-                # for each relation already created that requires a product, add those products
-                for indx in range(len(is_metabolite_reactant_for)):
-                    is_metabolite_reactant_for[indx].append(node_id)
-
-            for enzyme in enzymes:
-                if enzyme not in node2id:
-                    node2id[enzyme["bigg_gene_id"]] = len(node2id)
-
-                node_id = node2id[enzyme["bigg_gene_id"]]
-
-                # add enzymes (proteins) to any relevant relations
-                is_co_enzyme_of.add(node_id)
-
-                # for each relation already created that requires a product, add those products
-                for indx in range(len(is_co_reactant_enzyme)):
-                    is_co_reactant_enzyme[indx].append(node_id)
-
-                for indx in range(len(is_enzyme_for_product)):
-                    is_enzyme_for_product[indx].append(node_id)
-
-            # Add flip directions
-            # used to make (m1, m2, is_co_reactant_of), bi-directional
-            perms_is_co_reactant_of = [
-                [h, relation2id["is_co_reactant_of"], t]
-                for h, t in itertools.permutations(is_co_reactant_of, 2)
-            ]
-
-            # used to make (p1, p2, is_co_product_of), bi-directional
-            perms_is_co_product_of = [
-                [h, relation2id["is_co_product_of"], t]
-                for h, t in itertools.permutations(is_co_product_of, 2)
-            ]
-
-            # used to make (e1, e2, is_co_enzyme_of), bi-directional
-            perms_is_co_enzyme_of = [
-                [h, relation2id["is_co_enzyme_of"], t]
-                for h, t in itertools.permutations(is_co_enzyme_of, 2)
-            ]
-
-            # (m1, e1, is_co_reactant_enzyme), bi-directional
-            perms_co_reactant_enzymes = is_co_reactant_enzyme + [
-                l.reverse() for l in is_co_reactant_enzyme
-            ]
-
-        # (m1, p1, is_metabolite_reactant_for), bi-directional called
-        # is_product_of_metabolite = is_metabolite_reactant_for + [
-        # (p1, e1, is_enzyme_for_product) bi-directional called is_enzyme_reactant_for
-
-        # triplets = torch.tensor(triplets)
-
+        # TODO: take train, val, test triplets and create data, below is from NBFNet code
         # edge_index = triplets[:, :2].t()
         # edge_type = triplets[:, 2]
         # num_relations = int(edge_type.max()) + 1
@@ -271,6 +140,149 @@ class GSMNBFDataset(AbstractDataset, InMemoryDataset):
         # torch.save(
         #     (self.collate([train_data, valid_data, test_data])), self.processed_paths[0]
         # )
+
+    def get_triplets(self, reactions: List[Dict]) -> torch.Tensor:
+        """
+        params: reactions - list of reactions, typically a json/metadata json format
+        returns: triplets - tensor of triplets where each triplet is (node, relation, node), of the following:
+            node types: reactant, product, enzyme
+            relation types:
+                (m1, m2, is_co_reactant_of), bi-directional
+                (p1, p2, is_co_product_of), bi-directional
+                (e1, e2, is_co_enzyme_of), bi-directional
+                (m1, e1, is_co_reactant_enzyme), bi-directional
+                (m1, p1, is_metabolite_reactant_for)
+                (p1, m1, is_product_of_metabolite)
+                (e1, p1, is_enzyme_reactant_for)
+                (p1, e1, is_enzyme_for_product)
+        """
+
+        node2id = {}
+        relation2id = {
+            "is_co_reactant_of": 0,
+            "is_co_product_of": 1,
+            "is_co_enzyme_of": 2,
+            "is_co_reactant_enzyme": 3,
+            "is_metabolite_reactant_for": 4,
+            "is_product_of_metabolite": 5,
+            "is_enzyme_reactant_for": 6,
+            "is_enzyme_for_product": 7,
+        }
+
+        triplets = []
+
+        for rxn_dict in tqdm(reactions, position=0):
+            reactants = rxn_dict["reactants"]
+            products = rxn_dict["products"]
+            enzymes = rxn_dict["proteins"]
+
+            # used to make (m1, m2, is_co_reactant_of), bi-directional
+            is_co_reactant_of = set()
+            # used to make (p1, p2, is_co_product_of), bi-directional
+            is_co_product_of = set()
+            # used to make (e1, e2, is_co_enzyme_of), bi-directional
+            is_co_enzyme_of = set()
+            # (m1, e1, is_co_reactant_enzyme), bi-directional
+            is_co_reactant_enzyme = []
+            # (m1, p1, is_metabolite_reactant_for), bi-directional called is_product_of_metabolite
+            is_metabolite_reactant_for = []
+            # (p1, e1, is_enzyme_for_product) bi-directional called is_enzyme_reactant_for
+            is_enzyme_for_product = []
+
+            for reactant in reactants:
+                if reactant not in node2id:
+                    node2id[reactant["metabolite"]] = len(node2id)
+
+                node_id = node2id[reactant["metabolite"]]
+
+                # add reactants (metabolites) to any relevant relations
+                is_co_reactant_of.add(node_id)
+                if len(products) > 0:
+                    is_metabolite_reactant_for.append(
+                        [node_id, relation2id["is_metabolite_reactant_for"]]
+                        * len(products)
+                    )
+                if len(enzymes) > 0:
+                    is_co_reactant_enzyme.append(
+                        [node_id, relation2id["is_co_reactant_enzyme"]] * len(enzymes)
+                    )
+
+            for product in products:
+                if product not in node2id:
+                    node2id[product["metabolite"]] = len(node2id)
+
+                node_id = node2id[product["metabolite"]]
+
+                # add products (metabolites) to any relevant relations
+                is_co_product_of.add(node_id)
+                if len(enzymes) > 0:
+                    is_enzyme_for_product.append(
+                        [node_id, relation2id["is_enzyme_for_product"]] * len(enzymes)
+                    )
+
+                # for each relation already created that requires a product, add those products
+                for indx in range(len(is_metabolite_reactant_for)):
+                    is_metabolite_reactant_for[indx].append(node_id)
+
+            for enzyme in enzymes:
+                if enzyme not in node2id:
+                    node2id[enzyme["bigg_gene_id"]] = len(node2id)
+
+                node_id = node2id[enzyme["bigg_gene_id"]]
+
+                # add enzymes (proteins) to any relevant relations
+                is_co_enzyme_of.add(node_id)
+
+                # for each relation already created that requires a product, add those products
+                for indx in range(len(is_co_reactant_enzyme)):
+                    is_co_reactant_enzyme[indx].append(node_id)
+
+                for indx in range(len(is_enzyme_for_product)):
+                    is_enzyme_for_product[indx].append(node_id)
+
+            # Add flip directions
+            # used to make (m1, m2, is_co_reactant_of), bi-directional
+            perms_is_co_reactant_of = [
+                [h, relation2id["is_co_reactant_of"], t]
+                for h, t in itertools.permutations(is_co_reactant_of, 2)
+            ]
+
+            # used to make (p1, p2, is_co_product_of), bi-directional
+            perms_is_co_product_of = [
+                [h, relation2id["is_co_product_of"], t]
+                for h, t in itertools.permutations(is_co_product_of, 2)
+            ]
+
+            # used to make (e1, e2, is_co_enzyme_of), bi-directional
+            perms_is_co_enzyme_of = [
+                [h, relation2id["is_co_enzyme_of"], t]
+                for h, t in itertools.permutations(is_co_enzyme_of, 2)
+            ]
+
+            # (m1, e1, is_co_reactant_enzyme), bi-directional
+            perms_co_reactant_enzymes = is_co_reactant_enzyme + [
+                trip[::-1] for trip in is_co_reactant_enzyme
+            ]
+
+            # (m1, p1, is_metabolite_reactant_for), bi-directional called is_metabolite_reactant_for
+            is_product_of_metabolite = [
+                trip[::-1] for trip in is_metabolite_reactant_for
+            ]
+
+            # (p1, e1, is_enzyme_for_product) bi-directional called is_enzyme_reactant_for
+            is_enzyme_reactant_for = [trip[::-1] for trip in is_enzyme_for_product]
+
+            triplets += (
+                perms_is_co_reactant_of
+                + perms_is_co_product_of
+                + perms_is_co_enzyme_of
+                + perms_co_reactant_enzymes
+                + is_product_of_metabolite
+                + is_enzyme_reactant_for
+            )
+
+        triplets = torch.tensor(triplets)
+        return triplets
 
     def __repr__(self):
         return "%s()" % self.name
