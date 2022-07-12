@@ -1,6 +1,6 @@
 import traceback, warnings
 import argparse
-from typing import List, Literal, Dict
+from typing import List, Literal, Dict, Iterable, Tuple
 from abc import ABCMeta, abstractmethod
 import json
 from collections import Counter
@@ -77,7 +77,7 @@ class GSMNBFDataset(AbstractDataset, InMemoryDataset):
         # the key thing is that test and train files are organised in a specific order
 
         if self.args.split_by_reactions:
-            train_reactions, val_reactions, test_reactions = self.splitter(
+            train_reactions, val_reactions, test_reactions = self.assign_splits(
                 self.metadata_json
             )
             train_triplets = self.get_triplets(train_reactions)
@@ -85,7 +85,9 @@ class GSMNBFDataset(AbstractDataset, InMemoryDataset):
             test_triplets = self.get_triplets(test_reactions)
         else:
             all_triplets = self.get_triplets(self.metadata_json)
-            train_triplets, val_triplets, test_triplets = self.splitter(all_triplets)
+            train_triplets, val_triplets, test_triplets = self.assign_splits(
+                all_triplets
+            )
 
         # TODO: take train, val, test triplets and create data, below is from NBFNet code
         # edge_index = triplets[:, :2].t()
@@ -343,10 +345,7 @@ class GSMNBFDataset(AbstractDataset, InMemoryDataset):
         """
         Prints summary statement with dataset stats
         """
-        metabolites = len(self.dataset["metabolite2id"])
-        reactions = len(self.dataset["reaction2id"])
-        proteins = len(self.dataset["protein2id"])
-        summary = f"Contructed Genome Scale Model {self.split_group} dataset with {reactions} reactions, {metabolites} metabolites, {proteins} proteins"
+        summary = f"Contructed Genome Scale Model {self.split_group} dataset with {len(self.split_graph)} samples in the split graph"
         return summary
 
     def print_summary_statement(self, dataset, split_group):
@@ -355,9 +354,8 @@ class GSMNBFDataset(AbstractDataset, InMemoryDataset):
         )
         print(statement)
 
-    def __len__(self) -> int:
-        # define length as number of reactions
-        return len(self.dataset["reaction2id"])
+    # def __len__(self) -> int:
+    # TODO: if needed, implement
 
     def __getitem__(self, index):
         """
@@ -378,18 +376,24 @@ class GSMNBFDataset(AbstractDataset, InMemoryDataset):
         #     sample["metabolite2id"]
         # )  # if learnt then returns torch.nn.Embedding((size))
 
-    def assign_splits(self, metadata_json) -> None:
+    def assign_splits(self, metadata_json: Iterable) -> Tuple:
         """
-        Assign samples to data splits
+        Assigns each item in the iterable metadata_json to a split group.
 
-        Args:
-            metadata_json (dict): raw json dataset loaded
+        param: metadata_json: iterable, typically a json of reactions
+        returns: splits.values() - a tuple-like (dict_values) object of split groups with length 3
         """
-        # TODO
-        # for idx in range(len(metadata_json)):
-        #     metadata_json[idx]["split"] = np.random.choice(
-        #         ["train", "dev", "test"], p=self.args.split_probs
-        #     )
+        splits = {
+            "train": [],
+            "dev": [],
+            "test": [],
+        }
+        for idx in range(len(metadata_json)):
+            splits[
+                np.random.choice(["train", "dev", "test"], p=self.args.split_probs)
+            ].append(metadata_json[idx])
+
+        return splits.values()
 
     def set_sample_weights(self, args: argparse.ArgumentParser) -> None:
         """
@@ -412,6 +416,7 @@ class GSMNBFDataset(AbstractDataset, InMemoryDataset):
         #     self.weights = [label_weights[d[args.class_bal_key]] for d in self.dataset]
         # else:
         #     pass
+        pass
 
     @property
     def DATASET_ITEM_KEYS(self) -> list:
@@ -424,6 +429,7 @@ class GSMNBFDataset(AbstractDataset, InMemoryDataset):
         # TODO
         # standard = ["sample_id"]
         # return standard
+        pass
 
     @staticmethod
     def add_args(parser) -> None:
