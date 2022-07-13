@@ -352,7 +352,7 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
                 or id2enzyme_features.get(id, False)
             ):
                 if "metabolite" in metadata_dict:
-                    id2metabolite_features[id] = id
+                    id2metabolite_features[id] = None
                     if metadata_dict["smiles"]:
                         if self.args.metabolite_feature_type == "precomputed":
                             id2metabolite_features[id] = get_rdkit_feature(
@@ -365,7 +365,7 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
                             )
 
                 elif "bigg_gene_id" in metadata_dict:
-                    id2enzyme_features[id] = id
+                    id2enzyme_features[id] = None
                     if self.args.protein_feature_type == "precomputed":
                         id2enzyme_features[id] = self.protein_encoder(
                             metadata_dict["protein_sequence"]

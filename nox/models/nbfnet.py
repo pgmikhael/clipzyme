@@ -4,8 +4,9 @@ from collections.abc import Sequence
 import torch
 from torch import nn, autograd
 from torch_scatter import scatter_add
+from torch_geometric.data import Batch
 
-from nox.utils.registry import register_object
+from nox.utils.registry import get_object, register_object
 from nox.utils.nbf import gen_rel_conv_layer, nbf_utils
 from nox.models.abstract import AbstractModel
 
@@ -20,7 +21,6 @@ class NBFNet(AbstractModel):
         super(NBFNet, self).__init__()
         self.num_negative = args.num_negative
         self.strict_negative = args.strict_negative
-        self.boundary_condition_type = args.boundary_condition_type
 
         if not isinstance(args.hidden_dims, Sequence):
             hidden_dims = [args.hidden_dims]
@@ -112,21 +112,12 @@ class NBFNet(AbstractModel):
         # initialize queries (relation types of the given triples)
         query = self.query(r_index)
         index = h_index.unsqueeze(-1).expand_as(query)
-        if self.boundary_condition_type == "zero":
-            boundary = torch.zeros(
-                batch_size, data.num_nodes, self.dims[0], device=h_index.device
-            )
-            # by the scatter operation we put query (relation) embeddings as init features of source (index) nodes
-            boundary.scatter_add_(1, index.unsqueeze(1), query.unsqueeze(1))
 
-        # if pretrained
-        elif self.boundary_condition_type == "precomputed":
-            raise NotImplementedError
-        # if from model
-        elif self.boundary_condition_type == "trained":
-            raise NotImplementedError
-        else:
-            raise NotImplementedError
+        boundary = torch.zeros(
+            batch_size, data.num_nodes, self.dims[0], device=h_index.device
+        )
+        # by the scatter operation we put query (relation) embeddings as init features of source (index) nodes
+        boundary.scatter_add_(1, index.unsqueeze(1), query.unsqueeze(1))
 
         return query, boundary
 
@@ -436,10 +427,66 @@ class NBFNet(AbstractModel):
             default=10,
             help="number of paths to use to obtain average length of the top-k paths",
         )
-        parser.add_argument(
-            "--boundary_condition_type",
-            type=str,
-            default="zero",
-            choices=["zero", "precomputed", "trained"],
-            help="how to initialize node features",
+
+
+@register_object("metabo_nbfnet", "model")
+class Metabo_NBFNet(NBFNet):
+    def __init__(self, args) -> None:
+        super().__init__(args)
+        self.protein_encoder = get_object("", "model")
+        self.metabolite_encoder = get_object("", "model")
+
+        self.metabolite_feature_type = args.metabolite_feature_type
+        self.protein_feature_type = args.protein_feature_type
+        self.batch = Batch()
+
+    def init_boundary_conditions(self, data, h_index, r_index):
+        batch_size = len(r_index)
+
+        # initialize queries (relation types of the given triples)
+        query = self.query(r_index)
+
+        data.metabolite_features
+        data.enzyme_features
+
+        # if pretrained
+        if self.metabolite_feature_type == "precomputed":
+            for i, h in enumerate(h_index):
+                if data.metabolite_features.get(i, None) is not None:
+                    query[i] = data.metabolite_features[h]
+        # if from model
+        elif self.metabolite_feature_type == "trained":
+            metabolite_indx, metabolite_batch = [], []
+            for i, h in enumerate(h_index):
+                if data.metabolite_features.get(i, None) is not None:
+                    metabolite_indx.append(i)
+                    metabolite_batch.append(data.metabolite_features[h])
+
+            metabolite_batch = self.batch.from_data_list(metabolite_batch)
+            metabolite_features = self.metabolite_encoder(metabolite_batch)
+            query[metabolite_indx] = metabolite_features["graph_features"]
+
+        # if pretrained
+        if self.protein_feature_type == "precomputed":
+            for i, h in enumerate(h_index):
+                if data.enzyme_features.get(i, None) is not None:
+                    query[i] = data.enzyme_features[h]
+        # if from model
+        elif self.protein_feature_type == "trained":
+            protein_indx, protein_batch = [], []
+            for i, h in enumerate(h_index):
+                if data.enzyme_features.get(i, None) is not None:
+                    protein_indx.append(i)
+                    protein_batch.append(data.enzyme_features[h])
+
+            protein_features = self.protein_encoder(protein_batch)
+            query[protein_indx] = protein_features["hidden"]
+
+        index = h_index.unsqueeze(-1).expand_as(query)
+
+        boundary = torch.zeros(
+            batch_size, data.num_nodes, self.dims[0], device=h_index.device
         )
+        # by the scatter operation we put query (relation) embeddings as init features of source (index) nodes
+        boundary.scatter_add_(1, index.unsqueeze(1), query.unsqueeze(1))
+        return query, boundary

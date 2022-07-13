@@ -3,16 +3,17 @@ import torch.nn as nn
 from nox.utils.registry import register_object, get_object
 from nox.models.abstract import AbstractModel
 from torch_geometric.nn.conv.gatv2_conv import GATv2Conv
+from torch_scatter import scatter
 
 
 @register_object("gatv2", "model")
-class Classifier(AbstractModel):
+class GATv2(AbstractModel):
     """
     https://arxiv.org/abs/2105.14491
     """
 
     def __init__(self, args):
-        super(Classifier, self).__init__()
+        super(GATv2, self).__init__()
         self.args = args
         self.encoder = GATv2Conv(
             in_channels=args.num_chan,
@@ -28,16 +29,22 @@ class Classifier(AbstractModel):
             share_weights=args.gat_share_weights,
         )
 
-    def forward(self, batch=None):
+    def forward(self, data):
         output = {}
-        node_features = batch["node"]
-        edge_index = batch["edge_index"]
-        edge_features = batch["edge_features"]
+        node_features = data.x
+        edge_index = data.edge_index
+        edge_features = data.edge_attr
+        num_nodes = len(node_features)
         # default: (num_nodes, num_heads * out_chan );
         # bipartite (num_target_nodes, num_heads * out_chan )
-        output["encoder_hidden"] = self.encoder.forward(
+        encoded_features = self.encoder.forward(
             node_features, edge_index, edge_features
         )
+        encoded_features = encoded_features.view(num_nodes, self.num_heads, -1).mean(1)
+        graph_features = scatter(encoded_features, data.batch, dim=0, reduce="add")
+
+        output["node_features"] = encoded_features
+        output["graph_features"] = graph_features
         return output
 
     @staticmethod
