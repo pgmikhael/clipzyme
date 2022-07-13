@@ -1,12 +1,10 @@
-import traceback, warnings
 import argparse
 from typing import List, Literal, Dict, Iterable, Tuple, Set
 import numpy as np
 import torch
-from nox.utils.registry import register_object, get_object
 
-from nox.utils.classes import Nox, set_nox_type
-from nox.datasets.utils import METAFILE_NOTFOUND_ERR, LOAD_FAIL_MSG
+from nox.utils.registry import register_object, get_object
+from nox.utils.rdkit import get_rdkit_feature
 from nox.datasets import AbstractDataset
 from torch_geometric.data import InMemoryDataset, Data
 from torch_geometric.utils import from_smiles
@@ -15,8 +13,8 @@ import itertools
 import os
 
 
-@register_object("gsm_nbf", "dataset")
-class GSMNBFDataset(AbstractDataset, InMemoryDataset):
+@register_object("gsm_link", "dataset")
+class GSMLinkDataset(AbstractDataset, InMemoryDataset):
     def __init__(self, args: argparse.ArgumentParser, split_group: str) -> None:
         """
         Genome Scale Model Dataset
@@ -29,7 +27,7 @@ class GSMNBFDataset(AbstractDataset, InMemoryDataset):
         self.args = args
         self.protein_encoder = get_object("fair_esm", "model")(args)
 
-        self.name = "gsm_nbf"
+        self.name = "gsm_link"
         # self.version = None
         InMemoryDataset.__init__(self, root=args.data_dir)
 
@@ -263,6 +261,9 @@ class GSMNBFDataset(AbstractDataset, InMemoryDataset):
                     is_metabolite_reactant_for[indx].append(node_id)
 
             for enzyme in enzymes:
+                if self.skip_sample(enzyme=enzyme):
+                    continue
+
                 enzyme_id = enzyme["bigg_gene_id"]
                 if enzyme not in node2id:
                     node2id[enzyme_id] = len(node2id)
@@ -328,22 +329,56 @@ class GSMNBFDataset(AbstractDataset, InMemoryDataset):
         triplets = [(triplet[0], triplet[2], triplet[1]) for triplet in triplets]
         return triplets, node2id, original_node_ids2metadicts
 
-    def get_node_features(self, node2id):
-        id2metabolite_graph = {}
+    def get_node_features(self, nodeid2metadict) -> List[dict]:
+        """
+        Obtain node features
+
+        Args:
+            nodeid2metadict (dict):
+
+        Raises:
+            KeyError: raise error if metadict doesn't contain metabolite or protein id
+
+        Returns:
+            id2metabolite_features (dict): map metabolite id to node features
+            id2enzyme_features (dict): map protein id to node features
+        """
+        id2metabolite_features = {}
         id2enzyme_features = {}
 
-        for metadata_dict, id in node2id.items():
-            if "smiles" in metadata_dict and (not id in id2metabolite_graph):
-                id2metabolite_graph[id] = from_smiles(metadata_dict["smiles"])
-            elif "protein_sequence" in metadata_dict and (not id in id2enzyme_features):
-                id2enzyme_features[id] = self.protein_encoder(
-                    metadata_dict["protein_sequence"]
-                )
-            else:
-                # TODO: decide what to do with metabolites / enzymes that don't have a SMILES or protein sequence
-                pass
+        for id, metadata_dict in nodeid2metadict.items():
+            if not (
+                id2metabolite_features.get(id, False)
+                or id2enzyme_features.get(id, False)
+            ):
+                if "metabolite" in metadata_dict:
+                    id2metabolite_features[id] = id
+                    if metadata_dict["smiles"]:
+                        if self.args.metabolite_feature_type == "precomputed":
+                            id2metabolite_features[id] = get_rdkit_feature(
+                                metadata_dict["smiles"],
+                                method=self.args.rdkit_fingerprint_name,
+                            )
+                        elif self.args.metabolite_feature_type == "trained":
+                            id2metabolite_features[id] = from_smiles(
+                                metadata_dict["smiles"]
+                            )
 
-        return id2metabolite_graph, id2enzyme_features
+                elif "bigg_gene_id" in metadata_dict:
+                    id2enzyme_features[id] = id
+                    if self.args.protein_feature_type == "precomputed":
+                        id2enzyme_features[id] = self.protein_encoder(
+                            metadata_dict["protein_sequence"]
+                        )
+                    elif self.args.protein_feature_type == "trained":
+                        id2enzyme_features[id] = metadata_dict["protein_sequence"]
+
+                else:
+                    raise KeyError(
+                        f"[metabolite] OR [protein] NOT FOUND IN METADICT FOR NODE {id}. AVAILABLE KEYS ARE: {nodeid2metadict.keys()}"
+                    )
+
+        return id2metabolite_features, id2enzyme_features
 
     def __repr__(self):
         return "%s()" % self.name
@@ -393,10 +428,13 @@ class GSMNBFDataset(AbstractDataset, InMemoryDataset):
 
         return dataset
 
-    def skip_sample(self, sample) -> bool:
+    def skip_sample(self, **kwargs) -> bool:
         """
         Return True if sample should be skipped and not included in data
         """
+        if kwargs.get("enzyme", False):
+            if kwargs["enzyme"]["protein_sequence"] is None:
+                return True
         return False
 
     @property
@@ -497,56 +535,25 @@ class GSMNBFDataset(AbstractDataset, InMemoryDataset):
         Args:
             parser (argparse.ArgumentParser): argument parser
         """
+        super(GSMLinkDataset, GSMLinkDataset).add_args(parser)
         parser.add_argument(
-            "--class_bal", action="store_true", default=False, help="class balance"
-        )
-        parser.add_argument(
-            "--class_bal_key",
+            "--metabolite_feature_type",
             type=str,
-            default="y",
-            help="dataset key to use for class balancing",
+            default="none",
+            choices=["none", "precomputed", "trained"],
+            help="how to initialize metabolite node features",
         )
         parser.add_argument(
-            "--dataset_file_path",
+            "--rdkit_fingerprint_name",
             type=str,
-            default="/Mounts/rbg-storage1/datasets/NLST/full_nlst_google.json",
-            help="Path to dataset file either as json or csv",
+            default="rdkit_fingerprint",
+            choices=["morgan_binary", "morgan_counts", "rdkit_fingerprint"],
+            help="fingerprint name for initializing molecule features",
         )
         parser.add_argument(
-            "--data_dir",
+            "--protein_feature_type",
             type=str,
-            default="/Mounts/rbg-storage1/datasets/NLST/full_nlst_google.json",
-            help="Path to dataset file either as json or csv",
-        )
-        parser.add_argument(
-            "--num_classes", type=int, default=6, help="Number of classes to predict"
-        )
-        # Alternative training/testing schemes
-        parser.add_argument(
-            "--assign_splits",
-            action="store_true",
-            default=False,
-            help="Whether to assign different splits than those predetermined in dataset",
-        )
-        parser.add_argument(
-            "--split_type",
-            type=str,
-            default="random",
-            choices=["random", "institution_split"],
-            help="How to split dataset if assign_split = True. Usage: ['random', 'institution_split'].",
-        )
-        parser.add_argument(
-            "--split_probs",
-            type=float,
-            nargs="+",
-            default=[0.6, 0.2, 0.2],
-            help="Split probs for datasets without fixed train dev test. ",
-        )
-        # loader
-        parser.add_argument(
-            "--input_loader_name",
-            type=str,
-            action=set_nox_type("input_loader"),
-            default="cv_loader",
-            help="input loader",
+            default="none",
+            choices=["none", "precomputed", "trained"],
+            help="how to initialize protein node features",
         )
