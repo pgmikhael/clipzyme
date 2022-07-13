@@ -124,7 +124,7 @@ class GSMNBFDataset(AbstractDataset, InMemoryDataset):
         id2metabolites, id2enzymes = self.get_node_features(nodeid2metadict)
 
         train_data = Data(
-            metabolite_graphs=id2metabolites,
+            metabolite_features=id2metabolites,
             enzyme_features=id2enzymes,
             edge_index=train_edge_index,
             edge_type=train_relation_type,
@@ -134,7 +134,7 @@ class GSMNBFDataset(AbstractDataset, InMemoryDataset):
         )
 
         valid_data = Data(
-            metabolite_graphs=id2metabolites,
+            metabolite_features=id2metabolites,
             enzyme_features=id2enzymes,
             edge_index=train_edge_index,
             edge_type=train_relation_type,
@@ -143,7 +143,7 @@ class GSMNBFDataset(AbstractDataset, InMemoryDataset):
             target_edge_type=val_relation_type,
         )
         test_data = Data(
-            metabolite_graphs=id2metabolites,
+            metabolite_features=id2metabolites,
             enzyme_features=id2enzymes,
             edge_index=train_edge_index,
             edge_type=train_edge_index,
