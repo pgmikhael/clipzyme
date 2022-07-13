@@ -461,8 +461,10 @@ if __name__ == "__main__":
         )
 
         for model in model_list["results"]:
-            wget.download(f"http://bigg.ucsd.edu/static/models/{model["bigg_id"]}.mat",  args.bigg_model_dir)
-                
+            wget.download(
+                f"http://bigg.ucsd.edu/static/models/{model['bigg_id']}.mat",
+                args.bigg_model_dir,
+            )
 
     geneid2proteinmeta = dict()
     kegg_service = KEGG()
@@ -490,7 +492,7 @@ if __name__ == "__main__":
         reactant_stoich = list(rxn.get_coefficients(reactants))
         for i, r in enumerate(reactants):
             metabolite_dict = {
-                "metabolite": r.id,
+                "metabolite_id": r.id,
                 "coefficient": reactant_stoich[i],
             }
             metabolite_dict.update(link_metabolite_to_db(r))
@@ -501,7 +503,7 @@ if __name__ == "__main__":
         product_stoich = list(rxn.get_coefficients(products))
         for i, p in enumerate(products):
             metabolite_dict = {
-                "metabolite": p.id,
+                "metabolite_id": p.id,
                 "coefficient": product_stoich[i],
             }
             metabolite_dict.update(link_metabolite_to_db(p))

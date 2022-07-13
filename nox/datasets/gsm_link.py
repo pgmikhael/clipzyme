@@ -73,11 +73,23 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
         train_reactions, val_reactions, test_reactions = self.assign_splits(
             self.metadata_json
         )
-        node2id = {}
+        originalid2nodeid = {}
+        originalids2metadict = {}
         # TODO: must do any skipping here or in get_triplets otherwise they will be assigned a node id
-        train_triplets, node2id = self.get_triplets(train_reactions, node2id)
-        val_triplets, node2id = self.get_triplets(val_reactions, node2id)
-        test_triplets, node2id = self.get_triplets(test_reactions, node2id)
+        train_triplets, originalid2nodeid, originalids2metadict = self.get_triplets(
+            train_reactions, originalid2nodeid, originalids2metadict
+        )
+        val_triplets, originalid2nodeid, originalids2metadict = self.get_triplets(
+            val_reactions, originalid2nodeid, originalids2metadict
+        )
+        test_triplets, originalid2nodeid, originalids2metadict = self.get_triplets(
+            test_reactions, originalid2nodeid, originalids2metadict
+        )
+
+        nodeid2metadict = {
+            node_id: originalids2metadict[original_id]
+            for original_id, node_id in originalid2nodeid.items()
+        }
 
         # TODO: implement fixes to allow for other kinds of splits
         # else:
@@ -107,7 +119,7 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
         test_edge_index = test_triplets[:, :2].t()
         test_relation_type = test_triplets[:, 2]
 
-        id2metabolites, id2enzymes = self.get_node_features(node2id)
+        id2metabolites, id2enzymes = self.get_node_features(nodeid2metadict)
 
         train_data = Data(
             metabolite_graphs=id2metabolites,
@@ -148,7 +160,10 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
         )
 
     def get_triplets(
-        self, reactions: List[Dict], node2id: Set = {}
+        self,
+        reactions: List[Dict],
+        node2id: Dict = {},
+        original_node_ids2metadicts: Dict = {},
     ) -> Tuple[List[Tuple[int, int, int]], Set]:
         """
         params: reactions - list of reactions, typically a json/metadata json format
@@ -177,6 +192,11 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
 
         triplets = []
 
+        original_node_ids2metadicts = {
+            "metabolites": {},
+            "enzymes": {},
+        }
+
         for rxn_dict in tqdm(reactions, position=0):
             reactants = rxn_dict["reactants"]
             products = rxn_dict["products"]
@@ -196,10 +216,15 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
             is_enzyme_for_product = []
 
             for reactant in reactants:
-                if reactant not in node2id:
-                    node2id[reactant["metabolite"]] = len(node2id)
+                metabolite_id = reactant["metabolite_id"]
+                if metabolite_id not in node2id:
+                    node2id[metabolite_id] = len(node2id)
 
-                node_id = node2id[reactant["metabolite"]]
+                node_id = node2id[metabolite_id]
+
+                # store the dict of the metabolite for later use
+                if metabolite_id not in original_node_ids2metadicts["metabolites"]:
+                    original_node_ids2metadicts["metabolites"][metabolite_id] = reactant
 
                 # add reactants (metabolites) to any relevant relations
                 is_co_reactant_of.add(node_id)
@@ -214,10 +239,15 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
                     )
 
             for product in products:
-                if product not in node2id:
-                    node2id[product["metabolite"]] = len(node2id)
+                metabolite_id = product["metabolite_id"]
+                if metabolite_id not in node2id:
+                    node2id[metabolite_id] = len(node2id)
 
-                node_id = node2id[product["metabolite"]]
+                node_id = node2id[metabolite_id]
+
+                # store the dict of the metabolite for later use
+                if metabolite_id not in original_node_ids2metadicts["metabolites"]:
+                    original_node_ids2metadicts["metabolites"][metabolite_id] = product
 
                 # add products (metabolites) to any relevant relations
                 is_co_product_of.add(node_id)
@@ -234,10 +264,15 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
                 if self.skip_sample(enzyme=enzyme):
                     continue
 
+                enzyme_id = enzyme["bigg_gene_id"]
                 if enzyme not in node2id:
-                    node2id[enzyme["bigg_gene_id"]] = len(node2id)
+                    node2id[enzyme_id] = len(node2id)
 
-                node_id = node2id[enzyme["bigg_gene_id"]]
+                node_id = node2id[enzyme_id]
+
+                # store the dict of the metabolite for later use
+                if enzyme_id not in original_node_ids2metadicts["enzymes"]:
+                    original_node_ids2metadicts["enzymes"][enzyme_id] = enzyme
 
                 # add enzymes (proteins) to any relevant relations
                 is_co_enzyme_of.add(node_id)
@@ -292,7 +327,7 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
 
         # change to (head, tail, relation) tuples, rather than [head, relation, tail]
         triplets = [(triplet[0], triplet[2], triplet[1]) for triplet in triplets]
-        return triplets, node2id
+        return triplets, node2id, original_node_ids2metadicts
 
     def get_node_features(self, nodeid2metadict) -> List[dict]:
         """
