@@ -93,8 +93,8 @@ class MLPClassifier(AbstractModel):
     def forward(self, batch=None):
         output = {}
         z = self.mlp(batch["x"])
-        output["logit"] = self.predictor(z)
         output["hidden"] = z
+        output["logit"] = self.predictor(z)
         return output
 
     @staticmethod
