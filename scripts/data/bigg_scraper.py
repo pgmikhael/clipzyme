@@ -461,8 +461,10 @@ if __name__ == "__main__":
         )
 
         for model in model_list["results"]:
-            wget.download(f"http://bigg.ucsd.edu/static/models/{model["bigg_id"]}.mat",  args.bigg_model_dir)
-                
+            wget.download(
+                f"http://bigg.ucsd.edu/static/models/{model['bigg_id']}.mat",
+                args.bigg_model_dir,
+            )
 
     geneid2proteinmeta = dict()
     kegg_service = KEGG()
