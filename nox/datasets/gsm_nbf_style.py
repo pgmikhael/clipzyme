@@ -77,10 +77,9 @@ class GSMNBFDataset(AbstractDataset, InMemoryDataset):
         )
         node2id = {}
         # TODO: must do any skipping here or in get_triplets otherwise they will be assigned a node id
-        node2id, train_triplets = self.get_triplets(train_reactions, node2id)
-        node2id, val_triplets = self.get_triplets(val_reactions, node2id)
-        node2id, test_triplets = self.get_triplets(test_reactions, node2id)
-        id2node = {v: k for k, v in node2id.items()}
+        train_triplets, node2id = self.get_triplets(train_reactions, node2id)
+        val_triplets, node2id = self.get_triplets(val_reactions, node2id)
+        test_triplets, node2id = self.get_triplets(test_reactions, node2id)
 
         # TODO: implement fixes to allow for other kinds of splits
         # else:
@@ -110,11 +109,11 @@ class GSMNBFDataset(AbstractDataset, InMemoryDataset):
         test_edge_index = test_triplets[:, :2].t()
         test_relation_type = test_triplets[:, 2]
 
-        id2metabolite_graph, id2enzyme_features = self.get_node_features(id2node)
+        id2metabolites, id2enzymes = self.get_node_features(node2id)
 
         train_data = Data(
-            metabolite_graphs=id2metabolite_graph,
-            enzyme_features=id2enzyme_features,
+            metabolite_graphs=id2metabolites,
+            enzyme_features=id2enzymes,
             edge_index=train_edge_index,
             edge_type=train_relation_type,
             num_nodes=train_num_nodes,
@@ -123,8 +122,8 @@ class GSMNBFDataset(AbstractDataset, InMemoryDataset):
         )
 
         valid_data = Data(
-            metabolite_graphs=id2metabolite_graph,
-            enzyme_features=id2enzyme_features,
+            metabolite_graphs=id2metabolites,
+            enzyme_features=id2enzymes,
             edge_index=train_edge_index,
             edge_type=train_relation_type,
             num_nodes=train_num_nodes,
@@ -132,8 +131,8 @@ class GSMNBFDataset(AbstractDataset, InMemoryDataset):
             target_edge_type=val_relation_type,
         )
         test_data = Data(
-            metabolite_graphs=id2metabolite_graph,
-            enzyme_features=id2enzyme_features,
+            metabolite_graphs=id2metabolites,
+            enzyme_features=id2enzymes,
             edge_index=train_edge_index,
             edge_type=train_edge_index,
             num_nodes=train_num_nodes,
@@ -234,6 +233,7 @@ class GSMNBFDataset(AbstractDataset, InMemoryDataset):
                     is_metabolite_reactant_for[indx].append(node_id)
 
             for enzyme in enzymes:
+
                 if enzyme not in node2id:
                     node2id[enzyme["bigg_gene_id"]] = len(node2id)
 
@@ -294,13 +294,13 @@ class GSMNBFDataset(AbstractDataset, InMemoryDataset):
         triplets = [(triplet[0], triplet[2], triplet[1]) for triplet in triplets]
         return triplets, node2id
 
-    def get_node_features(self, id2node):
+    def get_node_features(self, node2id):
         id2metabolite_graph = {}
         id2enzyme_features = {}
 
-        for id, metadata_dict in sorted(id2node.items(), key=lambda x: x[0]):
+        for metadata_dict, id in node2id.items():
             if "smiles" in metadata_dict and (not id in id2metabolite_graph):
-                id2metabolite_graph[id] = from_smiles(id2node[id]["smiles"])
+                id2metabolite_graph[id] = from_smiles(metadata_dict["smiles"])
             elif "protein_sequence" in metadata_dict and (not id in id2enzyme_features):
                 id2enzyme_features[id] = self.protein_encoder(
                     metadata_dict["protein_sequence"]
