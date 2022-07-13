@@ -20,6 +20,7 @@ class NBFNet(AbstractModel):
         super(NBFNet, self).__init__()
         self.num_negative = args.num_negative
         self.strict_negative = args.strict_negative
+        self.boundary_condition_type = args.boundary_condition_type
 
         if not isinstance(args.hidden_dims, Sequence):
             hidden_dims = [args.hidden_dims]
@@ -105,19 +106,34 @@ class NBFNet(AbstractModel):
         new_r_index = torch.where(is_t_neg, r_index, r_index + self.num_relation // 2)
         return new_h_index, new_t_index, new_r_index
 
-    def bellmanford(self, data, h_index, r_index, separate_grad=False):
+    def init_boundary_conditions(self, data, h_index, r_index):
         batch_size = len(r_index)
 
         # initialize queries (relation types of the given triples)
         query = self.query(r_index)
         index = h_index.unsqueeze(-1).expand_as(query)
+        if self.boundary_condition_type == "zero":
+            boundary = torch.zeros(
+                batch_size, data.num_nodes, self.dims[0], device=h_index.device
+            )
+            # by the scatter operation we put query (relation) embeddings as init features of source (index) nodes
+            boundary.scatter_add_(1, index.unsqueeze(1), query.unsqueeze(1))
 
-        # initial (boundary) condition - initialize all node states as zeros
-        boundary = torch.zeros(
-            batch_size, data.num_nodes, self.dims[0], device=h_index.device
-        )
-        # by the scatter operation we put query (relation) embeddings as init features of source (index) nodes
-        boundary.scatter_add_(1, index.unsqueeze(1), query.unsqueeze(1))
+        # if pretrained
+        elif self.boundary_condition_type == "precomputed":
+            raise NotImplementedError
+        # if from model
+        elif self.boundary_condition_type == "trained":
+            raise NotImplementedError
+        else:
+            raise NotImplementedError
+
+        return query, boundary
+
+    def bellmanford(self, data, h_index, r_index, separate_grad=False):
+
+        query, boundary = self.init_boundary_conditions(data, h_index, r_index)
+
         size = (data.num_nodes, data.num_nodes)
         edge_weight = torch.ones(data.num_edges, device=h_index.device)
 
@@ -419,4 +435,11 @@ class NBFNet(AbstractModel):
             type=int,
             default=10,
             help="number of paths to use to obtain average length of the top-k paths",
+        )
+        parser.add_argument(
+            "--boundary_condition_type",
+            type=str,
+            default="zero",
+            choices=["zero", "precomputed", "trained"],
+            help="how to initialize node features",
         )
