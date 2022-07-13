@@ -1,18 +1,15 @@
 import traceback, warnings
 import argparse
-from typing import List, Literal, Dict, Iterable, Tuple
-from abc import ABCMeta, abstractmethod
-import json
-from collections import Counter
+from typing import List, Literal, Dict, Iterable, Tuple, Set
 import numpy as np
 import torch
-from torch.utils import data
-from nox.utils.loading import get_sample_loader
-from nox.utils.registry import register_object, md5
+from nox.utils.registry import register_object, get_object
+
 from nox.utils.classes import Nox, set_nox_type
 from nox.datasets.utils import METAFILE_NOTFOUND_ERR, LOAD_FAIL_MSG
 from nox.datasets import AbstractDataset
 from torch_geometric.data import InMemoryDataset, Data
+from torch_geometric.utils import from_smiles
 import tqdm
 import itertools
 import os
@@ -30,6 +27,7 @@ class GSMNBFDataset(AbstractDataset, InMemoryDataset):
         """
         self.split_group = split_group
         self.args = args
+        self.protein_encoder = get_object("fair_esm", "model")(args)
 
         self.name = "gsm_nbf"
         # self.version = None
@@ -73,80 +71,91 @@ class GSMNBFDataset(AbstractDataset, InMemoryDataset):
         pass
 
     def process(self):
-        # this function converts the raw data into triplets
-        # the key thing is that test and train files are organised in a specific order
+        # if self.args.split_by_reactions:
+        train_reactions, val_reactions, test_reactions = self.assign_splits(
+            self.metadata_json
+        )
+        node2id = {}
+        # TODO: must do any skipping here or in get_triplets otherwise they will be assigned a node id
+        node2id, train_triplets = self.get_triplets(train_reactions, node2id)
+        node2id, val_triplets = self.get_triplets(val_reactions, node2id)
+        node2id, test_triplets = self.get_triplets(test_reactions, node2id)
+        id2node = {v: k for k, v in node2id.items()}
 
-        if self.args.split_by_reactions:
-            train_reactions, val_reactions, test_reactions = self.assign_splits(
-                self.metadata_json
-            )
-            train_triplets = self.get_triplets(train_reactions)
-            val_triplets = self.get_triplets(val_reactions)
-            test_triplets = self.get_triplets(test_reactions)
-        else:
-            all_triplets = self.get_triplets(self.metadata_json)
-            train_triplets, val_triplets, test_triplets = self.assign_splits(
-                all_triplets
-            )
+        # TODO: implement fixes to allow for other kinds of splits
+        # else:
+        #     all_triplets = self.get_triplets(self.metadata_json)
+        #     train_triplets, val_triplets, test_triplets = self.assign_splits(
+        #         all_triplets
+        #     )
+        # TODO: in the other branch of this if statement, test node indices and train+val node indices will overlap
+        # although they refer to different nodes. Furthermore the max node index in each set is used to determine
+        # the num_nodes in each graph for graph construction.
+        # In order to split in another way (not by reaction), this needs to be fixed.
 
-        # TODO: take train, val, test triplets and create data, below is from NBFNet code
-        # edge_index = triplets[:, :2].t()
-        # edge_type = triplets[:, 2]
-        # num_relations = int(edge_type.max()) + 1
+        # TODO: For inductive (later)
+        ####### GOAL: get train_graph, val_edges (in graph structure) that are a subset of the train_graph original edges and do not exist in train_graph
+        #######       and test_graph and test_edges (in graph structure) that are a subset of the test_graph
 
-        # train_fact_slice = slice(None, sum(num_samples[:1]))
-        # test_fact_slice = slice(sum(num_samples[:2]), sum(num_samples[:3]))
-        # train_fact_index = edge_index[:, train_fact_slice]
-        # train_fact_type = edge_type[train_fact_slice]
-        # test_fact_index = edge_index[:, test_fact_slice]
-        # test_fact_type = edge_type[test_fact_slice]
-        # # add flipped triplets for the fact graphs
-        # train_fact_index = torch.cat(
-        #     [train_fact_index, train_fact_index.flip(0)], dim=-1
-        # )
-        # train_fact_type = torch.cat([train_fact_type, train_fact_type + num_relations])
-        # test_fact_index = torch.cat([test_fact_index, test_fact_index.flip(0)], dim=-1)
-        # test_fact_type = torch.cat([test_fact_type, test_fact_type + num_relations])
+        # transductive case
+        train_edge_index = train_triplets[:, :2].t()
+        train_relation_type = train_triplets[:, 2]
+        train_num_nodes = (
+            max(train_triplets[:, 0].max(), train_triplets[:, 1].max()) + 1
+        ).item()
 
-        # train_slice = slice(None, sum(num_samples[:1]))
-        # valid_slice = slice(sum(num_samples[:1]), sum(num_samples[:2]))
-        # test_slice = slice(sum(num_samples[:3]), sum(num_samples))
+        val_edge_index = val_triplets[:, :2].t()
+        val_relation_type = val_triplets[:, 2]
 
-        # train_data = Data(
-        #     edge_index=train_fact_index,
-        #     edge_type=train_fact_type,
-        #     num_nodes=len(inv_train_entity_vocab),
-        #     target_edge_index=edge_index[:, train_slice],
-        #     target_edge_type=edge_type[train_slice],
-        # )
-        # valid_data = Data(
-        #     edge_index=train_fact_index,
-        #     edge_type=train_fact_type,
-        #     num_nodes=len(inv_train_entity_vocab),
-        #     target_edge_index=edge_index[:, valid_slice],
-        #     target_edge_type=edge_type[valid_slice],
-        # )
-        # test_data = Data(
-        #     edge_index=test_fact_index,
-        #     edge_type=test_fact_type,
-        #     num_nodes=len(inv_test_entity_vocab),
-        #     target_edge_index=edge_index[:, test_slice],
-        #     target_edge_type=edge_type[test_slice],
-        # )
+        test_edge_index = test_triplets[:, :2].t()
+        test_relation_type = test_triplets[:, 2]
 
-        # if self.pre_transform is not None:
-        #     train_data = self.pre_transform(train_data)
-        #     valid_data = self.pre_transform(valid_data)
-        #     test_data = self.pre_transform(test_data)
+        id2metabolite_graph, id2enzyme_features = self.get_node_features(id2node)
 
-        # torch.save(
-        #     (self.collate([train_data, valid_data, test_data])), self.processed_paths[0]
-        # )
+        train_data = Data(
+            metabolite_graphs=id2metabolite_graph,
+            enzyme_features=id2enzyme_features,
+            edge_index=train_edge_index,
+            edge_type=train_relation_type,
+            num_nodes=train_num_nodes,
+            target_edge_index=train_edge_index,
+            target_edge_type=train_relation_type,
+        )
 
-    def get_triplets(self, reactions: List[Dict]) -> torch.Tensor:
+        valid_data = Data(
+            metabolite_graphs=id2metabolite_graph,
+            enzyme_features=id2enzyme_features,
+            edge_index=train_edge_index,
+            edge_type=train_relation_type,
+            num_nodes=train_num_nodes,
+            target_edge_index=val_edge_index,
+            target_edge_type=val_relation_type,
+        )
+        test_data = Data(
+            metabolite_graphs=id2metabolite_graph,
+            enzyme_features=id2enzyme_features,
+            edge_index=train_edge_index,
+            edge_type=train_edge_index,
+            num_nodes=train_num_nodes,
+            target_edge_index=test_edge_index,
+            target_edge_type=test_relation_type,
+        )
+
+        if self.pre_transform is not None:
+            train_data = self.pre_transform(train_data)
+            valid_data = self.pre_transform(valid_data)
+            test_data = self.pre_transform(test_data)
+
+        torch.save(
+            (self.collate([train_data, valid_data, test_data])), self.processed_paths[0]
+        )
+
+    def get_triplets(
+        self, reactions: List[Dict], node2id: Set = {}
+    ) -> Tuple[List[Tuple[int, int, int]], Set]:
         """
         params: reactions - list of reactions, typically a json/metadata json format
-        returns: triplets - tensor of triplets where each triplet is (node, relation, node), of the following:
+        returns: triplets - tensor of triplets where each triplet is (head, tail, relation), of the following:
             node types: reactant, product, enzyme
             relation types:
                 (m1, m2, is_co_reactant_of), bi-directional
@@ -158,8 +167,6 @@ class GSMNBFDataset(AbstractDataset, InMemoryDataset):
                 (e1, p1, is_enzyme_reactant_for)
                 (p1, e1, is_enzyme_for_product)
         """
-
-        node2id = {}
         relation2id = {
             "is_co_reactant_of": 0,
             "is_co_product_of": 1,
@@ -283,8 +290,26 @@ class GSMNBFDataset(AbstractDataset, InMemoryDataset):
                 + is_enzyme_reactant_for
             )
 
-        triplets = torch.tensor(triplets)
-        return triplets
+        # change to (head, tail, relation) tuples, rather than [head, relation, tail]
+        triplets = [(triplet[0], triplet[2], triplet[1]) for triplet in triplets]
+        return triplets, node2id
+
+    def get_node_features(self, id2node):
+        id2metabolite_graph = {}
+        id2enzyme_features = {}
+
+        for id, metadata_dict in sorted(id2node.items(), key=lambda x: x[0]):
+            if "smiles" in metadata_dict and (not id in id2metabolite_graph):
+                id2metabolite_graph[id] = from_smiles(id2node[id]["smiles"])
+            elif "protein_sequence" in metadata_dict and (not id in id2enzyme_features):
+                id2enzyme_features[id] = self.protein_encoder(
+                    metadata_dict["protein_sequence"]
+                )
+            else:
+                # TODO: decide what to do with metabolites / enzymes that don't have a SMILES or protein sequence
+                pass
+
+        return id2metabolite_graph, id2enzyme_features
 
     def __repr__(self):
         return "%s()" % self.name
