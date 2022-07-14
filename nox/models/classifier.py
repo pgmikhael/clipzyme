@@ -50,7 +50,7 @@ class Classifier(AbstractModel):
             "--mlp_layer_configuration",
             type=int,
             nargs="*",
-            default=[128, 128],
+            default=[],
             help="MLP layer dimensions",
         )
         parser.add_argument(
@@ -113,7 +113,7 @@ class MLPClassifier(AbstractModel):
             "--mlp_layer_configuration",
             type=int,
             nargs="*",
-            default=[128, 128],
+            default=[],
             help="MLP layer dimensions",
         )
         parser.add_argument(
