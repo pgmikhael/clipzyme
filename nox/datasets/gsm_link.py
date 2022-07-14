@@ -230,14 +230,14 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
                 # add reactants (metabolites) to any relevant relations
                 is_co_reactant_of.add(node_id)
                 if len(products) > 0:
-                    is_metabolite_reactant_for.append(
-                        [[node_id, relation2id["is_metabolite_reactant_for"]]]
-                        * len(products)
-                    )
+                    is_metabolite_reactant_for += [
+                        [node_id, relation2id["is_metabolite_reactant_for"]]
+                    ] * len(products)
+
                 if len(enzymes) > 0:
-                    is_co_reactant_enzyme.append(
-                        [[node_id, relation2id["is_co_reactant_enzyme"]]] * len(enzymes)
-                    )
+                    is_co_reactant_enzyme += [
+                        [node_id, relation2id["is_co_reactant_enzyme"]]
+                    ] * len(enzymes)
 
             for product in products:
                 metabolite_id = product["metabolite_id"]
@@ -253,9 +253,9 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
                 # add products (metabolites) to any relevant relations
                 is_co_product_of.add(node_id)
                 if len(enzymes) > 0:
-                    is_enzyme_for_product.append(
-                        [[node_id, relation2id["is_enzyme_for_product"]]] * len(enzymes)
-                    )
+                    is_enzyme_for_product += [
+                        [node_id, relation2id["is_enzyme_for_product"]]
+                    ] * len(enzymes)
 
                 # for each relation already created that requires a product, add those products
                 for indx in range(len(is_metabolite_reactant_for)):
@@ -396,7 +396,8 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
         try:
             self.metadata_json = json.load(
                 open(
-                    os.path.join(self.root, f"{self.args.organism_name}_dataset.json"), "rb"
+                    os.path.join(self.root, f"{self.args.organism_name}_dataset.json"),
+                    "rb",
                 )
             )
 
