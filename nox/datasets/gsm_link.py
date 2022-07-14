@@ -5,7 +5,7 @@ import torch
 
 from nox.utils.registry import register_object, get_object
 from nox.utils.rdkit import get_rdkit_feature
-from nox.datasets import AbstractDataset
+from nox.datasets.abstract import AbstractDataset
 from torch_geometric.data import InMemoryDataset, Data
 from torch_geometric.utils import from_smiles
 import tqdm
@@ -28,8 +28,9 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
         self.protein_encoder = get_object("fair_esm", "model")(args)
 
         self.name = "gsm_link"
+        self.root = args.data_dir
         # self.version = None
-        InMemoryDataset.__init__(self, root=args.data_dir)
+        InMemoryDataset.__init__(self, root=self.root)
 
         self.init_class(args, split_group)
 
@@ -44,38 +45,45 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
         self.load_dataset(args)
 
     @property
-    def num_relations(self):
+    def num_relations(self) -> int:
         return int(self.data.edge_type.max()) + 1
 
     @property
-    def raw_dir(self):
-        return os.path.join(self.root, self.name, self.version, "raw")
+    def raw_dir(self) -> str:
+        # self.root := args.data_dir
+        return self.root
 
     @property
-    def processed_dir(self):
-        return os.path.join(self.root, self.name, self.version, "processed")
+    def processed_dir(self) -> None:
+        """Directory where processed data is stored or expected to be exist in"""
+        return os.path.join(self.root, self.name, "processed")
 
     @property
-    def processed_file_names(self):
-        return "data.pt"
+    def processed_file_names(self) -> None:
+        r"""The name of the files in the :obj:`self.processed_dir` folder that
+        must be present in order to skip processing."""
+        return "graph.pt"
 
     @property
-    def raw_file_names(self):
-        # TODO: implement
-        # return ["train_ind.txt", "test_ind.txt", "train.txt", "valid.txt"]
-        pass
+    def raw_file_names(self) -> None:
+        r"""The name of the files in the :obj:`self.raw_dir` folder that must
+        be present in order to skip downloading."""
+        return [f"{self.args.organism_name}_dataset.json"]
 
-    def download(self):
-        pass
+    def download(self) -> None:
+        raise Exception(
+            f"Dataset is trying to download, this means that {self.args.organism_name}_dataset.json does not exist in {self.raw_dir}"
+        )
 
-    def process(self):
-        # if self.args.split_by_reactions:
+    def process(self) -> None:
+        r"""Processes the dataset to the :obj:`self.processed_dir` folder."""
+        # splits graph by reactions
         train_reactions, val_reactions, test_reactions = self.assign_splits(
             self.metadata_json
         )
         originalid2nodeid = {}
         originalids2metadict = {}
-        # TODO: must do any skipping here or in get_triplets otherwise they will be assigned a node id
+        # Must do any skipping here or in self.get_triplets otherwise they will be assigned a node id
         train_triplets, originalid2nodeid, originalids2metadict = self.get_triplets(
             train_reactions, originalid2nodeid, originalids2metadict
         )
@@ -91,20 +99,9 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
             for original_id, node_id in originalid2nodeid.items()
         }
 
-        # TODO: implement fixes to allow for other kinds of splits
-        # else:
-        #     all_triplets = self.get_triplets(self.metadata_json)
-        #     train_triplets, val_triplets, test_triplets = self.assign_splits(
-        #         all_triplets
-        #     )
-        # TODO: in the other branch of this if statement, test node indices and train+val node indices will overlap
-        # although they refer to different nodes. Furthermore the max node index in each set is used to determine
-        # the num_nodes in each graph for graph construction.
-        # In order to split in another way (not by reaction), this needs to be fixed.
-
-        # TODO: For inductive (later)
-        ####### GOAL: get train_graph, val_edges (in graph structure) that are a subset of the train_graph original edges and do not exist in train_graph
-        #######       and test_graph and test_edges (in graph structure) that are a subset of the test_graph
+        # TODO: For inductive (later):
+        #  get train_graph, val_edges (in graph structure) that are a subset of the train_graph original edges and do not exist in train_graph
+        #  and test_graph and test_edges (in graph structure) that are a subset of the test_graph
 
         # transductive case
         train_edge_index = train_triplets[:, :2].t()
@@ -164,7 +161,7 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
         reactions: List[Dict],
         node2id: Dict = {},
         original_node_ids2metadicts: Dict = {},
-    ) -> Tuple[List[Tuple[int, int, int]], Set]:
+    ) -> Tuple[List[Tuple[int, int, int]], Dict, Dict]:
         """
         params: reactions - list of reactions, typically a json/metadata json format
         returns: triplets - tensor of triplets where each triplet is (head, tail, relation), of the following:
@@ -329,7 +326,7 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
         triplets = [(triplet[0], triplet[2], triplet[1]) for triplet in triplets]
         return triplets, node2id, original_node_ids2metadicts
 
-    def get_node_features(self, nodeid2metadict) -> List[dict]:
+    def get_node_features(self, nodeid2metadict: Dict[int, Dict]) -> Tuple[Dict, Dict]:
         """
         Obtain node features
 
@@ -396,22 +393,26 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
             self.data, self.slices = torch.load(self.processed_paths[0])
 
         except Exception as e:
-            raise Exception("Can't load dataset", e)
+            raise Exception("Unable to load dataset", e)
 
     def create_dataset(
         self, split_group: Literal["train", "dev", "test"]
-    ) -> List[dict]:
+    ) -> List[Dict]:
         """
         Creates the dataset of samples from json metadata file.
         """
         dataset = []
 
         if self.split_group == "train":
-            self.split_graph = self.seperate_collated_data(0)
+            # self.split_graph = self.seperate_collated_data(0)
+            self.split_graph = self.data[0]
         elif self.split_group == "dev":
-            self.split_graph = self.seperate_collated_data(1)
+            # self.split_graph = self.seperate_collated_data(1)
+            self.split_graph = self.data[1]
         elif self.split_group == "test":
-            self.split_graph = self.seperate_collated_data(2)
+            # self.split_graph = self.seperate_collated_data(2)
+            self.split_graph = self.data[2]
+
         else:
             raise ValueError(f"Invalid split group: {self.split_group}")
 
@@ -438,23 +439,22 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
         return False
 
     @property
-    def SUMMARY_STATEMENT(self) -> None:
+    def SUMMARY_STATEMENT(self) -> str:
         """
         Prints summary statement with dataset stats
         """
         summary = f"Contructed Genome Scale Model {self.split_group} dataset with {len(self.split_graph)} samples in the split graph"
         return summary
 
-    def print_summary_statement(self, dataset, split_group):
+    def print_summary_statement(
+        self, dataset, split_group: Literal["train", "dev", "test"]
+    ) -> None:
         statement = "{} DATASET CREATED FOR {}\n.{}".format(
             split_group.upper(), self.args.dataset_name.upper(), self.SUMMARY_STATEMENT
         )
         print(statement)
 
-    # def __len__(self) -> int:
-    # TODO: if needed, implement
-
-    def __getitem__(self, index):
+    def __getitem__(self, index: int) -> Dict:
         """
         Fetch single sample from dataset
 
@@ -466,12 +466,6 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
         """
         item = self.dataset[index]
         return item
-
-        # sample = self.dataset[index]
-        # graph = sample["graph"]
-        # graph["metabolites"].x = self.get_node_embeddings(
-        #     sample["metabolite2id"]
-        # )  # if learnt then returns torch.nn.Embedding((size))
 
     def assign_splits(self, metadata_json: Iterable) -> Tuple:
         """
@@ -492,41 +486,16 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
 
         return splits.values()
 
-    def set_sample_weights(self, args: argparse.ArgumentParser) -> None:
-        """
-        Set weights for each sample
-
-        Args:
-            args (argparse.ArgumentParser)
-        """
-        # TODO
-        # if args.class_bal:
-        #     label_dist = [d[args.class_bal_key] for d in self.dataset]
-        #     label_counts = Counter(label_dist)
-        #     weight_per_label = 1.0 / len(label_counts)
-        #     label_weights = {
-        #         label: weight_per_label / count for label, count in label_counts.items()
-        #     }
-
-        #     print("Class counts are: {}".format(label_counts))
-        #     print("Label weights are {}".format(label_weights))
-        #     self.weights = [label_weights[d[args.class_bal_key]] for d in self.dataset]
-        # else:
-        #     pass
-        pass
-
     @property
-    def DATASET_ITEM_KEYS(self) -> list:
+    def DATASET_ITEM_KEYS(self) -> List:
         """
         List of keys to be included in sample when being batched
 
         Returns:
             list
         """
-        # TODO
-        # standard = ["sample_id"]
-        # return standard
-        pass
+        # Leaving here in case we want to change this in the future
+        return []
 
     @staticmethod
     def add_args(parser) -> None:
@@ -556,4 +525,11 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
             default="none",
             choices=["none", "precomputed", "trained"],
             help="how to initialize protein node features",
+        )
+        parser.add_argument(
+            "--organism_name",
+            type=str,
+            required=True,
+            default=None,
+            help="name of organism that exists in BiGG Models",
         )
