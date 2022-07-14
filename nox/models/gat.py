@@ -29,6 +29,7 @@ class GATv2Op(AbstractModel):
             bias=args.gat_bias,
             share_weights=args.gat_share_weights,
         )
+        self.use_edge_features = args.gat_edge_dim is not None
 
     def forward(self, graph):
         output = {}
@@ -38,9 +39,14 @@ class GATv2Op(AbstractModel):
         num_nodes = len(node_features)
         # default: (num_nodes, num_heads * out_chan );
         # bipartite (num_target_nodes, num_heads * out_chan )
-        encoded_features = self.encoder.forward(
-            node_features, edge_index, edge_features
-        )
+        if self.use_edge_features:
+            encoded_features = self.encoder.forward(
+                node_features.float(), edge_index, edge_features.float()
+            )
+        else:
+            encoded_features = self.encoder.forward(
+                node_features.float(), edge_index
+            )
         graph_features = scatter(encoded_features, graph.batch, dim=0, reduce="add")
         encoded_features = unbatch(encoded_features, graph.batch)
         output["node_features"] = encoded_features
@@ -139,6 +145,7 @@ class GAT(AbstractModel):
                     negative_slope=args.gat_negative_slope,
                     dropout=args.dropout,
                     add_self_loops=args.gat_add_self_loops,
+                    edge_dim=args.gat_edge_dim,
                     fill_value=args.gat_fill_value,
                     bias=args.gat_bias,
                     share_weights=args.gat_share_weights,
@@ -152,7 +159,6 @@ class GAT(AbstractModel):
                     negative_slope=args.gat_negative_slope,
                     dropout=args.dropout,
                     add_self_loops=args.gat_add_self_loops,
-                    edge_dim=args.gat_edge_dim,
                     fill_value=args.gat_fill_value,
                     bias=args.gat_bias,
                     share_weights=args.gat_share_weights,
@@ -161,12 +167,12 @@ class GAT(AbstractModel):
             self.norms.append(nn.BatchNorm1d(out_hidden))
 
         self.input_drop = nn.Dropout(args.dropout)
-        self.dropout = nn.Dropout(args.ddropout)
+        self.dropout = nn.Dropout(args.dropout)
 
     def forward(self, graph):
         output = {}
 
-        h = graph.x
+        h = graph.x.float()
         h = self.node_encoder(h)
         h = F.relu(h, inplace=True)
         h = self.input_drop(h)
@@ -175,7 +181,7 @@ class GAT(AbstractModel):
 
         for i in range(self.num_layers):
             if (i == 0) and self.use_edge_features:
-                h = self.convs[i](h, graph.edge_index, graph.edge_attr)
+                h = self.convs[i](h, graph.edge_index, graph.edge_attr.float())
             else:
                 h = self.convs[i](h, graph.edge_index)
 

@@ -5,10 +5,12 @@ import warnings
 from random import Random
 from collections import defaultdict
 from typing import List
-from torch_geometric.datasets import MoleculeNet
 from nox.utils.registry import register_object
 from nox.datasets.abstract import AbstractDataset
 from nox.utils.rdkit import generate_scaffold
+from torch_geometric.datasets import MoleculeNet
+from torch_geometric.data.separate import separate
+from tqdm import tqdm
 
 
 @register_object("moleculenet", "dataset")
@@ -27,10 +29,21 @@ class MoleNet(AbstractDataset, MoleculeNet):
         MoleculeNet.__init__(self, root=args.data_dir, name=args.moleculenet_dataset)
         dataset = copy.deepcopy(self._data_list)
         self.assign_splits(dataset, args.split_probs, seed=args.split_seed)
+        dataset = []
+        for idx in tqdm(range(self.len()), position=0):
+            data = separate(
+                cls=self.data.__class__,
+                batch=self.data,
+                idx=idx,
+                slice_dict=self.slices,
+                decrement=False,
+            )
+            dataset.append(copy.deepcopy(data))
+
         self.dataset = []
         for d in dataset:
             if d.split == split_group:
-                d.y = d.y[np.array(args.moleculenet_task)]
+                d.y = d.y[:, np.array(args.moleculenet_task)]
                 self.dataset.append(d)
 
     def __getitem__(self, index):
@@ -48,9 +61,6 @@ class MoleNet(AbstractDataset, MoleculeNet):
                     ["train", "dev", "test"], p=split_probs
                 )
         elif method == "scaffold":
-            for d in metadata_json:
-                d.scaffold = ""
-
             self.scaffold_split(metadata_json, split_probs, seed)
         else:
             raise NotImplementedError(

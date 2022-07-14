@@ -22,6 +22,7 @@ finally:
 import nox.datasets.mnist
 import nox.datasets.indrellinkpred
 import nox.datasets.gsm_link
+import nox.datasets.moleculenet
 
 # augmentation
 import nox.augmentations.rawinput
@@ -56,6 +57,7 @@ import nox.callbacks.swa
 import nox.models.vision
 import nox.models.classifier
 import nox.models.nbfnet
+import nox.models.gat
 
 # comet
 import nox.loggers.comet
