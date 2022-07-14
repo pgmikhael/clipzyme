@@ -21,6 +21,7 @@ finally:
 # data
 import nox.datasets.mnist
 import nox.datasets.indrellinkpred
+import nox.datasets.gsm_link
 
 # augmentation
 import nox.augmentations.rawinput
