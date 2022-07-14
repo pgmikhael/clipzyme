@@ -7,7 +7,7 @@ from nox.datasets.abstract import AbstractDataset
 from torch_geometric.datasets import MoleculeNet
 
 
-@register_object("gsm_link", "dataset")
+@register_object("moleculenet", "dataset")
 class MoleNet(AbstractDataset, MoleculeNet):
     def __init__(self, args: argparse.ArgumentParser, split_group: str) -> None:
         """
@@ -75,6 +75,10 @@ class MoleNet(AbstractDataset, MoleculeNet):
             "--moleculenet_task",
             type=int,
             nargs="*",
-            default=0,
+            default=[0],
             help="task indices",
         )
+
+    @staticmethod
+    def set_args(args) -> None:
+        args.num_classes = len(args.moleculenet_task)
