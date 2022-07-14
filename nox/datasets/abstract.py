@@ -129,13 +129,14 @@ class AbstractDataset(data.Dataset, Nox):
                 LOAD_FAIL_MSG.format(sample["sample_id"], traceback.print_exc())
             )
 
-    def assign_splits(self, metadata_json) -> None:
+    def assign_splits(self, metadata_json, seed=0) -> None:
         """
         Assign samples to data splits
 
         Args:
             metadata_json (dict): raw json dataset loaded
         """
+        np.random.seed(seed)
         for idx in range(len(metadata_json)):
             metadata_json[idx]["split"] = np.random.choice(
                 ["train", "dev", "test"], p=self.args.split_probs
@@ -224,6 +225,12 @@ class AbstractDataset(data.Dataset, Nox):
             nargs="+",
             default=[0.6, 0.2, 0.2],
             help="Split probs for datasets without fixed train dev test. ",
+        )
+        parser.add_argument(
+            "--split_seed",
+            type=int,
+            default=0,
+            help="seed for consistent randomization",
         )
         # loader
         parser.add_argument(
