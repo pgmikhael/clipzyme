@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import copy
 from nox.models.abstract import AbstractModel
+from nox.utils.classes import set_nox_type
 from nox.utils.registry import register_object, get_object
 
 
@@ -62,7 +63,7 @@ class ProteinEncoder(AbstractModel):
     def __init__(self, args):
         super(ProteinEncoder, self).__init__()
         self.args = args
-        self.encoder = get_object("fair_esm", "model")(args)
+        self.encoder = get_object(args.protein_encoder_name, "model")(args)
         cargs = copy.deepcopy(args)
         cargs.mlp_input_dim = 1280  # TODO: add arg?
         self.mlp = get_object("mlp_classifier", "model")(cargs)
@@ -85,6 +86,13 @@ class ProteinEncoder(AbstractModel):
         Args:
             parser (argparse.ArgumentParser): argument parser
         """
+        parser.add_argument(
+            "--protein_encoder_name",
+            type=str,
+            default="fair_esm",
+            help="name of the protein encoder",
+            action=set_nox_type("model"),
+        )
         parser.add_argument(
             "--freeze_encoder",
             action="store_true",
