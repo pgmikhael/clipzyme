@@ -8,6 +8,7 @@ from torch_geometric.data import Batch
 
 from nox.utils.registry import get_object, register_object
 from nox.utils.nbf import gen_rel_conv_layer, nbf_utils
+from nox.utils.classes import set_nox_type
 from nox.models.abstract import AbstractModel
 
 
@@ -433,8 +434,8 @@ class NBFNet(AbstractModel):
 class Metabo_NBFNet(NBFNet):
     def __init__(self, args) -> None:
         super().__init__(args)
-        self.protein_encoder = get_object("", "model")
-        self.metabolite_encoder = get_object("", "model")
+        self.protein_encoder = get_object(args.protein_model, "model")
+        self.metabolite_encoder = get_object(args.metabolite_model, "model")
 
         self.metabolite_feature_type = args.metabolite_feature_type
         self.protein_feature_type = args.protein_feature_type
@@ -449,13 +450,7 @@ class Metabo_NBFNet(NBFNet):
         data.metabolite_features
         data.enzyme_features
 
-        # if pretrained
-        if self.metabolite_feature_type == "precomputed":
-            for i, h in enumerate(h_index):
-                if data.metabolite_features.get(i, None) is not None:
-                    query[i] = data.metabolite_features[h]
-        # if from model
-        elif self.metabolite_feature_type == "trained":
+        if self.metabolite_feature_type in ["precomputed", "trained"]:
             metabolite_indx, metabolite_batch = [], []
             for i, h in enumerate(h_index):
                 if data.metabolite_features.get(i, None) is not None:
@@ -464,15 +459,12 @@ class Metabo_NBFNet(NBFNet):
 
             metabolite_batch = self.batch.from_data_list(metabolite_batch)
             metabolite_features = self.metabolite_encoder(metabolite_batch)
-            query[metabolite_indx] = metabolite_features["graph_features"]
+            if self.metabolite_feature_type == "precomputed":
+                query[metabolite_indx] = metabolite_features["hidden"]
+            elif self.metabolite_feature_type == "trained":
+                query[metabolite_indx] = metabolite_features["graph_features"]
 
-        # if pretrained
-        if self.protein_feature_type == "precomputed":
-            for i, h in enumerate(h_index):
-                if data.enzyme_features.get(i, None) is not None:
-                    query[i] = data.enzyme_features[h]
-        # if from model
-        elif self.protein_feature_type == "trained":
+        if self.protein_feature_type in ["precomputed", "trained"]:
             protein_indx, protein_batch = [], []
             for i, h in enumerate(h_index):
                 if data.enzyme_features.get(i, None) is not None:
@@ -490,3 +482,20 @@ class Metabo_NBFNet(NBFNet):
         # by the scatter operation we put query (relation) embeddings as init features of source (index) nodes
         boundary.scatter_add_(1, index.unsqueeze(1), query.unsqueeze(1))
         return query, boundary
+
+    @staticmethod
+    def add_args(parser) -> None:
+        parser.add_argument(
+            "--protein_model",
+            action=set_nox_type("model"),
+            type=str,
+            default="identity",
+            help="name of protein model",
+        )
+        parser.add_argument(
+            "--metabolite_model",
+            action=set_nox_type("model"),
+            type=str,
+            default="identity",
+            help="name of molecule/metabolite model",
+        )
