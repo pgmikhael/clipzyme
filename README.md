@@ -19,4 +19,5 @@ python -m pip install numpy==1.21.4 opencv-python==4.5.4.60 albumentations==1.1.
 python -m pip install torch==1.11.0+cu113 torchvision==0.12.0+cu113 --extra-index-url https://download.pytorch.org/whl/cu113 --no-cache-dir
 python -m pip install  pytorch-lightning==1.6.4 torchmetrics==0.6.2 --no-cache-dir
 python -m pip install torch-scatter==2.0.9 torch-sparse==0.6.14 torch-geometric==2.0.4 ninja easydict pyyaml -f https://data.pyg.org/whl/torch-1.11.0+cu115.html
+python -m pip install wget cobra bioservices pubchempy 
 ```
