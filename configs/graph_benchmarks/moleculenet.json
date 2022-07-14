@@ -14,7 +14,6 @@
       "gat_edge_dim": [3],
       "gat_num_layers": [6],
       "gat_hidden_dim": [10],
-      "hidden_dims": ["32 32 32 32 32 32"],
       "callback_names": ["lr_monitor"],
       "max_epochs": [20],
       "lr_decay": [0.1],
@@ -42,6 +41,6 @@
       "project_name": ["metabolomics"],
       "logger_tags": ["gatv2 tox21"]
     },
-    "available_gpus": ["0,1,2,3,4,5,6,7"]
+    "available_gpus": ["1,2,3"]
   }
   
