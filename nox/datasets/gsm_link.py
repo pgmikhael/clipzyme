@@ -239,7 +239,7 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
                         [node_id, relation2id["is_co_reactant_enzyme"]]
                     ] * len(enzymes)
 
-            for product in products:
+            for indx, product in enumerate(products):
                 metabolite_id = product["metabolite_id"]
                 if metabolite_id not in node2id:
                     node2id[metabolite_id] = len(node2id)
@@ -258,10 +258,9 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
                     ] * len(enzymes)
 
                 # for each relation already created that requires a product, add those products
-                for indx in range(len(is_metabolite_reactant_for)):
-                    is_metabolite_reactant_for[indx].append(node_id)
+                is_metabolite_reactant_for[indx].append(node_id)
 
-            for enzyme in enzymes:
+            for indx, enzyme in enumerate(enzymes):
                 if self.skip_sample(enzyme=enzyme):
                     continue
 
@@ -279,11 +278,9 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
                 is_co_enzyme_of.add(node_id)
 
                 # for each relation already created that requires a product, add those products
-                for indx in range(len(is_co_reactant_enzyme)):
-                    is_co_reactant_enzyme[indx].append(node_id)
+                is_co_reactant_enzyme[indx].append(node_id)
 
-                for indx in range(len(is_enzyme_for_product)):
-                    is_enzyme_for_product[indx].append(node_id)
+                is_enzyme_for_product[indx].append(node_id)
 
             # Add flip directions
             # used to make (m1, m2, is_co_reactant_of), bi-directional
