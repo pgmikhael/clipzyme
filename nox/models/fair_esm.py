@@ -63,8 +63,9 @@ class ProteinEncoder(AbstractModel):
         super(ProteinEncoder, self).__init__()
         self.args = args
         self.encoder = get_object("fair_esm", "model")(args)
-        args.mlp_input_dim = 1280  # TODO: add arg?
-        self.mlp = get_object("mlp_classifier", "model")(args)
+        cargs = copy.deepcopy(args)
+        cargs.mlp_input_dim = 1280  # TODO: add arg?
+        self.mlp = get_object("mlp_classifier", "model")(cargs)
 
     def forward(self, x, batch=None):
         output = {}

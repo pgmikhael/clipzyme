@@ -497,6 +497,7 @@ class Metabo_NBFNet(NBFNet):
 
     @staticmethod
     def add_args(parser) -> None:
+        super(Metabo_NBFNet, Metabo_NBFNet).add_args(parser)
         parser.add_argument(
             "--protein_model",
             action=set_nox_type("model"),
