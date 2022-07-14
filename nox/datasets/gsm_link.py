@@ -4,6 +4,7 @@ import numpy as np
 import torch
 
 from nox.utils.registry import register_object, get_object
+from nox.utils.classes import set_nox_type
 from nox.utils.rdkit import get_rdkit_feature
 from nox.datasets.abstract import AbstractDataset
 from torch_geometric.data import InMemoryDataset, Data
@@ -25,7 +26,7 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
         """
         self.split_group = split_group
         self.args = args
-        self.protein_encoder = get_object("fair_esm", "model")(args)
+        self.protein_encoder = get_object(self.args.protein_encoder_name, "model")(args)
 
         self.name = "gsm_link"
         self.root = args.data_dir
@@ -532,4 +533,11 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
             required=True,
             default=None,
             help="name of organism that exists in BiGG Models",
+        )
+        parser.add_argument(
+            "--protein_encoder_name",
+            type=str,
+            default="fair_esm",
+            help="name of the protein encoder",
+            action=set_nox_type("model"),
         )

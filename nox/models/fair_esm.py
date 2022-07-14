@@ -26,9 +26,17 @@ class FairEsm(AbstractModel):
         batch_labels, batch_strs, batch_tokens = self.batch_converter(fair_x)
         batch_tokens = batch_tokens.to(self.devicevar.device)
         repr_layer = 33  # TODO: add arg?
-        result = self.model(
-            batch_tokens, repr_layers=[repr_layer], return_contacts=False
-        )
+
+        if self.args.freeze_encoder:
+            self.model.eval()
+            with torch.no_grad():
+                result = self.model(
+                    batch_tokens, repr_layers=[repr_layer], return_contacts=False
+                )
+        else:
+            result = self.model(
+                batch_tokens, repr_layers=[repr_layer], return_contacts=False
+            )
 
         # Generate per-sequence representations via averaging
         hiddens = []
@@ -63,7 +71,7 @@ class ProteinEncoder(AbstractModel):
     def __init__(self, args):
         super(ProteinEncoder, self).__init__()
         self.args = args
-        self.encoder = get_object(args.protein_encoder_name, "model")(args)
+        self.encoder = get_object(args.protein_encoder_type, "model")(args)
         cargs = copy.deepcopy(args)
         cargs.mlp_input_dim = 1280  # TODO: add arg?
         self.mlp = get_object("mlp_classifier", "model")(cargs)
@@ -87,7 +95,7 @@ class ProteinEncoder(AbstractModel):
             parser (argparse.ArgumentParser): argument parser
         """
         parser.add_argument(
-            "--protein_encoder_name",
+            "--protein_encoder_type",
             type=str,
             default="fair_esm",
             help="name of the protein encoder",
