@@ -9,6 +9,8 @@ from nox.utils.rdkit import get_rdkit_feature
 from nox.datasets.abstract import AbstractDataset
 from torch_geometric.data import InMemoryDataset, Data
 from nox.utils.pyg import from_smiles
+
+import json
 import tqdm
 import itertools
 import os
@@ -391,7 +393,9 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
             Exception: Unable to load
         """
         try:
-            self.data, self.slices = torch.load(self.processed_paths[0])
+            self.metadata_json = json.load(
+                open(f"{self.args.organism_name}_dataset.json", "rb")
+            )
 
         except Exception as e:
             raise Exception("Unable to load dataset", e)
@@ -402,6 +406,12 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
         """
         Creates the dataset of samples from json metadata file.
         """
+        try:
+            self.data, self.slices = torch.load(self.processed_paths[0])
+
+        except Exception as e:
+            raise Exception("Unable to load dataset", e)
+
         dataset = []
 
         if self.split_group == "train":
