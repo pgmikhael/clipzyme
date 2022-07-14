@@ -119,7 +119,6 @@ class GAT(AbstractModel):
         n_hidden = args.gat_hidden_dim
         self.num_layers = args.gat_num_layers
         n_heads = args.gat_num_heads
-        n_classes = args.gat_output_dim
         self.use_edge_features = args.gat_edge_dim is not None
 
         self.convs = nn.ModuleList()
@@ -201,7 +200,16 @@ class GAT(AbstractModel):
             parser (argparse.ArgumentParser): argument parser
         """
         parser.add_argument(
-            "--gat_output_dim", type=int, nargs="*", help="Size of each output sample."
+            "--gat_num_layers",
+            type=int,
+            default=1,
+            help="Number of layers in GNN, equivalently number of convolution iterations.",
+        )
+        parser.add_argument(
+            "--gat_hidden_dim",
+            type=int,
+            default=10,
+            help="Dimension of hidden layers (node features)",
         )
         parser.add_argument(
             "--gat_num_heads",
