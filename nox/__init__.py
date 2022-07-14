@@ -56,6 +56,9 @@ import nox.callbacks.swa
 import nox.models.vision
 import nox.models.classifier
 import nox.models.nbfnet
+import nox.models.fair_esm
+import nox.models.gat
+import nox.models.linear
 
 # comet
 import nox.loggers.comet
