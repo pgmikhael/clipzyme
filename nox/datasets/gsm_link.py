@@ -7,7 +7,7 @@ from nox.utils.registry import register_object, get_object
 from nox.utils.rdkit import get_rdkit_feature
 from nox.datasets.abstract import AbstractDataset
 from torch_geometric.data import InMemoryDataset, Data
-from torch_geometric.utils import from_smiles
+from nox.utils.pyg import from_smiles
 import tqdm
 import itertools
 import os
