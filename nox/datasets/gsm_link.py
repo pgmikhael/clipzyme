@@ -33,9 +33,10 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
         self.name = "gsm_link"
         self.root = args.data_dir
         # self.version = None
-        InMemoryDataset.__init__(self, root=self.root)
 
         self.init_class(args, split_group)
+
+        InMemoryDataset.__init__(self, root=self.root)
 
         self.dataset = self.create_dataset(split_group)
         if len(self.dataset) == 0:
