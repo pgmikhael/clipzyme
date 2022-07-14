@@ -395,7 +395,9 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
         """
         try:
             self.metadata_json = json.load(
-                open(f"{self.args.organism_name}_dataset.json", "rb")
+                open(
+                    os.join(self.root, f"{self.args.organism_name}_dataset.json"), "rb"
+                )
             )
 
         except Exception as e:
