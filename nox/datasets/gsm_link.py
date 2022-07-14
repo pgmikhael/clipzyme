@@ -11,7 +11,7 @@ from torch_geometric.data import InMemoryDataset, Data
 from nox.utils.pyg import from_smiles
 
 import json
-import tqdm
+from tqdm import tqdm
 import itertools
 import os
 
@@ -198,10 +198,10 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
             "enzymes": {},
         }
 
-        for rxn_dict in tqdm(reactions, position=0):
-            reactants = rxn_dict["reactants"]
-            products = rxn_dict["products"]
-            enzymes = rxn_dict["proteins"]
+        for rxn_dict in tqdm(reactions):
+            reactants = rxn_dict.get("reactants", [])
+            products = rxn_dict.get("products", [])
+            enzymes = rxn_dict.get("proteins", [])
 
             # used to make (m1, m2, is_co_reactant_of), bi-directional
             is_co_reactant_of = set()
@@ -231,12 +231,12 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
                 is_co_reactant_of.add(node_id)
                 if len(products) > 0:
                     is_metabolite_reactant_for.append(
-                        [node_id, relation2id["is_metabolite_reactant_for"]]
+                        [[node_id, relation2id["is_metabolite_reactant_for"]]]
                         * len(products)
                     )
                 if len(enzymes) > 0:
                     is_co_reactant_enzyme.append(
-                        [node_id, relation2id["is_co_reactant_enzyme"]] * len(enzymes)
+                        [[node_id, relation2id["is_co_reactant_enzyme"]]] * len(enzymes)
                     )
 
             for product in products:
@@ -254,7 +254,7 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
                 is_co_product_of.add(node_id)
                 if len(enzymes) > 0:
                     is_enzyme_for_product.append(
-                        [node_id, relation2id["is_enzyme_for_product"]] * len(enzymes)
+                        [[node_id, relation2id["is_enzyme_for_product"]]] * len(enzymes)
                     )
 
                 # for each relation already created that requires a product, add those products
@@ -266,7 +266,7 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
                     continue
 
                 enzyme_id = enzyme["bigg_gene_id"]
-                if enzyme not in node2id:
+                if enzyme_id not in node2id:
                     node2id[enzyme_id] = len(node2id)
 
                 node_id = node2id[enzyme_id]
@@ -396,7 +396,7 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
         try:
             self.metadata_json = json.load(
                 open(
-                    os.join(self.root, f"{self.args.organism_name}_dataset.json"), "rb"
+                    os.path.join(self.root, f"{self.args.organism_name}_dataset.json"), "rb"
                 )
             )
 
