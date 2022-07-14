@@ -258,7 +258,8 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
                     ] * len(enzymes)
 
                 # for each relation already created that requires a product, add those products
-                is_metabolite_reactant_for[indx].append(node_id)
+                for i in range(len(reactants)):
+                    is_metabolite_reactant_for[indx + i*len(reactants)].append(node_id)
 
             for indx, enzyme in enumerate(enzymes):
                 if self.skip_sample(enzyme=enzyme):
@@ -278,8 +279,11 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
                 is_co_enzyme_of.add(node_id)
 
                 # for each relation already created that requires a product, add those products
-                is_co_reactant_enzyme[indx].append(node_id)
-
+                for i in range(len(reactants)):
+                    is_co_reactant_enzyme[indx + i*len(reactants)].append(node_id)
+                
+                for i in range(len(products)):
+                    is_enzyme_for_product[indx + i*len(products)].append(node_id)
                 is_enzyme_for_product[indx].append(node_id)
 
             # Add flip directions
