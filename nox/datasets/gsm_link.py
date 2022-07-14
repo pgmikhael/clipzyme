@@ -232,12 +232,14 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
                 if len(products) > 0:
                     is_metabolite_reactant_for += [
                         [node_id, relation2id["is_metabolite_reactant_for"]]
-                    ] * len(products)
+                        for j in range(len(products))
+                    ]
 
                 if len(enzymes) > 0:
                     is_co_reactant_enzyme += [
                         [node_id, relation2id["is_co_reactant_enzyme"]]
-                    ] * len(enzymes)
+                        for j in range(len(enzymes))
+                    ]
 
             for indx, product in enumerate(products):
                 metabolite_id = product["metabolite_id"]
@@ -255,11 +257,14 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
                 if len(enzymes) > 0:
                     is_enzyme_for_product += [
                         [node_id, relation2id["is_enzyme_for_product"]]
-                    ] * len(enzymes)
+                        for j in range(len(enzymes))
+                    ]
 
                 # for each relation already created that requires a product, add those products
                 for i in range(len(reactants)):
-                    is_metabolite_reactant_for[indx + i*len(reactants)].append(node_id)
+                    is_metabolite_reactant_for[indx + i * len(reactants)].append(
+                        node_id
+                    )
 
             for indx, enzyme in enumerate(enzymes):
                 if self.skip_sample(enzyme=enzyme):
@@ -280,10 +285,10 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
 
                 # for each relation already created that requires a product, add those products
                 for i in range(len(reactants)):
-                    is_co_reactant_enzyme[indx + i*len(reactants)].append(node_id)
-                
+                    is_co_reactant_enzyme[indx + i * len(reactants)].append(node_id)
+
                 for i in range(len(products)):
-                    is_enzyme_for_product[indx + i*len(products)].append(node_id)
+                    is_enzyme_for_product[indx + i * len(products)].append(node_id)
                 is_enzyme_for_product[indx].append(node_id)
 
             # Add flip directions
