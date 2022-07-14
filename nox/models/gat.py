@@ -4,7 +4,7 @@ from nox.utils.registry import register_object
 from nox.models.abstract import AbstractModel
 from torch_geometric.nn.conv.gatv2_conv import GATv2Conv
 from torch_scatter import scatter
-from nox..utils.pyg import unbatch
+from nox.utils.pyg import unbatch
 
 
 @register_object("gatv2conv", "model")
