@@ -199,9 +199,12 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
         }
 
         for rxn_dict in tqdm(reactions):
-            # TODO: skip reactions that dont have products (pseudoreactions) instead of empty list like now
-            reactants = rxn_dict.get("reactants", [])
-            products = rxn_dict.get("products", [])
+            # skip reactions that dont have any reactants or any products (pseudo-reactions)
+            if self.skip_sample(reaction=rxn_dict):
+                continue
+
+            reactants = rxn_dict["reactants"]
+            products = rxn_dict["products"]
             enzymes = rxn_dict.get("proteins", [])
 
             # used to make (m1, m2, is_co_reactant_of), bi-directional
@@ -266,9 +269,7 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
                     is_metabolite_reactant_for[indx + i * len(products)].append(node_id)
 
             for indx, enzyme in enumerate(enzymes):
-                # TODO: this creates an error because I skip samples but it expects another enzyme
-                # one solution is to check how many I will skip at the beginning
-                # another is to remove one triplet if I skip a sample under the if statement
+                # skip enzymes with no sequence and then remove the triplets that expected to have that enzyme appended to them
                 if self.skip_sample(enzyme=enzyme):
                     # is_co_reactant_enzyme
                     is_co_reactant_enzyme_remove_indices = [
@@ -488,8 +489,18 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
         Return True if sample should be skipped and not included in data
         """
         if kwargs.get("enzyme", False):
+            # if missing protein sequence, skip sample
             if kwargs["enzyme"]["protein_sequence"] is None:
                 return True
+
+        if kwargs.get("reaction", False):
+            # if is a pseudo-reaction (ie no reactants or products), skip sample
+            if (
+                len(kwargs["reaction"].get("reactants", [])) == 0
+                or len(kwargs["reaction"].get("products", [])) == 0
+            ):
+                return True
+
         return False
 
     @property
