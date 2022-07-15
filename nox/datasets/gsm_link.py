@@ -484,13 +484,10 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
         dataset = []
 
         if self.split_group == "train":
-            # self.split_graph = self.seperate_collated_data(0)
             self.split_graph = self.get(0)
         elif self.split_group == "dev":
-            # self.split_graph = self.seperate_collated_data(1)
             self.split_graph = self.get(1)
         elif self.split_group == "test":
-            # self.split_graph = self.seperate_collated_data(2)
             self.split_graph = self.get(2)
 
         else:
