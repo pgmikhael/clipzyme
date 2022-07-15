@@ -10,6 +10,8 @@ from torch.utils import data
 from nox.utils.sampler import DistributedWeightedSampler
 from nox.utils.augmentations import get_augmentations_by_split
 from pytorch_lightning.utilities.cloud_io import load as pl_load
+from torch_geometric.data.data import Data
+from torch_geometric.data import Batch
 
 string_classes = (str, bytes)
 int_classes = int
@@ -17,16 +19,19 @@ np_str_obj_array_pattern = re.compile(r"[SaUO]")
 
 default_collate_err_msg_format = (
     "default_collate: batch must contain tensors, numpy arrays, numbers, "
-    "dicts, MoleculeDatapoint or lists; found {}"
+    "dicts, or lists; found {}"
 )
 
+geometric_batch = Batch()
 
 def default_collate(batch):
     r"""Puts each data field into a tensor with outer dimension batch size"""
 
     elem = batch[0]
     elem_type = type(elem)
-    if isinstance(elem, torch.Tensor):
+    if isinstance(elem, Data):
+        return geometric_batch.from_data_list(batch)
+    elif isinstance(elem, torch.Tensor):
         out = None
         if torch.utils.data.get_worker_info() is not None:
             # If we're in a background process, concatenate directly into a

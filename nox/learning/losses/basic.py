@@ -15,10 +15,10 @@ class CrossEntropyLoss(Nox):
     def __call__(self, model_output, batch, model, args):
         logging_dict, predictions = OrderedDict(), OrderedDict()
         logit = model_output["logit"]
-        loss = F.cross_entropy(logit, batch["y"].long()) * args.ce_loss_lambda
+        loss = F.cross_entropy(logit, batch["y"].view(-1).long()) * args.ce_loss_lambda
         logging_dict["cross_entropy_loss"] = loss.detach()
         predictions["probs"] = F.softmax(logit, dim=-1).detach()
-        predictions["golds"] = batch["y"]
+        predictions["golds"] = batch["y"].view(-1)
         predictions["preds"] = predictions["probs"].argmax(axis=-1).reshape(-1)
         return loss, logging_dict, predictions
 
