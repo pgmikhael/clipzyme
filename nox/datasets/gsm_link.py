@@ -203,7 +203,7 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
             reactants = rxn_dict.get("reactants", [])
             products = rxn_dict.get("products", [])
             enzymes = rxn_dict.get("proteins", [])
-            
+
             # used to make (m1, m2, is_co_reactant_of), bi-directional
             is_co_reactant_of = set()
             # used to make (p1, p2, is_co_product_of), bi-directional
@@ -263,15 +263,32 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
 
                 # for each relation already created that requires a product, add those products
                 for i in range(len(reactants)):
-                    is_metabolite_reactant_for[indx + i * len(products)].append(
-                        node_id
-                    )
+                    is_metabolite_reactant_for[indx + i * len(products)].append(node_id)
 
             for indx, enzyme in enumerate(enzymes):
                 # TODO: this creates an error because I skip samples but it expects another enzyme
                 # one solution is to check how many I will skip at the beginning
                 # another is to remove one triplet if I skip a sample under the if statement
                 if self.skip_sample(enzyme=enzyme):
+                    # is_co_reactant_enzyme
+                    is_co_reactant_enzyme_remove_indices = [
+                        indx + i * len(enzymes) for i in range(len(reactants))
+                    ]  # remove all triplets for this enzyme
+                    is_co_reactant_enzyme = [
+                        i
+                        for j, i in enumerate(is_co_reactant_enzyme)
+                        if j not in is_co_reactant_enzyme_remove_indices
+                    ]
+
+                    # is_enzyme_for_product
+                    is_enzyme_for_product_remove_indices = [
+                        indx + i * len(enzymes) for i in range(len(products))
+                    ]  # remove all triplets for this enzyme
+                    is_enzyme_for_product = [
+                        i
+                        for j, i in enumerate(is_enzyme_for_product)
+                        if j not in is_enzyme_for_product_remove_indices
+                    ]
                     continue
 
                 enzyme_id = enzyme["bigg_gene_id"]
@@ -325,8 +342,18 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
 
             # (p1, e1, is_enzyme_for_product) bi-directional called is_enzyme_reactant_for
             is_enzyme_reactant_for = [trip[::-1] for trip in is_enzyme_for_product]
-            
-            assert all([len(t) == 3 for t in perms_is_co_reactant_of + perms_is_co_product_of + perms_is_co_enzyme_of + perms_co_reactant_enzymes + is_product_of_metabolite + is_enzyme_reactant_for])
+
+            assert all(
+                [
+                    len(t) == 3
+                    for t in perms_is_co_reactant_of
+                    + perms_is_co_product_of
+                    + perms_is_co_enzyme_of
+                    + perms_co_reactant_enzymes
+                    + is_product_of_metabolite
+                    + is_enzyme_reactant_for
+                ]
+            )
 
             triplets += (
                 perms_is_co_reactant_of
