@@ -1,5 +1,6 @@
 import argparse
 import numpy as np
+import torch
 import copy
 import warnings
 from random import Random
@@ -42,7 +43,10 @@ class MoleNet(AbstractDataset, MoleculeNet):
         self.dataset = []
         for d in dataset:
             if d.split == split_group:
-                d.y = d.y[:, np.array(args.moleculenet_task)]
+                if args.moleculenet_task is not None:
+                    d.y = d.y[:, torch.tensor(args.moleculenet_task)]
+                d.has_y = ~torch.isnan(d.y)
+                d.y[torch.isnan(d.y)] = 0
                 self.dataset.append(d)
 
     def __getitem__(self, index):
@@ -153,7 +157,7 @@ class MoleNet(AbstractDataset, MoleculeNet):
             "--moleculenet_task",
             type=int,
             nargs="*",
-            default=[0],
+            default=None,
             help="task indices",
         )
         parser.add_argument(

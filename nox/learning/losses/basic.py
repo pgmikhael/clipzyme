@@ -36,6 +36,38 @@ class CrossEntropyLoss(Nox):
             help="Lambda to weigh the cross-entropy loss.",
         )
 
+@register_object("binary_cross_entropy_logits", "loss")
+class BinaryCrossEntropyLoss(Nox):
+    def __init__(self) -> None:
+        super().__init__()
+
+    def __call__(self, model_output, batch, model, args):
+        logging_dict, predictions = OrderedDict(), OrderedDict()
+        logit = model_output["logit"]
+        if "has_y" in batch:
+            loss = F.binary_cross_entropy_with_logits(logit, batch["y"], reduction = "none", weight = batch["has_y"]).sum()/batch["has_y"].sum() * args.ce_loss_lambda
+            predictions["has_golds"] = batch['has_y']
+        else:
+            loss = F.binary_cross_entropy_with_logits(logit, batch["y"]) * args.ce_loss_lambda
+        logging_dict["binary_cross_entropy_loss"] = loss.detach()
+        predictions["probs"] = F.sigmoid(logit).detach()
+        predictions["golds"] = batch["y"]
+        predictions["preds"] = predictions["probs"] > 0.5 
+        return loss, logging_dict, predictions
+
+    @staticmethod
+    def add_args(parser) -> None:
+        """Add class specific args
+
+        Args:
+            parser (argparse.ArgumentParser): argument parser
+        """
+        parser.add_argument(
+            "--ce_loss_lambda",
+            type=float,
+            default=1.0,
+            help="Lambda to weigh the cross-entropy loss.",
+        )
 
 @register_object("survival", "loss")
 class SurvivalLoss(Nox):
