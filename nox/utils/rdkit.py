@@ -1,7 +1,9 @@
-from typing import Union
+from typing import Union, Tuple
 import numpy as np
 from rdkit import Chem, DataStructs
 from rdkit.Chem import AllChem
+from rdkit.Chem.Scaffolds import MurckoScaffold
+
 
 Molecule = Union[str, Chem.Mol]
 
@@ -23,3 +25,51 @@ def get_rdkit_feature(
     DataStructs.ConvertToNumpyArray(features_vec, features)
 
     return features
+
+
+def make_mol(s: str, keep_h: bool, add_h: bool):
+    """
+    From: https://github.com/chemprop/chemprop/blob/master/chemprop/rdkit.py
+
+    Builds an RDKit molecule from a SMILES string.
+
+    :param s: SMILES string.
+    :param keep_h: Boolean whether to keep hydrogens in the input smiles. This does not add hydrogens, it only keeps them if they are specified.
+    :return: RDKit molecule.
+    """
+    if keep_h:
+        mol = Chem.MolFromSmiles(s, sanitize=False)
+        Chem.SanitizeMol(
+            mol,
+            sanitizeOps=Chem.SanitizeFlags.SANITIZE_ALL
+            ^ Chem.SanitizeFlags.SANITIZE_ADJUSTHS,
+        )
+    else:
+        mol = Chem.MolFromSmiles(s)
+    if add_h:
+        mol = Chem.AddHs(mol)
+    return mol
+
+
+def generate_scaffold(
+    mol: Union[str, Chem.Mol, Tuple[Chem.Mol, Chem.Mol]],
+    include_chirality: bool = False,
+) -> str:
+    """
+    From: https://github.com/chemprop/chemprop/blob/master/chemprop/data/scaffold.py
+
+    Computes the Bemis-Murcko scaffold for a SMILES string.
+
+    :param mol: A SMILES or an RDKit molecule.
+    :param include_chirality: Whether to include chirality in the computed scaffold..
+    :return: The Bemis-Murcko scaffold for the molecule.
+    """
+    if isinstance(mol, str):
+        mol = make_mol(mol, keep_h=False, add_h=False)
+    if isinstance(mol, tuple):
+        mol = mol[0]
+    scaffold = MurckoScaffold.MurckoScaffoldSmiles(
+        mol=mol, includeChirality=include_chirality
+    )
+
+    return scaffold

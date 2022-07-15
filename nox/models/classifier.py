@@ -15,10 +15,11 @@ class Classifier(AbstractModel):
         self.encoder = get_object(args.model_name_for_encoder, "model")(args)
         cargs = copy.deepcopy(args)
         self.mlp = get_object("mlp_classifier", "model")(cargs)
+        self.encoder_hidden_key = args.encoder_hidden_key
 
     def forward(self, batch=None):
         output = {}
-        output["encoder_hidden"] = self.encoder(batch)["hidden"]
+        output["encoder_hidden"] = self.encoder(batch)[self.encoder_hidden_key]
         output.update(self.mlp({"x": output["encoder_hidden"]}))
         return output
 
@@ -37,13 +38,19 @@ class Classifier(AbstractModel):
             help="Name of encoder to use",
         )
         parser.add_argument(
+            "--encoder_hidden_key",
+            type=str,
+            default="hidden",
+            help="name of hidden features from encoder output",
+        )
+        parser.add_argument(
             "--mlp_input_dim", type=int, default=512, help="Dim of input to mlp"
         )
         parser.add_argument(
             "--mlp_layer_configuration",
             type=int,
             nargs="*",
-            default=[128, 128],
+            default=[],
             help="MLP layer dimensions",
         )
         parser.add_argument(
@@ -106,7 +113,7 @@ class MLPClassifier(AbstractModel):
             "--mlp_layer_configuration",
             type=int,
             nargs="*",
-            default=[128, 128],
+            default=[],
             help="MLP layer dimensions",
         )
         parser.add_argument(

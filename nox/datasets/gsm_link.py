@@ -83,7 +83,7 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
         r"""Processes the dataset to the :obj:`self.processed_dir` folder."""
         # splits graph by reactions
         train_reactions, val_reactions, test_reactions = self.assign_splits(
-            self.metadata_json
+            self.metadata_json, self.args.split_probs, self.args.split_seed
         )
         originalid2nodeid = {}
         originalids2metadict = {}
@@ -494,7 +494,7 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
         item = self.dataset[index]
         return item
 
-    def assign_splits(self, metadata_json: Iterable) -> Tuple:
+    def assign_splits(self, metadata_json: Iterable, split_probs, seed) -> Tuple:
         """
         Assigns each item in the iterable metadata_json to a split group.
 
@@ -507,9 +507,9 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
             "test": [],
         }
         for idx in range(len(metadata_json)):
-            splits[
-                np.random.choice(["train", "dev", "test"], p=self.args.split_probs)
-            ].append(metadata_json[idx])
+            splits[np.random.choice(["train", "dev", "test"], p=split_probs)].append(
+                metadata_json[idx]
+            )
 
         return splits.values()
 

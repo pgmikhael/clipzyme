@@ -29,6 +29,7 @@ class GATv2Op(AbstractModel):
             bias=args.gat_bias,
             share_weights=args.gat_share_weights,
         )
+        self.use_edge_features = args.gat_edge_dim is not None
 
     def forward(self, graph):
         output = {}
@@ -38,9 +39,14 @@ class GATv2Op(AbstractModel):
         num_nodes = len(node_features)
         # default: (num_nodes, num_heads * out_chan );
         # bipartite (num_target_nodes, num_heads * out_chan )
-        encoded_features = self.encoder.forward(
-            node_features, edge_index, edge_features
-        )
+        if self.use_edge_features:
+            encoded_features = self.encoder.forward(
+                node_features.float(), edge_index, edge_features.float()
+            )
+        else:
+            encoded_features = self.encoder.forward(
+                node_features.float(), edge_index
+            )
         graph_features = scatter(encoded_features, graph.batch, dim=0, reduce="add")
         encoded_features = unbatch(encoded_features, graph.batch)
         output["node_features"] = encoded_features
@@ -119,7 +125,6 @@ class GAT(AbstractModel):
         n_hidden = args.gat_hidden_dim
         self.num_layers = args.gat_num_layers
         n_heads = args.gat_num_heads
-        n_classes = args.gat_output_dim
         self.use_edge_features = args.gat_edge_dim is not None
 
         self.convs = nn.ModuleList()
@@ -140,6 +145,7 @@ class GAT(AbstractModel):
                     negative_slope=args.gat_negative_slope,
                     dropout=args.dropout,
                     add_self_loops=args.gat_add_self_loops,
+                    edge_dim=args.gat_edge_dim,
                     fill_value=args.gat_fill_value,
                     bias=args.gat_bias,
                     share_weights=args.gat_share_weights,
@@ -153,7 +159,6 @@ class GAT(AbstractModel):
                     negative_slope=args.gat_negative_slope,
                     dropout=args.dropout,
                     add_self_loops=args.gat_add_self_loops,
-                    edge_dim=args.gat_edge_dim,
                     fill_value=args.gat_fill_value,
                     bias=args.gat_bias,
                     share_weights=args.gat_share_weights,
@@ -162,12 +167,12 @@ class GAT(AbstractModel):
             self.norms.append(nn.BatchNorm1d(out_hidden))
 
         self.input_drop = nn.Dropout(args.dropout)
-        self.dropout = nn.Dropout(args.ddropout)
+        self.dropout = nn.Dropout(args.dropout)
 
     def forward(self, graph):
         output = {}
 
-        h = graph.x
+        h = graph.x.float()
         h = self.node_encoder(h)
         h = F.relu(h, inplace=True)
         h = self.input_drop(h)
@@ -176,7 +181,7 @@ class GAT(AbstractModel):
 
         for i in range(self.num_layers):
             if (i == 0) and self.use_edge_features:
-                h = self.convs[i](h, graph.edge_index, graph.edge_attr)
+                h = self.convs[i](h, graph.edge_index, graph.edge_attr.float())
             else:
                 h = self.convs[i](h, graph.edge_index)
 
@@ -201,7 +206,16 @@ class GAT(AbstractModel):
             parser (argparse.ArgumentParser): argument parser
         """
         parser.add_argument(
-            "--gat_output_dim", type=int, nargs="*", help="Size of each output sample."
+            "--gat_num_layers",
+            type=int,
+            default=1,
+            help="Number of layers in GNN, equivalently number of convolution iterations.",
+        )
+        parser.add_argument(
+            "--gat_hidden_dim",
+            type=int,
+            default=10,
+            help="Dimension of hidden layers (node features)",
         )
         parser.add_argument(
             "--gat_num_heads",
