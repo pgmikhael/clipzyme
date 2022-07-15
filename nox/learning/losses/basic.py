@@ -50,7 +50,7 @@ class BinaryCrossEntropyLoss(Nox):
         else:
             loss = F.binary_cross_entropy_with_logits(logit, batch["y"]) * args.ce_loss_lambda
         logging_dict["binary_cross_entropy_loss"] = loss.detach()
-        predictions["probs"] = F.sigmoid(logit).detach()
+        predictions["probs"] = torch.sigmoid(logit).detach()
         predictions["golds"] = batch["y"]
         predictions["preds"] = predictions["probs"] > 0.5 
         return loss, logging_dict, predictions
