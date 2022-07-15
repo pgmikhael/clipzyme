@@ -27,7 +27,7 @@ class FairEsm(AbstractModel):
         batch_tokens = batch_tokens.to(self.devicevar.device)
         repr_layer = 33  # TODO: add arg?
 
-        if self.args.freeze_encoder:
+        if not self.args.train_encoder:
             self.model.eval()
             with torch.no_grad():
                 result = self.model(
@@ -63,6 +63,12 @@ class FairEsm(AbstractModel):
             type=str,
             default="/Mounts/rbg-storage1/snapshots/metabolomics",
             help="directory to torch hub where pretrained models are saved",
+        )
+        parser.add_argument(
+            "--train_encoder",
+            action="store_true",
+            default=False,
+            help="do not update encoder weights",
         )
 
 

@@ -1,9 +1,11 @@
 import argparse
+import warnings
 from typing import List, Literal, Dict, Iterable, Tuple, Set
 import numpy as np
 import torch
+import inspect
 
-from nox.utils.registry import register_object, get_object
+from nox.utils.registry import register_object, get_object, md5
 from nox.utils.classes import set_nox_type
 from nox.utils.rdkit import get_rdkit_feature
 from nox.datasets.abstract import AbstractDataset
@@ -30,6 +32,8 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
         self.args = args
         self.protein_encoder = get_object(self.args.protein_encoder_name, "model")(args)
 
+        self.version = self.get_version()
+
         self.name = "gsm_link"
         self.root = args.data_dir
         # self.version = None
@@ -47,6 +51,24 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
 
     def init_class(self, args: argparse.ArgumentParser, split_group: str) -> None:
         self.load_dataset(args)
+
+    def get_version(self):
+        """Checks if changes have been made that would effect the preprocessed graphs"""
+        # hash skip_sample function
+        skip_sample_hash = md5(inspect.getsource(self.skip_sample))
+        # hash args that would modify the preprocessed graphs
+        args_hash = md5(
+            str([
+                self.args.metabolite_feature_type,
+                self.args.rdkit_fingerprint_name,
+                self.args.protein_feature_type,
+                self.args.protein_encoder_name,
+                self.args.pretrained_hub_dir,
+                self.args.train_encoder,
+            ])
+        )
+
+        return md5(skip_sample_hash + args_hash)
 
     @property
     def num_relations(self) -> int:
@@ -66,7 +88,7 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
     def processed_file_names(self) -> None:
         r"""The name of the files in the :obj:`self.processed_dir` folder that
         must be present in order to skip processing."""
-        return "graph.pt"
+        return self.version + "graph.pt"
 
     @property
     def raw_file_names(self) -> None:
@@ -193,17 +215,18 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
 
         triplets = []
 
-        original_node_ids2metadicts = {
-            "metabolites": {},
-            "enzymes": {},
-        }
-
         for rxn_dict in tqdm(reactions):
-            # TODO: skip reactions that dont have products (pseudoreactions) instead of empty list like now
-            reactants = rxn_dict.get("reactants", [])
-            products = rxn_dict.get("products", [])
+            # skip reactions that dont have any reactants or any products (pseudo-reactions)
+            if self.skip_sample(reaction=rxn_dict):
+                print(
+                    f"Skipping reaction {rxn_dict['rxn_id']}, {len(rxn_dict.get('reactants', []))} reactants, {len(rxn_dict.get('products', []))} products and {len(rxn_dict.get('proteins', []))} proteins"
+                )
+                continue
+
+            reactants = rxn_dict["reactants"]
+            products = rxn_dict["products"]
             enzymes = rxn_dict.get("proteins", [])
-            
+
             # used to make (m1, m2, is_co_reactant_of), bi-directional
             is_co_reactant_of = set()
             # used to make (p1, p2, is_co_product_of), bi-directional
@@ -225,8 +248,8 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
                 node_id = node2id[metabolite_id]
 
                 # store the dict of the metabolite for later use
-                if metabolite_id not in original_node_ids2metadicts["metabolites"]:
-                    original_node_ids2metadicts["metabolites"][metabolite_id] = reactant
+                if metabolite_id not in original_node_ids2metadicts:
+                    original_node_ids2metadicts[metabolite_id] = reactant
 
                 # add reactants (metabolites) to any relevant relations
                 is_co_reactant_of.add(node_id)
@@ -250,8 +273,8 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
                 node_id = node2id[metabolite_id]
 
                 # store the dict of the metabolite for later use
-                if metabolite_id not in original_node_ids2metadicts["metabolites"]:
-                    original_node_ids2metadicts["metabolites"][metabolite_id] = product
+                if metabolite_id not in original_node_ids2metadicts:
+                    original_node_ids2metadicts[metabolite_id] = product
 
                 # add products (metabolites) to any relevant relations
                 is_co_product_of.add(node_id)
@@ -263,15 +286,30 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
 
                 # for each relation already created that requires a product, add those products
                 for i in range(len(reactants)):
-                    is_metabolite_reactant_for[indx + i * len(products)].append(
-                        node_id
-                    )
+                    is_metabolite_reactant_for[indx + i * len(products)].append(node_id)
 
             for indx, enzyme in enumerate(enzymes):
-                # TODO: this creates an error because I skip samples but it expects another enzyme
-                # one solution is to check how many I will skip at the beginning
-                # another is to remove one triplet if I skip a sample under the if statement
+                # skip enzymes with no sequence and then remove the triplets that expected to have that enzyme appended to them
                 if self.skip_sample(enzyme=enzyme):
+                    # is_co_reactant_enzyme
+                    is_co_reactant_enzyme_remove_indices = [
+                        indx + i * len(enzymes) for i in range(len(reactants))
+                    ]  # remove all triplets for this enzyme
+                    is_co_reactant_enzyme = [
+                        i
+                        for j, i in enumerate(is_co_reactant_enzyme)
+                        if j not in is_co_reactant_enzyme_remove_indices
+                    ]
+
+                    # is_enzyme_for_product
+                    is_enzyme_for_product_remove_indices = [
+                        indx + i * len(enzymes) for i in range(len(products))
+                    ]  # remove all triplets for this enzyme
+                    is_enzyme_for_product = [
+                        i
+                        for j, i in enumerate(is_enzyme_for_product)
+                        if j not in is_enzyme_for_product_remove_indices
+                    ]
                     continue
 
                 enzyme_id = enzyme["bigg_gene_id"]
@@ -281,8 +319,8 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
                 node_id = node2id[enzyme_id]
 
                 # store the dict of the metabolite for later use
-                if enzyme_id not in original_node_ids2metadicts["enzymes"]:
-                    original_node_ids2metadicts["enzymes"][enzyme_id] = enzyme
+                if enzyme_id not in original_node_ids2metadicts:
+                    original_node_ids2metadicts[enzyme_id] = enzyme
 
                 # add enzymes (proteins) to any relevant relations
                 is_co_enzyme_of.add(node_id)
@@ -325,8 +363,18 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
 
             # (p1, e1, is_enzyme_for_product) bi-directional called is_enzyme_reactant_for
             is_enzyme_reactant_for = [trip[::-1] for trip in is_enzyme_for_product]
-            
-            assert all([len(t) == 3 for t in perms_is_co_reactant_of + perms_is_co_product_of + perms_is_co_enzyme_of + perms_co_reactant_enzymes + is_product_of_metabolite + is_enzyme_reactant_for])
+
+            assert all(
+                [
+                    len(t) == 3
+                    for t in perms_is_co_reactant_of
+                    + perms_is_co_product_of
+                    + perms_is_co_enzyme_of
+                    + perms_co_reactant_enzymes
+                    + is_product_of_metabolite
+                    + is_enzyme_reactant_for
+                ]
+            )
 
             triplets += (
                 perms_is_co_reactant_of
@@ -340,6 +388,7 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
 
         # change to (head, tail, relation) tuples, rather than [head, relation, tail]
         triplets = [(triplet[0], triplet[2], triplet[1]) for triplet in triplets]
+        triplets = torch.tensor(triplets)
         return triplets, node2id, original_node_ids2metadicts
 
     def get_node_features(self, nodeid2metadict: Dict[int, Dict]) -> Tuple[Dict, Dict]:
@@ -358,13 +407,15 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
         """
         id2metabolite_features = {}
         id2enzyme_features = {}
+        
+        print("Getting node features... this may take a while")
 
-        for id, metadata_dict in nodeid2metadict.items():
+        for id, metadata_dict in tqdm(nodeid2metadict.items()):
             if not (
                 id2metabolite_features.get(id, False)
                 or id2enzyme_features.get(id, False)
             ):
-                if "metabolite" in metadata_dict:
+                if "metabolite_id" in metadata_dict:
                     id2metabolite_features[id] = None
                     if metadata_dict["smiles"]:
                         if self.args.metabolite_feature_type == "precomputed":
@@ -461,8 +512,18 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
         Return True if sample should be skipped and not included in data
         """
         if kwargs.get("enzyme", False):
+            # if missing protein sequence, skip sample
             if kwargs["enzyme"]["protein_sequence"] is None:
                 return True
+
+        if kwargs.get("reaction", False):
+            # if is a pseudo-reaction (ie no reactants or products), skip sample
+            if (
+                len(kwargs["reaction"].get("reactants", [])) == 0
+                or len(kwargs["reaction"].get("products", [])) == 0
+            ):
+                return True
+
         return False
 
     @property
