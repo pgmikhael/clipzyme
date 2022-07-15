@@ -4,7 +4,7 @@ from typing import List, Literal, Dict, Iterable, Tuple, Set
 import numpy as np
 import torch
 
-from nox.utils.registry import register_object, get_object
+from nox.utils.registry import register_object, get_object, md5
 from nox.utils.classes import set_nox_type
 from nox.utils.rdkit import get_rdkit_feature
 from nox.datasets.abstract import AbstractDataset
@@ -31,6 +31,8 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
         self.args = args
         self.protein_encoder = get_object(self.args.protein_encoder_name, "model")(args)
 
+        self.version = self.get_version()
+
         self.name = "gsm_link"
         self.root = args.data_dir
         # self.version = None
@@ -48,6 +50,24 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
 
     def init_class(self, args: argparse.ArgumentParser, split_group: str) -> None:
         self.load_dataset(args)
+
+    def get_version(self):
+        """Checks if changes have been made that would effect the preprocessed graphs"""
+        # hash skip_sample function
+        skip_sample_hash = md5(str(self.skip_sample))
+        # hash args that would modify the preprocessed graphs
+        args_hash = md5(
+            str(
+                self.args.metabolite_feature_type,
+                self.args.rdkit_fingerprint_name,
+                self.args.protein_feature_type,
+                self.args.protein_encoder_name,
+                self.args.pretrained_hub_dir,
+                self.args.train_encoder,
+            )
+        )
+
+        return md5(skip_sample_hash + args_hash)
 
     @property
     def num_relations(self) -> int:
@@ -67,7 +87,7 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
     def processed_file_names(self) -> None:
         r"""The name of the files in the :obj:`self.processed_dir` folder that
         must be present in order to skip processing."""
-        return "graph.pt"
+        return self.version + "graph.pt"
 
     @property
     def raw_file_names(self) -> None:
@@ -197,7 +217,9 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
         for rxn_dict in tqdm(reactions):
             # skip reactions that dont have any reactants or any products (pseudo-reactions)
             if self.skip_sample(reaction=rxn_dict):
-                print(f"Skipping reaction {rxn_dict['rxn_id']}, {len(rxn_dict.get('reactants', []))} reactants, {len(rxn_dict.get('products', []))} products and {len(rxn_dict.get('proteins', []))} proteins")
+                print(
+                    f"Skipping reaction {rxn_dict['rxn_id']}, {len(rxn_dict.get('reactants', []))} reactants, {len(rxn_dict.get('products', []))} products and {len(rxn_dict.get('proteins', []))} proteins"
+                )
                 continue
 
             reactants = rxn_dict["reactants"]
