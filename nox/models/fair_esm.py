@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import copy
 from nox.models.abstract import AbstractModel
+from nox.utils.classes import set_nox_type
 from nox.utils.registry import register_object, get_object
 
 
@@ -25,9 +26,17 @@ class FairEsm(AbstractModel):
         batch_labels, batch_strs, batch_tokens = self.batch_converter(fair_x)
         batch_tokens = batch_tokens.to(self.devicevar.device)
         repr_layer = 33  # TODO: add arg?
-        result = self.model(
-            batch_tokens, repr_layers=[repr_layer], return_contacts=False
-        )
+
+        if self.args.freeze_encoder:
+            self.model.eval()
+            with torch.no_grad():
+                result = self.model(
+                    batch_tokens, repr_layers=[repr_layer], return_contacts=False
+                )
+        else:
+            result = self.model(
+                batch_tokens, repr_layers=[repr_layer], return_contacts=False
+            )
 
         # Generate per-sequence representations via averaging
         hiddens = []
@@ -52,7 +61,7 @@ class FairEsm(AbstractModel):
         parser.add_argument(
             "--pretrained_hub_dir",
             type=str,
-            default="/Mounts/rbg-storage1/users/pgmikhael/torchhub",
+            default="/Mounts/rbg-storage1/snapshots/metabolomics",
             help="directory to torch hub where pretrained models are saved",
         )
 
@@ -62,9 +71,10 @@ class ProteinEncoder(AbstractModel):
     def __init__(self, args):
         super(ProteinEncoder, self).__init__()
         self.args = args
-        self.encoder = get_object("fair_esm", "model")(args)
-        args.mlp_input_dim = 1280  # TODO: add arg?
-        self.mlp = get_object("mlp_classifier", "model")(args)
+        self.encoder = get_object(args.protein_encoder_type, "model")(args)
+        cargs = copy.deepcopy(args)
+        cargs.mlp_input_dim = 1280  # TODO: add arg?
+        self.mlp = get_object("mlp_classifier", "model")(cargs)
 
     def forward(self, x, batch=None):
         output = {}
@@ -84,6 +94,13 @@ class ProteinEncoder(AbstractModel):
         Args:
             parser (argparse.ArgumentParser): argument parser
         """
+        parser.add_argument(
+            "--protein_encoder_type",
+            type=str,
+            default="fair_esm",
+            help="name of the protein encoder",
+            action=set_nox_type("model"),
+        )
         parser.add_argument(
             "--freeze_encoder",
             action="store_true",

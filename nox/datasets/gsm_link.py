@@ -4,11 +4,14 @@ import numpy as np
 import torch
 
 from nox.utils.registry import register_object, get_object
+from nox.utils.classes import set_nox_type
 from nox.utils.rdkit import get_rdkit_feature
 from nox.datasets.abstract import AbstractDataset
 from torch_geometric.data import InMemoryDataset, Data
 from nox.utils.pyg import from_smiles
-import tqdm
+
+import json
+from tqdm import tqdm
 import itertools
 import os
 
@@ -25,14 +28,15 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
         """
         self.split_group = split_group
         self.args = args
-        self.protein_encoder = get_object("fair_esm", "model")(args)
+        self.protein_encoder = get_object(self.args.protein_encoder_name, "model")(args)
 
         self.name = "gsm_link"
         self.root = args.data_dir
         # self.version = None
-        InMemoryDataset.__init__(self, root=self.root)
 
         self.init_class(args, split_group)
+
+        InMemoryDataset.__init__(self, root=self.root)
 
         self.dataset = self.create_dataset(split_group)
         if len(self.dataset) == 0:
@@ -194,11 +198,12 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
             "enzymes": {},
         }
 
-        for rxn_dict in tqdm(reactions, position=0):
-            reactants = rxn_dict["reactants"]
-            products = rxn_dict["products"]
-            enzymes = rxn_dict["proteins"]
-
+        for rxn_dict in tqdm(reactions):
+            # TODO: skip reactions that dont have products (pseudoreactions) instead of empty list like now
+            reactants = rxn_dict.get("reactants", [])
+            products = rxn_dict.get("products", [])
+            enzymes = rxn_dict.get("proteins", [])
+            
             # used to make (m1, m2, is_co_reactant_of), bi-directional
             is_co_reactant_of = set()
             # used to make (p1, p2, is_co_product_of), bi-directional
@@ -226,16 +231,18 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
                 # add reactants (metabolites) to any relevant relations
                 is_co_reactant_of.add(node_id)
                 if len(products) > 0:
-                    is_metabolite_reactant_for.append(
+                    is_metabolite_reactant_for += [
                         [node_id, relation2id["is_metabolite_reactant_for"]]
-                        * len(products)
-                    )
-                if len(enzymes) > 0:
-                    is_co_reactant_enzyme.append(
-                        [node_id, relation2id["is_co_reactant_enzyme"]] * len(enzymes)
-                    )
+                        for j in range(len(products))
+                    ]
 
-            for product in products:
+                if len(enzymes) > 0:
+                    is_co_reactant_enzyme += [
+                        [node_id, relation2id["is_co_reactant_enzyme"]]
+                        for j in range(len(enzymes))
+                    ]
+
+            for indx, product in enumerate(products):
                 metabolite_id = product["metabolite_id"]
                 if metabolite_id not in node2id:
                     node2id[metabolite_id] = len(node2id)
@@ -249,20 +256,26 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
                 # add products (metabolites) to any relevant relations
                 is_co_product_of.add(node_id)
                 if len(enzymes) > 0:
-                    is_enzyme_for_product.append(
-                        [node_id, relation2id["is_enzyme_for_product"]] * len(enzymes)
-                    )
+                    is_enzyme_for_product += [
+                        [node_id, relation2id["is_enzyme_for_product"]]
+                        for j in range(len(enzymes))
+                    ]
 
                 # for each relation already created that requires a product, add those products
-                for indx in range(len(is_metabolite_reactant_for)):
-                    is_metabolite_reactant_for[indx].append(node_id)
+                for i in range(len(reactants)):
+                    is_metabolite_reactant_for[indx + i * len(products)].append(
+                        node_id
+                    )
 
-            for enzyme in enzymes:
+            for indx, enzyme in enumerate(enzymes):
+                # TODO: this creates an error because I skip samples but it expects another enzyme
+                # one solution is to check how many I will skip at the beginning
+                # another is to remove one triplet if I skip a sample under the if statement
                 if self.skip_sample(enzyme=enzyme):
                     continue
 
                 enzyme_id = enzyme["bigg_gene_id"]
-                if enzyme not in node2id:
+                if enzyme_id not in node2id:
                     node2id[enzyme_id] = len(node2id)
 
                 node_id = node2id[enzyme_id]
@@ -275,11 +288,11 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
                 is_co_enzyme_of.add(node_id)
 
                 # for each relation already created that requires a product, add those products
-                for indx in range(len(is_co_reactant_enzyme)):
-                    is_co_reactant_enzyme[indx].append(node_id)
+                for i in range(len(reactants)):
+                    is_co_reactant_enzyme[indx + i * len(enzymes)].append(node_id)
 
-                for indx in range(len(is_enzyme_for_product)):
-                    is_enzyme_for_product[indx].append(node_id)
+                for i in range(len(products)):
+                    is_enzyme_for_product[indx + i * len(enzymes)].append(node_id)
 
             # Add flip directions
             # used to make (m1, m2, is_co_reactant_of), bi-directional
@@ -312,6 +325,8 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
 
             # (p1, e1, is_enzyme_for_product) bi-directional called is_enzyme_reactant_for
             is_enzyme_reactant_for = [trip[::-1] for trip in is_enzyme_for_product]
+            
+            assert all([len(t) == 3 for t in perms_is_co_reactant_of + perms_is_co_product_of + perms_is_co_enzyme_of + perms_co_reactant_enzymes + is_product_of_metabolite + is_enzyme_reactant_for])
 
             triplets += (
                 perms_is_co_reactant_of
@@ -320,6 +335,7 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
                 + perms_co_reactant_enzymes
                 + is_product_of_metabolite
                 + is_enzyme_reactant_for
+                + is_enzyme_for_product
             )
 
         # change to (head, tail, relation) tuples, rather than [head, relation, tail]
@@ -390,7 +406,12 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
             Exception: Unable to load
         """
         try:
-            self.data, self.slices = torch.load(self.processed_paths[0])
+            self.metadata_json = json.load(
+                open(
+                    os.path.join(self.root, f"{self.args.organism_name}_dataset.json"),
+                    "rb",
+                )
+            )
 
         except Exception as e:
             raise Exception("Unable to load dataset", e)
@@ -401,6 +422,12 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
         """
         Creates the dataset of samples from json metadata file.
         """
+        try:
+            self.data, self.slices = torch.load(self.processed_paths[0])
+
+        except Exception as e:
+            raise Exception("Unable to load dataset", e)
+
         dataset = []
 
         if self.split_group == "train":
@@ -532,4 +559,11 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
             required=True,
             default=None,
             help="name of organism that exists in BiGG Models",
+        )
+        parser.add_argument(
+            "--protein_encoder_name",
+            type=str,
+            default="fair_esm",
+            help="name of the protein encoder",
+            action=set_nox_type("model"),
         )

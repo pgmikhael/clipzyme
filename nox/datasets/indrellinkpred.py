@@ -284,15 +284,3 @@ class IndRelLinkPredDataset(AbstractDataset, InMemoryDataset):
         parser.add_argument(
             "--dataset_version", type=str, default="v1", help="Dataset version"
         )
-        parser.add_argument(
-            "--num_negative",
-            type=int,
-            default=32,
-            help="number of negative samples to use",
-        )
-        parser.add_argument(
-            "--strict_negative",
-            action="store_true",
-            default=False,
-            help="whether to only consider samples with known no edges as negative examples",
-        )

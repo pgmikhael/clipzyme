@@ -428,6 +428,18 @@ class NBFNet(AbstractModel):
             default=10,
             help="number of paths to use to obtain average length of the top-k paths",
         )
+        parser.add_argument(
+            "--num_negative",
+            type=int,
+            default=32,
+            help="number of negative samples to use",
+        )
+        parser.add_argument(
+            "--strict_negative",
+            action="store_true",
+            default=False,
+            help="whether to only consider samples with known no edges as negative examples",
+        )
 
 
 @register_object("metabo_nbfnet", "model")
@@ -485,6 +497,7 @@ class Metabo_NBFNet(NBFNet):
 
     @staticmethod
     def add_args(parser) -> None:
+        super(Metabo_NBFNet, Metabo_NBFNet).add_args(parser)
         parser.add_argument(
             "--protein_model",
             action=set_nox_type("model"),
