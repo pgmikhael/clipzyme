@@ -58,14 +58,16 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
         skip_sample_hash = md5(inspect.getsource(self.skip_sample))
         # hash args that would modify the preprocessed graphs
         args_hash = md5(
-            str([
-                self.args.metabolite_feature_type,
-                self.args.rdkit_fingerprint_name,
-                self.args.protein_feature_type,
-                self.args.protein_encoder_name,
-                self.args.pretrained_hub_dir,
-                self.args.train_encoder,
-            ])
+            str(
+                [
+                    self.args.metabolite_feature_type,
+                    self.args.rdkit_fingerprint_name,
+                    self.args.protein_feature_type,
+                    self.args.protein_encoder_name,
+                    self.args.pretrained_hub_dir,
+                    self.args.train_encoder,
+                ]
+            )
         )
 
         return md5(skip_sample_hash + args_hash)
@@ -407,7 +409,7 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
         """
         id2metabolite_features = {}
         id2enzyme_features = {}
-        
+
         print("Getting node features... this may take a while")
 
         for id, metadata_dict in tqdm(nodeid2metadict.items()):
@@ -531,15 +533,16 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
         """
         Prints summary statement with dataset stats
         """
-        summary = f"Contructed Genome Scale Model {self.split_group} dataset with {len(self.split_graph)} samples in the split graph"
+        triplets = len(self.dataset)
+        num_nodes = len(self.split_graph.num_nodes)
+
+        summary = f"Containing {triplets} triplets and {num_nodes} number of nodes in the split graph"
         return summary
 
     def print_summary_statement(
         self, dataset, split_group: Literal["train", "dev", "test"]
     ) -> None:
-        statement = "{} DATASET CREATED FOR {}\n.{}".format(
-            split_group.upper(), self.args.dataset_name.upper(), self.SUMMARY_STATEMENT
-        )
+        statement = f"{split_group.upper()} DATASET CREATED FOR {self.args.dataset_name.upper()}\n{self.SUMMARY_STATEMENT}"
         print(statement)
 
     def __getitem__(self, index: int) -> Dict:
