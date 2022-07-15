@@ -194,12 +194,10 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
 
         triplets = []
 
-        original_node_ids2metadicts = {}
-
         for rxn_dict in tqdm(reactions):
             # skip reactions that dont have any reactants or any products (pseudo-reactions)
             if self.skip_sample(reaction=rxn_dict):
-                warnings.warn(f"Skipping reaction {rxn_dict['rxn_id']}, {len(rxn_dict.get('reactants', []))} reactants, {len(rxn_dict.get('products', []))} products and {len(rxn_dict.get('proteins', []))} proteins")
+                print(f"Skipping reaction {rxn_dict['rxn_id']}, {len(rxn_dict.get('reactants', []))} reactants, {len(rxn_dict.get('products', []))} products and {len(rxn_dict.get('proteins', []))} proteins")
                 continue
 
             reactants = rxn_dict["reactants"]
@@ -367,6 +365,7 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
 
         # change to (head, tail, relation) tuples, rather than [head, relation, tail]
         triplets = [(triplet[0], triplet[2], triplet[1]) for triplet in triplets]
+        triplets = torch.tensor(triplets)
         return triplets, node2id, original_node_ids2metadicts
 
     def get_node_features(self, nodeid2metadict: Dict[int, Dict]) -> Tuple[Dict, Dict]:
@@ -391,7 +390,7 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
                 id2metabolite_features.get(id, False)
                 or id2enzyme_features.get(id, False)
             ):
-                if "metabolite" in metadata_dict:
+                if "metabolite_id" in metadata_dict:
                     id2metabolite_features[id] = None
                     if metadata_dict["smiles"]:
                         if self.args.metabolite_feature_type == "precomputed":
