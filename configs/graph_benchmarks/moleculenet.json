@@ -3,7 +3,12 @@
     "cartesian_hyperparams": {
       "batch_size": [50],
       "dataset_name": ["moleculenet"],
-      "data_dir": ["/Mounts/rbg-storage1/datasets/MoleculeNet/"],
+      "moleculenet_dataset": ["BACE"],
+      "num_classes": [2],
+      "data_dir": ["/Mounts/rbg-storage1/datasets/MoleculeNet"],
+      "assign_splits": [true],
+      "split_type": ["random"],
+      "split_probs": ["0.8 0.1 0.1"],
       "lightning_name": ["base"],
       "model_name": ["classifier"],
       "model_name_for_encoder": ["gatv2"],

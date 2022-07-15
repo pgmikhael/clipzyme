@@ -50,7 +50,7 @@ class BaseClassification(Nox):
 
         probs = predictions_dict["probs"]  # B, C (float)
         preds = predictions_dict["preds"]  # B
-        golds = predictions_dict["golds"]  # B
+        golds = predictions_dict["golds"].int()  # B
         stats_dict["accuracy"] = accuracy(golds, preds)
         stats_dict["confusion_matrix"] = confusion_matrix(
             preds, golds, args.num_classes

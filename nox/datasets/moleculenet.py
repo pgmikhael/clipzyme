@@ -27,8 +27,6 @@ class MoleNet(AbstractDataset, MoleculeNet):
 
         # self.version = None
         MoleculeNet.__init__(self, root=args.data_dir, name=args.moleculenet_dataset)
-        dataset = copy.deepcopy(self._data_list)
-        self.assign_splits(dataset, args.split_probs, seed=args.split_seed)
         dataset = []
         for idx in tqdm(range(self.len()), position=0):
             data = separate(
@@ -40,6 +38,7 @@ class MoleNet(AbstractDataset, MoleculeNet):
             )
             dataset.append(copy.deepcopy(data))
 
+        self.assign_splits(dataset, args.split_probs, args.split_type, seed=args.split_seed)
         self.dataset = []
         for d in dataset:
             if d.split == split_group:
@@ -57,7 +56,7 @@ class MoleNet(AbstractDataset, MoleculeNet):
         np.random.seed(seed)
         if method == "random":
             for idx in range(len(metadata_json)):
-                metadata_json[idx].split = np.random.choice(
+                metadata_json[idx]['split'] = np.random.choice(
                     ["train", "dev", "test"], p=split_probs
                 )
         elif method == "scaffold":
@@ -70,7 +69,7 @@ class MoleNet(AbstractDataset, MoleculeNet):
     def scaffold_split(self, meta: List[dict], split_probs: List[float], seed):
         scaffold_to_indices = defaultdict(list)
         for m_i, m in enumerate(meta):
-            scaffold = generate_scaffold(m.smiles)
+            scaffold = generate_scaffold(m['smiles'])
             scaffold_to_indices[scaffold].append(m_i)
 
         # Split
@@ -120,7 +119,7 @@ class MoleNet(AbstractDataset, MoleculeNet):
 
         for idx_list, split in [(train, "train"), (val, "dev"), (test, "test")]:
             for idx in idx_list:
-                meta[idx].split = split
+                meta[idx]['split'] = split
 
     @staticmethod
     def add_args(parser) -> None:
@@ -157,7 +156,9 @@ class MoleNet(AbstractDataset, MoleculeNet):
             default=[0],
             help="task indices",
         )
-
-    @staticmethod
-    def set_args(args) -> None:
-        args.num_classes = len(args.moleculenet_task)
+        parser.add_argument(
+            "--scaffold_balanced",
+            action="store_true",
+            default=False,
+            help="balance the scaffold sets",
+        )
