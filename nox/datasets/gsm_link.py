@@ -193,10 +193,7 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
 
         triplets = []
 
-        original_node_ids2metadicts = {
-            "metabolites": {},
-            "enzymes": {},
-        }
+        original_node_ids2metadicts = {}
 
         for rxn_dict in tqdm(reactions):
             # skip reactions that dont have any reactants or any products (pseudo-reactions)
@@ -228,8 +225,8 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
                 node_id = node2id[metabolite_id]
 
                 # store the dict of the metabolite for later use
-                if metabolite_id not in original_node_ids2metadicts["metabolites"]:
-                    original_node_ids2metadicts["metabolites"][metabolite_id] = reactant
+                if metabolite_id not in original_node_ids2metadicts:
+                    original_node_ids2metadicts[metabolite_id] = reactant
 
                 # add reactants (metabolites) to any relevant relations
                 is_co_reactant_of.add(node_id)
@@ -253,8 +250,8 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
                 node_id = node2id[metabolite_id]
 
                 # store the dict of the metabolite for later use
-                if metabolite_id not in original_node_ids2metadicts["metabolites"]:
-                    original_node_ids2metadicts["metabolites"][metabolite_id] = product
+                if metabolite_id not in original_node_ids2metadicts:
+                    original_node_ids2metadicts[metabolite_id] = product
 
                 # add products (metabolites) to any relevant relations
                 is_co_product_of.add(node_id)
@@ -299,8 +296,8 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
                 node_id = node2id[enzyme_id]
 
                 # store the dict of the metabolite for later use
-                if enzyme_id not in original_node_ids2metadicts["enzymes"]:
-                    original_node_ids2metadicts["enzymes"][enzyme_id] = enzyme
+                if enzyme_id not in original_node_ids2metadicts:
+                    original_node_ids2metadicts[enzyme_id] = enzyme
 
                 # add enzymes (proteins) to any relevant relations
                 is_co_enzyme_of.add(node_id)
