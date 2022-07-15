@@ -1,5 +1,6 @@
 import argparse
 import numpy as np
+import torch
 import copy
 import warnings
 from random import Random
@@ -7,7 +8,7 @@ from collections import defaultdict
 from typing import List
 from nox.utils.registry import register_object
 from nox.datasets.abstract import AbstractDataset
-from nox.utils.rdkit import generate_scaffold
+from nox.utils.rdkit import generate_scaffold, get_rdkit_feature
 from torch_geometric.datasets import MoleculeNet
 from torch_geometric.data.separate import separate
 from tqdm import tqdm
@@ -28,7 +29,7 @@ class MoleNet(AbstractDataset, MoleculeNet):
         # self.version = None
         MoleculeNet.__init__(self, root=args.data_dir, name=args.moleculenet_dataset)
         dataset = []
-        for idx in tqdm(range(self.len()), position=0):
+        for idx in tqdm(range(self.len()), position=0, desc="Converting to pyg.Data"):
             data = separate(
                 cls=self.data.__class__,
                 batch=self.data,
@@ -39,11 +40,23 @@ class MoleNet(AbstractDataset, MoleculeNet):
             dataset.append(copy.deepcopy(data))
 
         self.assign_splits(dataset, args.split_probs, args.split_type, seed=args.split_seed)
-        self.dataset = []
-        for d in dataset:
-            if d.split == split_group:
-                d.y = d.y[:, np.array(args.moleculenet_task)]
-                self.dataset.append(d)
+        self.dataset = self.create_dataset(dataset, split_group)
+        
+
+    def create_dataset(self, full_dataset, split_group):
+        dataset = []
+        for d in tqdm(full_dataset, "Constructing dataset"):
+            if d.split != split_group:
+                continue
+            if self.args.moleculenet_task is not None:
+                d.y = d.y[:, torch.tensor(self.args.moleculenet_task)]
+            d.has_y = ~torch.isnan(d.y)
+            d.y[torch.isnan(d.y)] = 0
+            if self.args.use_rdkit_features:
+                d.rdkit_features = torch.tensor(get_rdkit_feature(d.smiles, method=self.args.rdkit_features_name) )
+            dataset.append(d)
+        return dataset
+
 
     def __getitem__(self, index):
         try:
@@ -153,7 +166,7 @@ class MoleNet(AbstractDataset, MoleculeNet):
             "--moleculenet_task",
             type=int,
             nargs="*",
-            default=[0],
+            default=None,
             help="task indices",
         )
         parser.add_argument(

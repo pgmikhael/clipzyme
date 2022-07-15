@@ -128,3 +128,47 @@ class MLPClassifier(AbstractModel):
             default=False,
             help="Use LayerNorm in mlp",
         )
+
+@register_object("graph_classifier", "model")
+class GraphClassifier(Classifier):
+    def __init__(self, args):
+        super(GraphClassifier, self).__init__(args)
+        cargs = copy.deepcopy(args)
+        cargs.mlp_input_dim = args.mlp_input_dim + args.rdkit_features_dim
+        self.mlp = get_object("mlp_classifier", "model")(cargs)
+
+    def forward(self, batch=None):
+        output = {}
+        output["encoder_hidden"] = self.encoder(batch)[self.encoder_hidden_key]
+        batch_size = output["encoder_hidden"].shape[0]
+        features = batch["rdkit_features"].view(batch_size, -1)
+        graph_x = torch.concat([output["encoder_hidden"], features ], dim=-1)
+        output.update(self.mlp({"x": graph_x.float() }))
+        return output
+
+    @staticmethod
+    def add_args(parser) -> None:
+        """Add class specific args
+
+        Args:
+            parser (argparse.ArgumentParser): argument parser
+        """
+        super(GraphClassifier, GraphClassifier).add_args(parser)
+        parser.add_argument(
+            "--use_rdkit_features",
+            action="store_true",
+            default=False,
+            help="whether using graph-level features from rdkit",
+        )
+        parser.add_argument(
+            "--rdkit_features_dim",
+            type=int,
+            default=0,
+            help="number of features",
+        )
+        parser.add_argument(
+            "--rdkit_features_name",
+            type=str,
+            default="rdkit_fingerprint",
+            help="name of rdkit features to use",
+        )

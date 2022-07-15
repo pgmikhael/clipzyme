@@ -1,6 +1,6 @@
 from typing import Dict
 from nox.utils.registry import register_object
-from collections import OrderedDict
+from collections import OrderedDict, defaultdict
 from nox.utils.classes import Nox
 import numpy as np
 import pdb
@@ -227,54 +227,37 @@ class Survival_Classification(BaseClassification):
         return stats_dict
 
 
-@register_object("discrim_classification", "metric")
-class Discriminator_Classification(BaseClassification):
+@register_object("multitask_classification", "metric")
+class MultiTask_Classification(BaseClassification):
     def __init__(self, args) -> None:
         super().__init__(args)
 
     @property
     def metric_keys(self):
-        return ["discrim_probs", "discrim_golds"]
+        return ["probs", "preds", "golds"]
 
     def __call__(self, predictions_dict, args):
         stats_dict = OrderedDict()
 
-        golds = predictions_dict["discrim_golds"]
-        probs = predictions_dict["discrim_probs"]
-        preds = predictions_dict["discrim_probs"].argmax(axis=-1).reshape(-1)
+        golds = predictions_dict["golds"].int()
+        probs = predictions_dict["probs"]
+        preds = predictions_dict["preds"].int()
 
-        nargs = copy.deepcopy(args)
-        nargs.num_classes = probs.shape[-1]
-        stats_dict = super().__call__(
-            {"golds": golds, "probs": probs, "preds": preds}, nargs
-        )
-        stats_dict = {"discrim_{}".format(k): v for k, v in stats_dict.items()}
-
+        if "has_golds" in predictions_dict:
+            metrics = defaultdict(list)
+            for col in range(predictions_dict["golds"].shape[1]):
+                row = predictions_dict["has_golds"][:,col]
+                pr, rc = precision_recall(probs[row, col], golds[row, col])
+                metrics["precision"].append(pr)
+                metrics["recall"].append(rc)
+                metrics["f1"].append( f1(probs[row, col], golds[row, col] ))
+                metrics["roc_auc"].append( auroc(probs[row, col], golds[row, col] ) )
+            stats_dict = {k:torch.stack(v).mean() for k,v in metrics.items()}
+        else:
+            stats_dict["precision"], stats_dict["recall"] = precision_recall(probs, golds, multiclass=False)
+            stats_dict["f1"] = f1(probs, golds, multiclass=False, average="macro")
+            stats_dict["roc_auc"] = auroc(probs, golds, multiclass=False, num_classes=2)
+            
         return stats_dict
 
 
-@register_object("multi_discrim_classification", "metric")
-class MultiDiscriminator_Classification(BaseClassification):
-    def __init__(self, args) -> None:
-        super().__init__(args)
-
-    @property
-    def metric_keys(self):
-        return ["device_probs", "device_golds", "thickness_probs", "thickness_golds"]
-
-    def __call__(self, predictions_dict, args):
-        stats_dict = OrderedDict()
-
-        for key in ["device", "thickness"]:
-            golds = predictions_dict["{}_golds".format(key)]
-            probs = predictions_dict["{}_probs".format(key)]
-            preds = predictions_dict["{}_probs".format(key)].argmax(axis=-1).reshape(-1)
-
-            nargs = copy.deepcopy(args)
-            nargs.num_classes = probs.shape[-1]
-            stats_dict = super().__call__(
-                {"golds": golds, "probs": probs, "preds": preds}, nargs
-            )
-            stats_dict = {"{}_{}".format(key, k): v for k, v in stats_dict.items()}
-
-        return stats_dict

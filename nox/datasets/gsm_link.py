@@ -169,7 +169,7 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
             metabolite_features=id2metabolites,
             enzyme_features=id2enzymes,
             edge_index=train_edge_index,
-            edge_type=train_edge_index,
+            edge_type=train_relation_type,
             num_nodes=train_num_nodes,
             target_edge_index=test_edge_index,
             target_edge_type=test_relation_type,
@@ -485,13 +485,13 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
 
         if self.split_group == "train":
             # self.split_graph = self.seperate_collated_data(0)
-            self.split_graph = self.data[0]
+            self.split_graph = self.get(0)
         elif self.split_group == "dev":
             # self.split_graph = self.seperate_collated_data(1)
-            self.split_graph = self.data[1]
+            self.split_graph = self.get(1)
         elif self.split_group == "test":
             # self.split_graph = self.seperate_collated_data(2)
-            self.split_graph = self.data[2]
+            self.split_graph = self.get(2)
 
         else:
             raise ValueError(f"Invalid split group: {self.split_group}")
