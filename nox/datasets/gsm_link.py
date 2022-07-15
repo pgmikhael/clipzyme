@@ -1,4 +1,5 @@
 import argparse
+import warnings
 from typing import List, Literal, Dict, Iterable, Tuple, Set
 import numpy as np
 import torch
@@ -198,6 +199,7 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
         for rxn_dict in tqdm(reactions):
             # skip reactions that dont have any reactants or any products (pseudo-reactions)
             if self.skip_sample(reaction=rxn_dict):
+                warnings.warn(f"Skipping reaction {rxn_dict['rxn_id']}, {len(rxn_dict.get('reactants', []))} reactants, {len(rxn_dict.get('products', []))} products and {len(rxn_dict.get('proteins', []))} proteins")
                 continue
 
             reactants = rxn_dict["reactants"]
