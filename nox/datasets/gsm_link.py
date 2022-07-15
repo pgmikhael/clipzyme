@@ -384,8 +384,10 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
         """
         id2metabolite_features = {}
         id2enzyme_features = {}
+        
+        print("Getting node features... this may take a while")
 
-        for id, metadata_dict in nodeid2metadict.items():
+        for id, metadata_dict in tqdm(nodeid2metadict.items()):
             if not (
                 id2metabolite_features.get(id, False)
                 or id2enzyme_features.get(id, False)
