@@ -135,8 +135,8 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
         train_edge_index = train_triplets[:, :2].t()
         train_relation_type = train_triplets[:, 2]
         train_num_nodes = (
-            max(train_triplets[:, 0].max(), train_triplets[:, 1].max()) + 1
-        ).item()
+            max(train_triplets[:, 0].max(), train_triplets[:, 1].max())
+        ).item() + 1
 
         val_edge_index = val_triplets[:, :2].t()
         val_relation_type = val_triplets[:, 2]
