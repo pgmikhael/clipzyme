@@ -104,6 +104,19 @@ class NBFNet(AbstractModel):
         is_t_neg = (h_index == h_index[:, [0]]).all(dim=-1, keepdim=True)
         new_h_index = torch.where(is_t_neg, h_index, t_index)
         new_t_index = torch.where(is_t_neg, t_index, h_index)
+        # TODO: Fix this reverse relation index
+        # Issue - most of the relations have existing reverse versions
+        #  relation2id = {
+        #     "is_co_reactant_of": 0, # bi-directional (both directions are same relation)
+        #     "is_co_product_of": 1, # bi-directional (both directions are same relation)
+        #     "is_co_enzyme_of": 2, # bi-directional (both directions are same relation)
+        #     "is_co_reactant_enzyme": 3, # bi-directional (both directions are same relation)
+        #     "is_metabolite_reactant_for": 4, # opposite direction is called is_product_of_metabolite (5)
+        #     "is_product_of_metabolite": 5, # opposite direction is called is_metabolite_reactant_for (4)
+        #     "is_enzyme_reactant_for": 6, # opposite direction is called is_enzyme_for_product (7)
+        #     "is_enzyme_for_product": 7, # opposite direction is called is_enzyme_reactant_for (6)
+        # }
+
         new_r_index = torch.where(is_t_neg, r_index, r_index + self.num_relation // 2)
         return new_h_index, new_t_index, new_r_index
 
