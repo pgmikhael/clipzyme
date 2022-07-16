@@ -104,19 +104,6 @@ class NBFNet(AbstractModel):
         is_t_neg = (h_index == h_index[:, [0]]).all(dim=-1, keepdim=True)
         new_h_index = torch.where(is_t_neg, h_index, t_index)
         new_t_index = torch.where(is_t_neg, t_index, h_index)
-        # TODO: Fix this reverse relation index
-        # Issue - most of the relations have existing reverse versions
-        #  relation2id = {
-        #     "is_co_reactant_of": 0, # bi-directional (both directions are same relation)
-        #     "is_co_product_of": 1, # bi-directional (both directions are same relation)
-        #     "is_co_enzyme_of": 2, # bi-directional (both directions are same relation)
-        #     "is_co_reactant_enzyme": 3, # bi-directional (both directions are same relation)
-        #     "is_metabolite_reactant_for": 4, # opposite direction is called is_product_of_metabolite (5)
-        #     "is_product_of_metabolite": 5, # opposite direction is called is_metabolite_reactant_for (4)
-        #     "is_enzyme_reactant_for": 6, # opposite direction is called is_enzyme_for_product (7)
-        #     "is_enzyme_for_product": 7, # opposite direction is called is_enzyme_reactant_for (6)
-        # }
-
         new_r_index = torch.where(is_t_neg, r_index, r_index + self.num_relation // 2)
         return new_h_index, new_t_index, new_r_index
 
@@ -504,6 +491,46 @@ class Metabo_NBFNet(NBFNet):
         # by the scatter operation we put query (relation) embeddings as init features of source (index) nodes
         boundary.scatter_add_(1, index.unsqueeze(1), query.unsqueeze(1))
         return query, boundary
+    
+    def negative_sample_to_tail(self, h_index, t_index, r_index):
+        # convert p(h | t, r) to p(t' | h', r')
+        # h' = t, r' = r^{-1}, t' = h
+        is_t_neg = (h_index == h_index[:, [0]]).all(dim=-1, keepdim=True)  # batch x 1, first half true (all true heads), second half false (all false heads)
+        new_h_index = torch.where(is_t_neg, h_index, t_index) # torch.where(condition, value if condition, value else)
+        new_t_index = torch.where(is_t_neg, t_index, h_index)
+        # get custom-defined inverse relations
+        r_index_inverse = self.get_inverse_relation(r_index)
+        new_r_index = torch.where(is_t_neg, r_index, r_index_inverse)
+        return new_h_index, new_t_index, new_r_index
+    
+    def get_inverse_relation(self, r_index):
+        """
+        convert a tensor of relations into the metabolic inverse
+
+        Note: Fix this reverse relation index
+        Issue - most of the relations have existing reverse versions
+         relation2id = {
+            "is_co_reactant_of": 0, bi-directional (both directions are same relation)                  -> 0
+            "is_co_product_of": 1, bi-directional (both directions are same relation)                   -> 1
+            "is_co_enzyme_of": 2, bi-directional (both directions are same relation)                    -> 2
+            "is_co_reactant_enzyme": 3, bi-directional (both directions are same relation)              -> 3
+            "is_metabolite_reactant_for": 4, opposite direction is called is_product_of_metabolite (5)  -> 5
+            "is_product_of_metabolite": 5, opposite direction is called is_metabolite_reactant_for (4)  -> 4
+            "is_enzyme_reactant_for": 6, opposite direction is called is_enzyme_for_product (7)         -> 7
+            "is_enzyme_for_product": 7, opposite direction is called is_enzyme_reactant_for (6)         -> 6
+        }
+
+        Args:
+            r_inverse: torch.Tensor of relation indices
+        
+        Returns:
+            torch.Tensor: same shape as r_index with appropriately defined inverse relations
+        """
+        r_index_inverse = torch.where(r_index==4, 5, r_index)
+        r_index_inverse = torch.where(r_index==5, 4, r_index_inverse)
+        r_index_inverse = torch.where(r_index==6, 7, r_index_inverse)
+        r_index_inverse = torch.where(r_index==7, 6, r_index_inverse)
+        return r_index_inverse
 
     @staticmethod
     def add_args(parser) -> None:
