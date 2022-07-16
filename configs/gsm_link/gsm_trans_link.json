@@ -50,8 +50,8 @@
     "workspace": ["peteranditamar"],
     "project_name": ["metabolomics"],
     "logger_tags": ["dataset debug"],
-    "metabolite_feature_type": ["precomputed"],
-    "protein_feature_type": ["precomputed"],
+    "metabolite_feature_type": ["none"],
+    "protein_feature_type": ["none"],
     "rdkit_fingerprint_name": ["rdkit_fingerprint"],
     "organism_name": ["e_coli_core"]
   },

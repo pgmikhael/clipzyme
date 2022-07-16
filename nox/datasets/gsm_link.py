@@ -531,7 +531,7 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
         Prints summary statement with dataset stats
         """
         triplets = len(self.dataset)
-        num_nodes = len(self.split_graph.num_nodes)
+        num_nodes = self.split_graph.num_nodes
 
         summary = f"Containing {triplets} triplets and {num_nodes} number of nodes in the split graph"
         return summary
