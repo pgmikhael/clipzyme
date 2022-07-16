@@ -30,7 +30,8 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
         """
         self.split_group = split_group
         self.args = args
-        self.protein_encoder = get_object(self.args.protein_encoder_name, "model")(args)
+        if args.protein_feature_type == "precomputed":
+            self.protein_encoder = get_object(self.args.protein_encoder_name, "model")(args)
 
         self.version = self.get_version()
 
@@ -134,9 +135,8 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
         # transductive case
         train_edge_index = train_triplets[:, :2].t()
         train_relation_type = train_triplets[:, 2]
-        train_num_nodes = (
-            max(train_triplets[:, 0].max(), train_triplets[:, 1].max())
-        ).item() + 1
+        # note: all nodes need to exist in the graph for link prediction
+        train_num_nodes = len(nodeid2metadict) #train_triplets[:, :2].max().item() + 1
 
         val_edge_index = val_triplets[:, :2].t()
         val_relation_type = val_triplets[:, 2]
@@ -392,7 +392,7 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
         # change to (head, tail, relation) tuples, rather than [head, relation, tail]
         triplets = [(triplet[0], triplet[2], triplet[1]) for triplet in triplets]
         for triplet in triplets:
-            assert triplet[1] in relation2id.values()
+            assert triplet[2] in relation2id.values()
         triplets = torch.tensor(triplets)
         return triplets, node2id, original_node_ids2metadicts
 
