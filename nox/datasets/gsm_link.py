@@ -6,7 +6,7 @@ import torch
 import inspect
 
 from nox.utils.registry import register_object, get_object, md5
-from nox.utils.classes import set_nox_type
+from nox.utils.classes import set_nox_type, classproperty
 from nox.utils.rdkit import get_rdkit_feature
 from nox.datasets.abstract import AbstractDataset
 from torch_geometric.data import InMemoryDataset, Data
@@ -577,7 +577,7 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
 
         return splits.values()
 
-    @property
+    @classproperty
     def DATASET_ITEM_KEYS(self) -> List:
         """
         List of keys to be included in sample when being batched
