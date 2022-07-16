@@ -459,9 +459,6 @@ class Metabo_NBFNet(NBFNet):
         # initialize queries (relation types of the given triples)
         query = self.query(r_index)
 
-        data.metabolite_features
-        data.enzyme_features
-
         if self.metabolite_feature_type in ["precomputed", "trained"]:
             metabolite_indx, metabolite_batch = [], []
             for i, h in enumerate(h_index):
