@@ -385,11 +385,14 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
                 + perms_co_reactant_enzymes
                 + is_product_of_metabolite
                 + is_enzyme_reactant_for
+                + is_metabolite_reactant_for
                 + is_enzyme_for_product
             )
 
         # change to (head, tail, relation) tuples, rather than [head, relation, tail]
         triplets = [(triplet[0], triplet[2], triplet[1]) for triplet in triplets]
+        for triplet in triplets:
+            assert triplet[1] in relation2id.values()
         triplets = torch.tensor(triplets)
         return triplets, node2id, original_node_ids2metadicts
 
