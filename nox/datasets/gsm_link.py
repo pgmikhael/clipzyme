@@ -438,6 +438,7 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
                 elif "bigg_gene_id" in metadata_dict:
                     id2enzyme_features[id] = None
                     if self.args.protein_feature_type == "precomputed":
+                        # if need to precompute protein features sample by sample uncomment this
                         # id2enzyme_features[id] = self.protein_encoder(
                         #     metadata_dict["protein_sequence"]
                         # )
@@ -452,6 +453,7 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
                     )
 
         if self.args.protein_feature_type == "precomputed":
+            # this batches protein sequences and then converts to features
             ids = list(id2enzyme_features.keys())
             seqs = [id2enzyme_features[id] for id in ids]
             batch_size = 100
@@ -459,8 +461,10 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
                 # every batch_size, add to batches
                 preds = self.protein_encoder(seqs[i : i + batch_size])
                 for j, id in enumerate(ids[i : i + batch_size]):
-                    id2enzyme_features[id] = preds[j]
-
+                    id2enzyme_features[id] = preds["protein_hidden"][j]
+            assert all(
+                [torch.is_tensor(v) for v in id2enzyme_features.values()]
+            ), "Failed to encode all proteins"
         return id2metabolite_features, id2enzyme_features
 
     def __repr__(self):
