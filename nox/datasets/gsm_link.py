@@ -451,7 +451,7 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
                     )
 
         if self.args.protein_feature_type == "precomputed":
-            print("Computed protein features... this may take a while")
+            print("Computing protein features... this may take a while")
             # this batches protein sequences and then converts to features
             ids = list(id2enzyme_features.keys())
             seqs = [id2enzyme_features[id] for id in ids]
