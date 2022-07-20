@@ -457,7 +457,7 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
             ids = list(id2enzyme_features.keys())
             seqs = [id2enzyme_features[id] for id in ids]
             batch_size = 100
-            for i in range(0, len(ids), batch_size):
+            for i in tqdm(range(0, len(ids), batch_size)):
                 # every batch_size, add to batches
                 preds = self.protein_encoder(seqs[i : i + batch_size])
                 for j, id in enumerate(ids[i : i + batch_size]):
