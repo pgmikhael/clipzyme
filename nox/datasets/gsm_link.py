@@ -31,7 +31,9 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
         self.split_group = split_group
         self.args = args
         if args.protein_feature_type == "precomputed":
-            self.protein_encoder = get_object(self.args.protein_encoder_name, "model")(args)
+            self.protein_encoder = get_object(self.args.protein_encoder_name, "model")(
+                args
+            )
 
         self.version = self.get_version()
 
@@ -136,7 +138,7 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
         train_edge_index = train_triplets[:, :2].t()
         train_relation_type = train_triplets[:, 2]
         # note: all nodes need to exist in the graph for link prediction
-        train_num_nodes = len(nodeid2metadict) #train_triplets[:, :2].max().item() + 1
+        train_num_nodes = len(nodeid2metadict)  # train_triplets[:, :2].max().item() + 1
 
         val_edge_index = val_triplets[:, :2].t()
         val_relation_type = val_triplets[:, 2]
@@ -436,9 +438,11 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
                 elif "bigg_gene_id" in metadata_dict:
                     id2enzyme_features[id] = None
                     if self.args.protein_feature_type == "precomputed":
-                        id2enzyme_features[id] = self.protein_encoder(
-                            metadata_dict["protein_sequence"]
-                        )
+                        # id2enzyme_features[id] = self.protein_encoder(
+                        #     metadata_dict["protein_sequence"]
+                        # )
+                        id2enzyme_features[id] = metadata_dict["protein_sequence"]
+
                     elif self.args.protein_feature_type == "trained":
                         id2enzyme_features[id] = metadata_dict["protein_sequence"]
 
@@ -446,6 +450,16 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
                     raise KeyError(
                         f"[metabolite] OR [protein] NOT FOUND IN METADICT FOR NODE {id}. AVAILABLE KEYS ARE: {nodeid2metadict.keys()}"
                     )
+
+        if self.args.protein_feature_type == "precomputed":
+            ids = list(id2enzyme_features.keys())
+            seqs = [id2enzyme_features[id] for id in ids]
+            batch_size = 100
+            for i in range(0, len(ids), batch_size):
+                # every batch_size, add to batches
+                preds = self.protein_encoder(seqs[i : i + batch_size])
+                for j, id in enumerate(ids[i : i + batch_size]):
+                    id2enzyme_features[id] = preds[j]
 
         return id2metabolite_features, id2enzyme_features
 
