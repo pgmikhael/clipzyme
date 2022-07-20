@@ -464,6 +464,7 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
             # if there are any remaining proteins, add to batches
             remainder = len(ids) % batch_size
             if remainder:
+                print("Computing protein features for remaining proteins, almost done!")
                 preds = self.protein_encoder(seqs[-remainder:])
                 for j, id in enumerate(ids[-remainder:]):
                     id2enzyme_features[id] = preds["protein_hidden"][j]
