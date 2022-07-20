@@ -142,3 +142,8 @@ dmypy.json
 
 # Windows
 Thumbs.db
+
+# Loggers
+lightning_logs/
+wandb/
+tensorboard/
