@@ -93,7 +93,7 @@ def get_reaction_elements(rxn: Reaction) -> dict:
     reactant_stoich = list(rxn.get_coefficients(reactants))
     for i, r in enumerate(reactants):
         metabolite_dict = {
-            "metabolite": r.id,
+            "metabolite_id": r.id,
             "coefficient": reactant_stoich[i],
         }
         metabolite_dict.update(get_metabolite_metadata(r))
@@ -104,7 +104,7 @@ def get_reaction_elements(rxn: Reaction) -> dict:
     product_stoich = list(rxn.get_coefficients(products))
     for i, p in enumerate(products):
         metabolite_dict = {
-            "metabolite": p.id,
+            "metabolite_id": p.id,
             "coefficient": product_stoich[i],
         }
         metabolite_dict.update(get_metabolite_metadata(p))
@@ -117,6 +117,7 @@ def get_reaction_elements(rxn: Reaction) -> dict:
     for i, row in protein_meta.iterrows():
         protein_dict = {
             "uniprot": populate_empty_with_none(row["seq_uniprot"]),
+            "bigg_gene_id": populate_empty_with_none(row["m_gene"]),
             "entrez": populate_empty_with_none(row["m_gene"]),
             "is_experimental": populate_empty_with_none(row["struct_is_experimental"]),
             "pdb": populate_empty_with_none(row["struct_pdb"]),
@@ -151,6 +152,8 @@ model = load_matlab_model(
 )
 
 # Get list of reactions
+get_reaction_elements(model.reactions[0])
+
 dataset = p_map(get_reaction_elements, model.reactions)
 
 json.dump(dataset, open(RECON3_DATASET_PATH, "w"))
