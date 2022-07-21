@@ -478,13 +478,11 @@ class Metabo_NBFNet(NBFNet):
             # batch
             if len(metabolite_batch) > 1:
                 metabolite_batch = default_collate(metabolite_batch)
+                metabolite_features = self.metabolite_encoder(metabolite_batch)
 
                 if self.metabolite_feature_type == "precomputed":
-                    metabolite_features = self.metabolite_encoder(metabolite_batch)
                     query[metabolite_indx] = metabolite_features["hidden"]
                 elif self.metabolite_feature_type == "trained":
-                    # metabolite_batch = self.batch.(metabolite_batch)
-                    metabolite_features = self.metabolite_encoder(metabolite_batch)
                     query[metabolite_indx] = metabolite_features["graph_features"]
 
         if self.protein_feature_type in ["precomputed", "trained"]:
