@@ -506,12 +506,6 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
         """
         try:
             self.data, self.slices = torch.load(self.processed_paths[0])
-            self.data.id2metabolite_features = {
-                int(k): v for k, v in self.data.id2metabolite_features.items()
-            }
-            self.data.id2enzyme_features = {
-                int(k): v for k, v in self.data.id2enzyme_features.items()
-            }
 
         except Exception as e:
             raise Exception("Unable to load dataset", e)
@@ -528,6 +522,22 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
         else:
             raise ValueError(f"Invalid split group: {self.split_group}")
 
+        self.data.metabolite_features = {
+            int(k): v for k, v in self.data.metabolite_features.items()
+        }
+        
+        self.data.enzyme_features = {
+            int(k): v for k, v in self.data.enzyme_features.items()
+        }
+        
+        self.split_group.metabolite_features = {
+                int(k): v for k, v in self.split_group.metabolite_features.items()
+                }   
+        
+        self.split_group.enzyme_features = {
+                int(k): v for k, v in self.split_group.enzyme_features.items()
+                }   
+        
         triplets = torch.cat(
             [
                 self.split_graph.target_edge_index,
