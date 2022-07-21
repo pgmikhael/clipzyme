@@ -532,12 +532,12 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
             int(k): v for k, v in self.data.enzyme_features.items()
         }
 
-        self.split_group.metabolite_features = {
-            int(k): v for k, v in self.split_group.metabolite_features.items()
+        self.split_graph.metabolite_features = {
+            int(k): v for k, v in self.split_graph.metabolite_features.items()
         }
 
-        self.split_group.enzyme_features = {
-            int(k): v for k, v in self.split_group.enzyme_features.items()
+        self.split_graph.enzyme_features = {
+            int(k): v for k, v in self.split_graph.enzyme_features.items()
         }
 
         triplets = torch.cat(
