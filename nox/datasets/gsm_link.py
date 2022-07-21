@@ -428,10 +428,12 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
                     id2metabolite_features[id] = None
                     if metadata_dict["smiles"]:
                         if self.args.metabolite_feature_type == "precomputed":
-                            id2metabolite_features[id] = torch.tensor(get_rdkit_feature(
-                                metadata_dict["smiles"],
-                                method=self.args.rdkit_fingerprint_name,
-                            ))
+                            id2metabolite_features[id] = torch.tensor(
+                                get_rdkit_feature(
+                                    metadata_dict["smiles"],
+                                    method=self.args.rdkit_fingerprint_name,
+                                )
+                            )
                         elif self.args.metabolite_feature_type == "trained":
                             id2metabolite_features[id] = from_smiles(
                                 metadata_dict["smiles"]
@@ -525,19 +527,19 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
         self.data.metabolite_features = {
             int(k): v for k, v in self.data.metabolite_features.items()
         }
-        
+
         self.data.enzyme_features = {
             int(k): v for k, v in self.data.enzyme_features.items()
         }
-        
+
         self.split_group.metabolite_features = {
-                int(k): v for k, v in self.split_group.metabolite_features.items()
-                }   
-        
+            int(k): v for k, v in self.split_group.metabolite_features.items()
+        }
+
         self.split_group.enzyme_features = {
-                int(k): v for k, v in self.split_group.enzyme_features.items()
-                }   
-        
+            int(k): v for k, v in self.split_group.enzyme_features.items()
+        }
+
         triplets = torch.cat(
             [
                 self.split_graph.target_edge_index,
