@@ -6,6 +6,7 @@ from torch import nn, autograd
 from torch_scatter import scatter_add
 from torch_geometric.data import Batch
 
+from nox.utils.loading import default_collate
 from nox.utils.registry import get_object, register_object
 from nox.utils.nbf import gen_rel_conv_layer, nbf_utils
 from nox.utils.classes import set_nox_type
@@ -466,11 +467,14 @@ class Metabo_NBFNet(NBFNet):
                     metabolite_indx.append(i)
                     metabolite_batch.append(data.metabolite_features[h])
 
+            # batch
+            metabolite_batch = default_collate(metabolite_batch)
+
             if self.metabolite_feature_type == "precomputed":
                 metabolite_features = self.metabolite_encoder(metabolite_batch)
                 query[metabolite_indx] = metabolite_features["hidden"]
             elif self.metabolite_feature_type == "trained":
-                metabolite_batch = self.batch.from_data_list(metabolite_batch)
+                # metabolite_batch = self.batch.(metabolite_batch)
                 metabolite_features = self.metabolite_encoder(metabolite_batch)
                 query[metabolite_indx] = metabolite_features["graph_features"]
 
@@ -480,6 +484,9 @@ class Metabo_NBFNet(NBFNet):
                 if data.enzyme_features.get(h, None) is not None:
                     protein_indx.append(i)
                     protein_batch.append(data.enzyme_features[h])
+
+            # batch
+            protein_batch = default_collate(protein_batch)
 
             protein_features = self.protein_encoder(protein_batch)
             query[protein_indx] = protein_features["hidden"]
