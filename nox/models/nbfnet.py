@@ -6,6 +6,7 @@ from torch import nn, autograd
 from torch_scatter import scatter_add
 from torch_geometric.data import Batch
 
+from nox.utils.loading import default_collate
 from nox.utils.registry import get_object, register_object
 from nox.utils.nbf import gen_rel_conv_layer, nbf_utils
 from nox.utils.classes import set_nox_type
@@ -446,8 +447,15 @@ class NBFNet(AbstractModel):
 class Metabo_NBFNet(NBFNet):
     def __init__(self, args) -> None:
         super().__init__(args)
-        self.protein_encoder = get_object(args.protein_model, "model")
-        self.metabolite_encoder = get_object(args.metabolite_model, "model")
+
+        pargs = copy.deepcopy(args)
+        pargs.linear_input_dim = pargs.protein_dim
+        pargs.linear_output_dim = pargs.input_dim
+        self.protein_encoder = get_object(args.protein_model, "model")(pargs)
+        margs = copy.deepcopy(args)
+        margs.linear_input_dim = margs.metabolite_dim
+        margs.linear_output_dim = margs.input_dim
+        self.metabolite_encoder = get_object(args.metabolite_model, "model")(margs)
 
         self.metabolite_feature_type = args.metabolite_feature_type
         self.protein_feature_type = args.protein_feature_type
@@ -462,26 +470,35 @@ class Metabo_NBFNet(NBFNet):
         if self.metabolite_feature_type in ["precomputed", "trained"]:
             metabolite_indx, metabolite_batch = [], []
             for i, h in enumerate(h_index):
-                if data.metabolite_features.get(i, None) is not None:
+                h = h.item() if torch.is_tensor(h) else h
+                if data.metabolite_features.get(h, None) is not None:
                     metabolite_indx.append(i)
                     metabolite_batch.append(data.metabolite_features[h])
 
-            metabolite_batch = self.batch.from_data_list(metabolite_batch)
-            metabolite_features = self.metabolite_encoder(metabolite_batch)
-            if self.metabolite_feature_type == "precomputed":
-                query[metabolite_indx] = metabolite_features["hidden"]
-            elif self.metabolite_feature_type == "trained":
-                query[metabolite_indx] = metabolite_features["graph_features"]
+            # batch
+            if len(metabolite_batch) > 1:
+                metabolite_batch = default_collate(metabolite_batch)
+                metabolite_features = self.metabolite_encoder(metabolite_batch)
+
+                if self.metabolite_feature_type == "precomputed":
+                    query[metabolite_indx] = metabolite_features["hidden"]
+                elif self.metabolite_feature_type == "trained":
+                    query[metabolite_indx] = metabolite_features["graph_features"]
 
         if self.protein_feature_type in ["precomputed", "trained"]:
             protein_indx, protein_batch = [], []
             for i, h in enumerate(h_index):
-                if data.enzyme_features.get(i, None) is not None:
+                h = h.item() if torch.is_tensor(h) else h
+                if data.enzyme_features.get(h, None) is not None:
                     protein_indx.append(i)
                     protein_batch.append(data.enzyme_features[h])
 
-            protein_features = self.protein_encoder(protein_batch)
-            query[protein_indx] = protein_features["hidden"]
+            # batch
+            if len(protein_batch) > 1:
+                protein_batch = default_collate(protein_batch)
+
+                protein_features = self.protein_encoder(protein_batch)
+                query[protein_indx] = protein_features["hidden"]
 
         index = h_index.unsqueeze(-1).expand_as(query)
 
@@ -491,18 +508,22 @@ class Metabo_NBFNet(NBFNet):
         # by the scatter operation we put query (relation) embeddings as init features of source (index) nodes
         boundary.scatter_add_(1, index.unsqueeze(1), query.unsqueeze(1))
         return query, boundary
-    
+
     def negative_sample_to_tail(self, h_index, t_index, r_index):
         # convert p(h | t, r) to p(t' | h', r')
         # h' = t, r' = r^{-1}, t' = h
-        is_t_neg = (h_index == h_index[:, [0]]).all(dim=-1, keepdim=True)  # batch x 1, first half true (all true heads), second half false (all false heads)
-        new_h_index = torch.where(is_t_neg, h_index, t_index) # torch.where(condition, value if condition, value else)
+        is_t_neg = (h_index == h_index[:, [0]]).all(
+            dim=-1, keepdim=True
+        )  # batch x 1, first half true (all true heads), second half false (all false heads)
+        new_h_index = torch.where(
+            is_t_neg, h_index, t_index
+        )  # torch.where(condition, value if condition, value else)
         new_t_index = torch.where(is_t_neg, t_index, h_index)
         # get custom-defined inverse relations
         r_index_inverse = self.get_inverse_relation(r_index)
         new_r_index = torch.where(is_t_neg, r_index, r_index_inverse)
         return new_h_index, new_t_index, new_r_index
-    
+
     def get_inverse_relation(self, r_index):
         """
         convert a tensor of relations into the metabolic inverse
@@ -522,14 +543,14 @@ class Metabo_NBFNet(NBFNet):
 
         Args:
             r_inverse: torch.Tensor of relation indices
-        
+
         Returns:
             torch.Tensor: same shape as r_index with appropriately defined inverse relations
         """
-        r_index_inverse = torch.where(r_index==4, 5, r_index)
-        r_index_inverse = torch.where(r_index==5, 4, r_index_inverse)
-        r_index_inverse = torch.where(r_index==6, 7, r_index_inverse)
-        r_index_inverse = torch.where(r_index==7, 6, r_index_inverse)
+        r_index_inverse = torch.where(r_index == 4, 5, r_index)
+        r_index_inverse = torch.where(r_index == 5, 4, r_index_inverse)
+        r_index_inverse = torch.where(r_index == 6, 7, r_index_inverse)
+        r_index_inverse = torch.where(r_index == 7, 6, r_index_inverse)
         return r_index_inverse
 
     @staticmethod
@@ -543,9 +564,21 @@ class Metabo_NBFNet(NBFNet):
             help="name of protein model",
         )
         parser.add_argument(
+            "--protein_dim",
+            type=int,
+            default=1280,
+            help="dimensions of protein embedding",
+        )
+        parser.add_argument(
             "--metabolite_model",
             action=set_nox_type("model"),
             type=str,
             default="identity",
             help="name of molecule/metabolite model",
+        )
+        parser.add_argument(
+            "--metabolite_dim",
+            type=int,
+            default=2048,
+            help="dimensions of metabolite embedding",
         )

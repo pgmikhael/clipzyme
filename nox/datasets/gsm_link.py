@@ -31,7 +31,9 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
         self.split_group = split_group
         self.args = args
         if args.protein_feature_type == "precomputed":
-            self.protein_encoder = get_object(self.args.protein_encoder_name, "model")(args)
+            self.protein_encoder = get_object(self.args.protein_encoder_name, "model")(
+                args
+            )
 
         self.version = self.get_version()
 
@@ -136,7 +138,7 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
         train_edge_index = train_triplets[:, :2].t()
         train_relation_type = train_triplets[:, 2]
         # note: all nodes need to exist in the graph for link prediction
-        train_num_nodes = len(nodeid2metadict) #train_triplets[:, :2].max().item() + 1
+        train_num_nodes = len(nodeid2metadict)  # train_triplets[:, :2].max().item() + 1
 
         val_edge_index = val_triplets[:, :2].t()
         val_relation_type = val_triplets[:, 2]
@@ -145,6 +147,10 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
         test_relation_type = test_triplets[:, 2]
 
         id2metabolites, id2enzymes = self.get_node_features(nodeid2metadict)
+
+        # collate expects keys to be strings instead of ints
+        id2metabolites = {str(k): v for k, v in id2metabolites.items()}
+        id2enzymes = {str(k): v for k, v in id2enzymes.items()}
 
         train_data = Data(
             metabolite_features=id2metabolites,
@@ -413,8 +419,6 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
         id2metabolite_features = {}
         id2enzyme_features = {}
 
-        print("Getting node features... this may take a while")
-
         for id, metadata_dict in tqdm(nodeid2metadict.items()):
             if not (
                 id2metabolite_features.get(id, False)
@@ -424,10 +428,12 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
                     id2metabolite_features[id] = None
                     if metadata_dict["smiles"]:
                         if self.args.metabolite_feature_type == "precomputed":
-                            id2metabolite_features[id] = get_rdkit_feature(
-                                metadata_dict["smiles"],
-                                method=self.args.rdkit_fingerprint_name,
-                            )
+                            id2metabolite_features[id] = torch.tensor(
+                                get_rdkit_feature(
+                                    metadata_dict["smiles"],
+                                    method=self.args.rdkit_fingerprint_name,
+                                )
+                            ).type(torch.FloatTensor)
                         elif self.args.metabolite_feature_type == "trained":
                             id2metabolite_features[id] = from_smiles(
                                 metadata_dict["smiles"]
@@ -436,9 +442,12 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
                 elif "bigg_gene_id" in metadata_dict:
                     id2enzyme_features[id] = None
                     if self.args.protein_feature_type == "precomputed":
-                        id2enzyme_features[id] = self.protein_encoder(
-                            metadata_dict["protein_sequence"]
-                        )
+                        # if need to precompute protein features sample by sample uncomment this
+                        # id2enzyme_features[id] = self.protein_encoder(
+                        #     metadata_dict["protein_sequence"]
+                        # )
+                        id2enzyme_features[id] = metadata_dict["protein_sequence"]
+
                     elif self.args.protein_feature_type == "trained":
                         id2enzyme_features[id] = metadata_dict["protein_sequence"]
 
@@ -446,6 +455,25 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
                     raise KeyError(
                         f"[metabolite] OR [protein] NOT FOUND IN METADICT FOR NODE {id}. AVAILABLE KEYS ARE: {nodeid2metadict.keys()}"
                     )
+
+        if self.args.protein_feature_type == "precomputed":
+            print("Computing protein features... this may take a while")
+            # this batches protein sequences and then converts to features
+            ids = [id for id in id2enzyme_features]
+            seqs = [id2enzyme_features[id] for id in ids]
+            batch_size = 100
+            for i in tqdm(range(0, len(ids), batch_size)):
+                # every batch_size, add to batches
+                preds = self.protein_encoder(seqs[i : i + batch_size])
+                for j, id in enumerate(ids[i : i + batch_size]):
+                    id2enzyme_features[id] = preds["protein_hidden"][j]
+            # if there are any remaining proteins, add to batches
+            remainder = len(ids) % batch_size
+            if remainder:
+                print("Computing protein features for remaining proteins, almost done!")
+                preds = self.protein_encoder(seqs[-remainder:])
+                for j, id in enumerate(ids[-remainder:]):
+                    id2enzyme_features[id] = preds["protein_hidden"][j]
 
         return id2metabolite_features, id2enzyme_features
 
@@ -495,6 +523,22 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
 
         else:
             raise ValueError(f"Invalid split group: {self.split_group}")
+
+        self.data.metabolite_features = {
+            int(k): v for k, v in self.data.metabolite_features.items()
+        }
+
+        self.data.enzyme_features = {
+            int(k): v for k, v in self.data.enzyme_features.items()
+        }
+
+        self.split_graph.metabolite_features = {
+            int(k): v for k, v in self.split_graph.metabolite_features.items()
+        }
+
+        self.split_graph.enzyme_features = {
+            int(k): v for k, v in self.split_graph.enzyme_features.items()
+        }
 
         triplets = torch.cat(
             [

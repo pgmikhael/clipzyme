@@ -2,6 +2,8 @@ from abc import ABCMeta
 import argparse
 from nox.utils.registry import get_object
 
+INITED_OBJ = []
+
 
 class classproperty(object):
     """
@@ -94,9 +96,18 @@ def set_nox_type(object_name):
             """
             if isinstance(values, list):
                 for v in values:
-                    get_object(v, object_name).add_args(parser)
+                    obj_val_str = f"{v}_{object_name}"
+                    # if object has already been called, conflict arises with add parse called multiple times
+                    if obj_val_str not in INITED_OBJ:
+                        get_object(v, object_name).add_args(parser)
+                        INITED_OBJ.append(obj_val_str)
+
             elif isinstance(values, str):
-                get_object(values, object_name).add_args(parser)
+                obj_val_str = f"{values}_{object_name}"
+                # if object has already been called, conflict arises with add parse called multiple times
+                if obj_val_str not in INITED_OBJ:
+                    get_object(values, object_name).add_args(parser)
+                    INITED_OBJ.append(obj_val_str)
 
         def set_args(self, args, val) -> None:
             """

@@ -10,27 +10,28 @@ from torch.utils import data
 from nox.utils.sampler import DistributedWeightedSampler
 from nox.utils.augmentations import get_augmentations_by_split
 from pytorch_lightning.utilities.cloud_io import load as pl_load
-from torch_geometric.data.data import Data
-from torch_geometric.data import Batch
+from torch_geometric.data import Data, HeteroData, Batch
 
 string_classes = (str, bytes)
 int_classes = int
 np_str_obj_array_pattern = re.compile(r"[SaUO]")
 
 default_collate_err_msg_format = (
-    "default_collate: batch must contain tensors, numpy arrays, numbers, "
+    "default_collate: batch must contain tensors, numpy arrays, numbers, PyG Data or HeteroData, "
     "dicts, or lists; found {}"
 )
 
-geometric_batch = Batch()
 
 def default_collate(batch):
     r"""Puts each data field into a tensor with outer dimension batch size"""
 
     elem = batch[0]
     elem_type = type(elem)
-    if isinstance(elem, Data):
-        return geometric_batch.from_data_list(batch)
+    if isinstance(elem, (Data, HeteroData)):
+        # optional args for more complex graphs (see pytorch geometric https://pytorch-geometric.readthedocs.io/en/latest/notes/batching.html)
+        follow_batch = None
+        exclude_keys = None
+        return Batch.from_data_list(batch, follow_batch, exclude_keys)
     elif isinstance(elem, torch.Tensor):
         out = None
         if torch.utils.data.get_worker_info() is not None:
@@ -101,7 +102,7 @@ def get_train_dataset_loader(args: Namespace, split: Optional[str] = "train"):
     train_data = get_object(args.dataset_name, "dataset")(args, split)
 
     if args.class_bal:
-        if args.strategy=="ddp":
+        if args.strategy == "ddp":
             sampler = DistributedWeightedSampler(
                 train_data,
                 weights=train_data.weights,
@@ -116,7 +117,7 @@ def get_train_dataset_loader(args: Namespace, split: Optional[str] = "train"):
                 replacement=True,
             )
     else:
-        if args.strategy == "ddp": 
+        if args.strategy == "ddp":
             sampler = torch.utils.data.distributed.DistributedSampler(
                 train_data,
                 shuffle=True,
@@ -154,7 +155,7 @@ def get_eval_dataset_loader(
 
     eval_data = get_object(args.dataset_name, "dataset")(args, split)
 
-    if args.strategy == "ddp": 
+    if args.strategy == "ddp":
         sampler = torch.utils.data.distributed.DistributedSampler(
             eval_data,
             shuffle=shuffle,

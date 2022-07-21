@@ -16,7 +16,7 @@ class Identity(AbstractModel):
         self.args = args
 
     def forward(self, data):
-        return data
+        return {"hidden": data}
 
 
 @register_object("linear", "model")
