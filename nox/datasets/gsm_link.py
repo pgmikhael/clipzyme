@@ -525,7 +525,7 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
             raise ValueError(f"Invalid split group: {self.split_group}")
 
         self.data.metabolite_features = {
-            int(k): v for k, v in self.data.metabolite_features.items()
+            int(k): v.type(torch.FloatTensor) for k, v in self.data.metabolite_features.items()
         }
 
         self.data.enzyme_features = {
@@ -533,7 +533,7 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
         }
 
         self.split_graph.metabolite_features = {
-            int(k): v for k, v in self.split_graph.metabolite_features.items()
+            int(k): v.type(torch.FloatTensor) for k, v in self.split_graph.metabolite_features.items()
         }
 
         self.split_graph.enzyme_features = {

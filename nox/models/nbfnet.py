@@ -476,15 +476,16 @@ class Metabo_NBFNet(NBFNet):
                     metabolite_batch.append(data.metabolite_features[h])
 
             # batch
-            metabolite_batch = default_collate(metabolite_batch)
+            if len(metabolite_batch) > 1:
+                metabolite_batch = default_collate(metabolite_batch)
 
-            if self.metabolite_feature_type == "precomputed":
-                metabolite_features = self.metabolite_encoder(metabolite_batch)
-                query[metabolite_indx] = metabolite_features["hidden"]
-            elif self.metabolite_feature_type == "trained":
-                # metabolite_batch = self.batch.(metabolite_batch)
-                metabolite_features = self.metabolite_encoder(metabolite_batch)
-                query[metabolite_indx] = metabolite_features["graph_features"]
+                if self.metabolite_feature_type == "precomputed":
+                    metabolite_features = self.metabolite_encoder(metabolite_batch)
+                    query[metabolite_indx] = metabolite_features["hidden"]
+                elif self.metabolite_feature_type == "trained":
+                    # metabolite_batch = self.batch.(metabolite_batch)
+                    metabolite_features = self.metabolite_encoder(metabolite_batch)
+                    query[metabolite_indx] = metabolite_features["graph_features"]
 
         if self.protein_feature_type in ["precomputed", "trained"]:
             protein_indx, protein_batch = [], []
@@ -495,10 +496,11 @@ class Metabo_NBFNet(NBFNet):
                     protein_batch.append(data.enzyme_features[h])
 
             # batch
-            protein_batch = default_collate(protein_batch)
+            if len(protein_batch) > 1:
+                protein_batch = default_collate(protein_batch)
 
-            protein_features = self.protein_encoder(protein_batch)
-            query[protein_indx] = protein_features["hidden"]
+                protein_features = self.protein_encoder(protein_batch)
+                query[protein_indx] = protein_features["hidden"]
 
         index = h_index.unsqueeze(-1).expand_as(query)
 
