@@ -447,8 +447,15 @@ class NBFNet(AbstractModel):
 class Metabo_NBFNet(NBFNet):
     def __init__(self, args) -> None:
         super().__init__(args)
-        self.protein_encoder = get_object(args.protein_model, "model")(args)
-        self.metabolite_encoder = get_object(args.metabolite_model, "model")(args)
+
+        pargs = copy.deepcopy(args)
+        pargs.linear_input_dim = pargs.protein_dim
+        pargs.linear_output_dim = pargs.input_dim
+        self.protein_encoder = get_object(args.protein_model, "model")(pargs)
+        margs = copy.deepcopy(args)
+        margs.linear_input_dim = margs.metabolite_dim
+        margs.linear_output_dim = margs.input_dim
+        self.metabolite_encoder = get_object(args.metabolite_model, "model")(margs)
 
         self.metabolite_feature_type = args.metabolite_feature_type
         self.protein_feature_type = args.protein_feature_type
@@ -557,9 +564,21 @@ class Metabo_NBFNet(NBFNet):
             help="name of protein model",
         )
         parser.add_argument(
+            "--protein_dim",
+            type=int,
+            default=1280,
+            help="dimensions of protein embedding",
+        )
+        parser.add_argument(
             "--metabolite_model",
             action=set_nox_type("model"),
             type=str,
             default="identity",
             help="name of molecule/metabolite model",
+        )
+        parser.add_argument(
+            "--metabolite_dim",
+            type=int,
+            default=2048,
+            help="dimensions of metabolite embedding",
         )

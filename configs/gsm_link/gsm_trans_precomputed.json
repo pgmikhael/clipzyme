@@ -51,7 +51,11 @@
     "project_name": ["metabolomics"],
     "logger_tags": ["e_coli_core precomputed_protein precomputed_metabos"],
     "metabolite_feature_type": ["precomputed"],
+    "metabolite_model": ["linear"],
+    "metabolite_dim": ["2048"],
     "protein_feature_type": ["precomputed"],
+    "protein_model": ["linear"],
+    "protein_dim": ["1280"],
     "rdkit_fingerprint_name": ["rdkit_fingerprint"],
     "organism_name": ["e_coli_core"]
   },
