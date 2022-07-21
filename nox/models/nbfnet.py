@@ -476,7 +476,7 @@ class Metabo_NBFNet(NBFNet):
         if self.protein_feature_type in ["precomputed", "trained"]:
             protein_indx, protein_batch = [], []
             for i, h in enumerate(h_index):
-                if data.enzyme_features.get(i, None) is not None:
+                if data.enzyme_features.get(h, None) is not None:
                     protein_indx.append(i)
                     protein_batch.append(data.enzyme_features[h])
 

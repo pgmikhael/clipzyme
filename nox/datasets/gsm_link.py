@@ -467,7 +467,7 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
                 print("Computing protein features for remaining proteins, almost done!")
                 preds = self.protein_encoder(seqs[-remainder:])
                 for j, id in enumerate(ids[-remainder:]):
-                    id2enzyme_features[id] = preds["protein_hidden"][j].numpy()
+                    id2enzyme_features[id] = preds["protein_hidden"][j]
             # assert all(
             #     [torch.is_tensor(v) for v in id2enzyme_features.values()]
             # ), "Failed to encode all proteins"
