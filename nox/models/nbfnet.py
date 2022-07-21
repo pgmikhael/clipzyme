@@ -466,11 +466,12 @@ class Metabo_NBFNet(NBFNet):
                     metabolite_indx.append(i)
                     metabolite_batch.append(data.metabolite_features[h])
 
-            metabolite_batch = self.batch.from_data_list(metabolite_batch)
-            metabolite_features = self.metabolite_encoder(metabolite_batch)
             if self.metabolite_feature_type == "precomputed":
+                metabolite_features = self.metabolite_encoder(metabolite_batch)
                 query[metabolite_indx] = metabolite_features["hidden"]
             elif self.metabolite_feature_type == "trained":
+                metabolite_batch = self.batch.from_data_list(metabolite_batch)
+                metabolite_features = self.metabolite_encoder(metabolite_batch)
                 query[metabolite_indx] = metabolite_features["graph_features"]
 
         if self.protein_feature_type in ["precomputed", "trained"]:
