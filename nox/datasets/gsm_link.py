@@ -148,6 +148,10 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
 
         id2metabolites, id2enzymes = self.get_node_features(nodeid2metadict)
 
+        # collate expects keys to be strings instead of ints
+        id2metabolites = {str(k): v for k, v in id2metabolites.items()}
+        id2enzymes = {str(k): v for k, v in id2enzymes.items()}
+
         train_data = Data(
             metabolite_features=id2metabolites,
             enzyme_features=id2enzymes,
@@ -468,12 +472,6 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
                 preds = self.protein_encoder(seqs[-remainder:])
                 for j, id in enumerate(ids[-remainder:]):
                     id2enzyme_features[id] = preds["protein_hidden"][j]
-            # assert all(
-            #     [torch.is_tensor(v) for v in id2enzyme_features.values()]
-            # ), "Failed to encode all proteins"
-            # assert all(
-            #    [isinstance(v, np.ndarray) for v in id2enzyme_features.values()]
-            # ), "Failed to encode all proteins"
 
         return id2metabolite_features, id2enzyme_features
 
@@ -508,6 +506,12 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
         """
         try:
             self.data, self.slices = torch.load(self.processed_paths[0])
+            self.data.id2metabolite_features = {
+                int(k): v for k, v in self.data.id2metabolite_features.items()
+            }
+            self.data.id2enzyme_features = {
+                int(k): v for k, v in self.data.id2enzyme_features.items()
+            }
 
         except Exception as e:
             raise Exception("Unable to load dataset", e)
