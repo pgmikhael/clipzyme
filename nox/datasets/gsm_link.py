@@ -471,9 +471,9 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
             # assert all(
             #     [torch.is_tensor(v) for v in id2enzyme_features.values()]
             # ), "Failed to encode all proteins"
-            assert all(
-                [isinstance(v, np.ndarray) for v in id2enzyme_features.values()]
-            ), "Failed to encode all proteins"
+            # assert all(
+            #    [isinstance(v, np.ndarray) for v in id2enzyme_features.values()]
+            # ), "Failed to encode all proteins"
 
         return id2metabolite_features, id2enzyme_features
 
