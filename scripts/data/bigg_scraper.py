@@ -1,4 +1,5 @@
 import requests, os, json, wget
+import urllib.parse
 from cobra.io import load_matlab_model
 from cobra.core.metabolite import Metabolite
 import pandas as pd
@@ -47,6 +48,8 @@ parser.add_argument(
 BIGG_METABOLITES = pd.read_csv(
     "/Mounts/rbg-storage1/datasets/Metabo/BiGG/bigg_models_metabolites.txt", sep="\t"
 )
+BIGG_METABOLITES.fillna("", inplace=True)
+
 METANETX_METABOLITES = pd.read_csv(
     "/Mounts/rbg-storage1/datasets/Metabo/MetaNetX/chem_prop.tsv",
     sep="\t",
@@ -57,6 +60,7 @@ HMDB_METABOLITES = json.load(
     open("/Mounts/rbg-storage1/datasets/Metabo/HMDB/metabolites.json", "r")
 )
 
+CHEBI_DB = json.load(open("/Mounts/rbg-storage1/datasets/Metabo/chebi_db.json", "r"))
 
 def xml2dict(t):
     """Transform XML into dictionary
@@ -190,7 +194,7 @@ def get_biocyc(db_meta: pd.Series) -> dict:
     """
     biocyc = [f for f in db_meta.values[0].split(";") if "biocyc" in f]
     if len(biocyc):
-        biocycid = os.path.basename(biocyc[0])
+        biocycid = urllib.parse.quote( os.path.basename(biocyc[0]) )
         page = requests.get(
             f"https://websvc.biocyc.org/getxml?id={biocycid}&detail=full"
         )
@@ -332,52 +336,52 @@ def search_chebi(metabolite: Metabolite) -> dict:
     else:
         matched_ids = name_search_ids + formula_search_ids
 
-    all_complete_entities = []
+    all_complete_entities = [CHEBI_DB[i] for i in matched_ids if i in CHEBI_DB]
+    """
     for j in range(0, len(matched_ids), 50):
         complete_entities = chebi_service.getCompleteEntityByList(
             matched_ids[j : j + 50]
         )
         all_complete_entities.extend(complete_entities)
-
-    exact_matches = [
-        i
-        for i, met in enumerate(all_complete_entities)
-        if met["Formulae"][0].data == metabolite.formula
-        or met["chebiAsciiName"].lower() == metabolite.name.lower()
-    ]
+    """
+    exact_matches = []
+    for i, met in enumerate(all_complete_entities):
+        if (("Formulae" in dict(met)) and (met["Formulae"] == metabolite.formula)) or met["ChEBI Name"].lower() == metabolite.name.lower():
+            exact_matches.append(i)
 
     # if no matches, then find the closest one
     if len(exact_matches) == 0:
         if metabolite.formula_weight:
-            closest_mass = sorted(
+            closest_mass_entities = sorted(
                 all_complete_entities,
-                key=lambda x: abs(metabolite.formula_weight - float(x["mass"])),
-            )[0]
+                key=lambda x: abs(metabolite.formula_weight - float(x.get("mass", 0) )),
+            )
         else:
             return meta_dict
 
-        exact_matches = [all_complete_entities.index(closest_mass)]
-        meta_dict.setdefault("errors", [])
-        meta_dict["errors"].append(
-            "exact metabolite not found, metabolite with closest mass used"
-        )
+        match = closest_mass_entities[0] if len(closest_mass_entities) else {}
+
+        meta_dict["errors"] = "exact metabolite not found, metabolite with closest mass used"
+            
         warnings.warn(
             f"exact metabolite not found, metabolite with closest mass used for metabolite {metabolite.id}"
         )
+        
+    else:
+        match = dict(all_complete_entities[exact_matches[0]])
 
-    match = dict(all_complete_entities[exact_matches[0]])
 
     for dictkey, dbkey in [
-        ("id", "chebiId"),
-        ("ascii_ame", "chebiAsciiName"),
-        ("smiles", "smiles"),
-        ("inchi", "inchi"),
-        ("inchikey", "inchiKey"),
-        ("charge", "charge"),
-        ("mass", "mass"),
-        ("monoisotopic_mass", "monoisotopicMass"),
+        ("id", "ChEBI ID"),
+        ("ascii_ame", "ChEBI Name"),
+        ("smiles", "SMILES"),
+        ("inchi", "InChI"),
+        ("inchikey", "InChIKey"),
+        ("charge", "Charge"),
+        ("mass", "Mass"),
+        ("monoisotopic_mass", "Monoisotopic Mass"),
     ]:
-        meta_dict[f"chebi_{dictkey}"] = match[dbkey]
+        meta_dict[f"chebi_{dictkey}"] = match.get(dbkey, None)
 
     return meta_dict
 
@@ -405,7 +409,7 @@ def link_metabolite_to_db(metabolite: Metabolite) -> dict:
 
     # Try HMDB
     meta_dict = get_hmdb(db_meta)
-
+    
     if not any("smiles" in k for k in meta_dict.keys()):
         # Try MetaNetX
         meta_dict.update(get_metanetx(db_meta))
@@ -427,13 +431,16 @@ def link_metabolite_to_db(metabolite: Metabolite) -> dict:
         meta_dict.update(get_pubchem(db_meta))
 
     # Try to link to ChEBI
+    meta_dict["searched"] = False
+    meta_dict["errors"] = None
     if not any("smiles" in k for k in meta_dict.keys()):
         meta_dict.update(search_chebi(metabolite))
+        meta_dict["searched"] = True
 
     # standardize SMILES
-    if any("smiles" in k for k in meta_dict.keys()):
-        smiles_key = [k for k in meta_dict.keys() if "smiles" in k][0]
-        meta_dict["smiles"] = Chem.CanonSmiles(meta_dict[smiles_key])
+    smiles_key = [k for k,v in meta_dict.items() if ("smiles" in k) and (v is not None)]
+    if len(smiles_key):
+        meta_dict["smiles"] = Chem.CanonSmiles(meta_dict[smiles_key[0]])
     else:
         meta_dict["smiles"] = None
 
