@@ -447,8 +447,8 @@ class NBFNet(AbstractModel):
 class Metabo_NBFNet(NBFNet):
     def __init__(self, args) -> None:
         super().__init__(args)
-        self.protein_encoder = get_object(args.protein_model, "model")
-        self.metabolite_encoder = get_object(args.metabolite_model, "model")
+        self.protein_encoder = get_object(args.protein_model, "model")(args)
+        self.metabolite_encoder = get_object(args.metabolite_model, "model")(args)
 
         self.metabolite_feature_type = args.metabolite_feature_type
         self.protein_feature_type = args.protein_feature_type
