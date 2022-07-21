@@ -462,6 +462,7 @@ class Metabo_NBFNet(NBFNet):
         if self.metabolite_feature_type in ["precomputed", "trained"]:
             metabolite_indx, metabolite_batch = [], []
             for i, h in enumerate(h_index):
+                h = h.item() if torch.is_tensor(h) else h
                 if data.metabolite_features.get(h, None) is not None:
                     metabolite_indx.append(i)
                     metabolite_batch.append(data.metabolite_features[h])
@@ -477,6 +478,7 @@ class Metabo_NBFNet(NBFNet):
         if self.protein_feature_type in ["precomputed", "trained"]:
             protein_indx, protein_batch = [], []
             for i, h in enumerate(h_index):
+                h = h.item() if torch.is_tensor(h) else h
                 if data.enzyme_features.get(h, None) is not None:
                     protein_indx.append(i)
                     protein_batch.append(data.enzyme_features[h])
