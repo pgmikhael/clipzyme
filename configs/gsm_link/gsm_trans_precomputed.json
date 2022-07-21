@@ -10,7 +10,7 @@
     "lr_decay": [0.1],
     "limit_train_batches": [1.0],
     "limit_val_batches": [1.0],
-    "lr": [5e-3],
+    "lr": [5e-4],
     "model_name": ["metabo_nbfnet"],
     "loss_names": ["linkpredictionloss"],
     "metric_names": ["ranking_metrics"],
