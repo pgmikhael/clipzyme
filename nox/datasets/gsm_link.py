@@ -428,10 +428,10 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
                     id2metabolite_features[id] = None
                     if metadata_dict["smiles"]:
                         if self.args.metabolite_feature_type == "precomputed":
-                            id2metabolite_features[id] = get_rdkit_feature(
+                            id2metabolite_features[id] = torch.tensor(get_rdkit_feature(
                                 metadata_dict["smiles"],
                                 method=self.args.rdkit_fingerprint_name,
-                            )
+                            ))
                         elif self.args.metabolite_feature_type == "trained":
                             id2metabolite_features[id] = from_smiles(
                                 metadata_dict["smiles"]
