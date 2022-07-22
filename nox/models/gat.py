@@ -44,9 +44,7 @@ class GATv2Op(AbstractModel):
                 node_features.float(), edge_index, edge_features.float()
             )
         else:
-            encoded_features = self.encoder.forward(
-                node_features.float(), edge_index
-            )
+            encoded_features = self.encoder.forward(node_features.float(), edge_index)
         graph_features = scatter(encoded_features, graph.batch, dim=0, reduce="add")
         encoded_features = unbatch(encoded_features, graph.batch)
         output["node_features"] = encoded_features
@@ -214,7 +212,7 @@ class GAT(AbstractModel):
         parser.add_argument(
             "--gat_hidden_dim",
             type=int,
-            default=10,
+            default=None,
             help="Dimension of hidden layers (node features)",
         )
         parser.add_argument(
