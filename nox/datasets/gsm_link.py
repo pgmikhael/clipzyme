@@ -235,6 +235,7 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
             reactants = rxn_dict["reactants"]
             products = rxn_dict["products"]
             enzymes = rxn_dict.get("proteins", [])
+            enzymes = [e for e in enzymes if not self.skip_sample(enzyme=e)]
 
             # used to make (m1, m2, is_co_reactant_of), bi-directional
             is_co_reactant_of = set()
@@ -248,8 +249,6 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
             is_metabolite_reactant_for = []
             # (p1, e1, is_enzyme_for_product) bi-directional called is_enzyme_reactant_for
             is_enzyme_for_product = []
-
-            enzymes = [e for e in enzymes if not self.skip_sample(enzyme=e)]
 
             for reactant in reactants:
                 metabolite_id = reactant["metabolite_id"]
