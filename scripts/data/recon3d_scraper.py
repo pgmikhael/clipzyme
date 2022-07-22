@@ -115,6 +115,9 @@ def get_reaction_elements(rxn: Reaction) -> dict:
 
     proteins = []
     for i, row in protein_meta.iterrows():
+        if row["m_gene"] == "":
+            assert row["seq_uniprot"] == ""
+            continue
         protein_dict = {
             "uniprot": populate_empty_with_none(row["seq_uniprot"]),
             "bigg_gene_id": populate_empty_with_none(row["m_gene"]),
@@ -124,18 +127,18 @@ def get_reaction_elements(rxn: Reaction) -> dict:
         }
         if protein_dict["uniprot"]:
             try:
-                protein_dict["sequence"] = uniprot_service.get_fasta_sequence(
+                protein_dict["protein_sequence"] = uniprot_service.get_fasta_sequence(
                     protein_dict["uniprot"]
                 )
             except:
                 try:
-                    protein_dict["sequence"] = uniprot_service.get_fasta_sequence(
+                    protein_dict["protein_sequence"] = uniprot_service.get_fasta_sequence(
                         protein_dict["uniprot"].split("-")[0]
                     )
                 except:
-                    protein_dict["sequence"] = None
+                    protein_dict["protein_sequence"] = None
         else:
-            protein_dict["sequence"] = None
+            protein_dict["protein_sequence"] = None
 
         proteins.append(protein_dict)
 
