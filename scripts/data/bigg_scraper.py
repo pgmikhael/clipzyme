@@ -337,13 +337,6 @@ def search_chebi(metabolite: Metabolite) -> dict:
         matched_ids = name_search_ids + formula_search_ids
 
     all_complete_entities = [CHEBI_DB[i] for i in matched_ids if i in CHEBI_DB]
-    """
-    for j in range(0, len(matched_ids), 50):
-        complete_entities = chebi_service.getCompleteEntityByList(
-            matched_ids[j : j + 50]
-        )
-        all_complete_entities.extend(complete_entities)
-    """
     exact_matches = []
     for i, met in enumerate(all_complete_entities):
         if (("Formulae" in dict(met)) and (met["Formulae"] == metabolite.formula)) or met["ChEBI Name"].lower() == metabolite.name.lower():
