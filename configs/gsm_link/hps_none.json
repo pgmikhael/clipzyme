@@ -65,5 +65,5 @@
   "paired_hyperparams": {
     "input_dim":[32, 128, 256, 512]
   },
-  "available_gpus": ["1"]
+  "available_gpus": ["2"]
 }

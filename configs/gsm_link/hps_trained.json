@@ -70,5 +70,5 @@
     "gat_hidden_dim": [32, 128, 256, 512],
     "input_dim":[32, 128, 256, 512]
   },
-  "available_gpus": ["4,5,6,7"]
+  "available_gpus": ["5,7"]
 }
