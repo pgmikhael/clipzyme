@@ -17,6 +17,8 @@ class FairEsm(AbstractModel):
         )
         self.batch_converter = self.alphabet.get_batch_converter()
         self.register_buffer("devicevar", torch.zeros(1, dtype=torch.int8))
+        if not self.args.train_encoder:
+            self.model.eval()
 
     def forward(self, x, batch=None):
         output = {}
@@ -28,7 +30,6 @@ class FairEsm(AbstractModel):
         repr_layer = 33  # TODO: add arg?
 
         if not self.args.train_encoder:
-            self.model.eval()
             with torch.no_grad():
                 result = self.model(
                     batch_tokens, repr_layers=[repr_layer], return_contacts=False
