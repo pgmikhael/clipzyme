@@ -249,6 +249,8 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
             # (p1, e1, is_enzyme_for_product) bi-directional called is_enzyme_reactant_for
             is_enzyme_for_product = []
 
+            enzymes = [e for e in enzymes if not self.skip_sample(enzyme=e)]
+
             for reactant in reactants:
                 metabolite_id = reactant["metabolite_id"]
                 if metabolite_id not in node2id:
@@ -299,27 +301,27 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
 
             for indx, enzyme in enumerate(enzymes):
                 # skip enzymes with no sequence and then remove the triplets that expected to have that enzyme appended to them
-                if self.skip_sample(enzyme=enzyme):
-                    # is_co_reactant_enzyme
-                    is_co_reactant_enzyme_remove_indices = [
-                        indx + i * len(enzymes) for i in range(len(reactants))
-                    ]  # remove all triplets for this enzyme
-                    is_co_reactant_enzyme = [
-                        i
-                        for j, i in enumerate(is_co_reactant_enzyme)
-                        if j not in is_co_reactant_enzyme_remove_indices
-                    ]
+                # if self.skip_sample(enzyme=enzyme):
+                #     # is_co_reactant_enzyme
+                #     is_co_reactant_enzyme_remove_indices = [
+                #         indx + i * len(enzymes) for i in range(len(reactants))
+                #     ]  # remove all triplets for this enzyme
+                #     is_co_reactant_enzyme = [
+                #         i
+                #         for j, i in enumerate(is_co_reactant_enzyme)
+                #         if j not in is_co_reactant_enzyme_remove_indices
+                #     ]
 
-                    # is_enzyme_for_product
-                    is_enzyme_for_product_remove_indices = [
-                        indx + i * len(enzymes) for i in range(len(products))
-                    ]  # remove all triplets for this enzyme
-                    is_enzyme_for_product = [
-                        i
-                        for j, i in enumerate(is_enzyme_for_product)
-                        if j not in is_enzyme_for_product_remove_indices
-                    ]
-                    continue
+                #     # is_enzyme_for_product
+                #     is_enzyme_for_product_remove_indices = [
+                #         indx + i * len(enzymes) for i in range(len(products))
+                #     ]  # remove all triplets for this enzyme
+                #     is_enzyme_for_product = [
+                #         i
+                #         for j, i in enumerate(is_enzyme_for_product)
+                #         if j not in is_enzyme_for_product_remove_indices
+                #     ]
+                #     continue
 
                 enzyme_id = enzyme["bigg_gene_id"]
                 if enzyme_id not in node2id:
