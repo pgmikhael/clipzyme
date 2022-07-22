@@ -1,7 +1,7 @@
 {
   "script": "main",
   "cartesian_hyperparams": {
-    "organism_name": ["recond3d"],
+    "organism_name": ["recon3d"],
     "data_dir": ["/Mounts/rbg-storage1/datasets/Metabo/datasets"],
     "logger_name": ["wandb"],
     "workspace": ["peteranditamar"],
