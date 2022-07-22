@@ -33,7 +33,8 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
         if args.protein_feature_type == "precomputed":
             self.protein_encoder = get_object(self.args.protein_encoder_name, "model")(
                 args
-            )
+            ).to('cuda')
+            self.protein_encoder.eval()
 
         self.version = self.get_version()
 
@@ -444,15 +445,17 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
             for i in tqdm(range(0, len(ids), batch_size)):
                 # every batch_size, add to batches
                 preds = self.protein_encoder(seqs[i : i + batch_size])
+                preds = preds["protein_hidden"].cpu()
                 for j, id in enumerate(ids[i : i + batch_size]):
-                    id2enzyme_features[id] = preds["protein_hidden"][j]
+                    id2enzyme_features[id] = preds[j]
             # if there are any remaining proteins, add to batches
             remainder = len(ids) % batch_size
             if remainder:
                 print("Computing protein features for remaining proteins, almost done!")
                 preds = self.protein_encoder(seqs[-remainder:])
+                preds = preds["protein_hidden"].cpu()
                 for j, id in enumerate(ids[-remainder:]):
-                    id2enzyme_features[id] = preds["protein_hidden"][j]
+                    id2enzyme_features[id] = preds[j]
 
         return id2metabolite_features, id2enzyme_features
 
