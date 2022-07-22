@@ -7,7 +7,7 @@ from collections import defaultdict
 from bioservices import ChEBI, KEGG, UniProt
 import pubchempy
 import warnings
-from tqdm import tqdm
+from p_tqdm import p_umap
 from xml.etree import cElementTree as ET
 import argparse
 from rdkit import Chem
@@ -337,6 +337,13 @@ def search_chebi(metabolite: Metabolite) -> dict:
         matched_ids = name_search_ids + formula_search_ids
 
     all_complete_entities = [CHEBI_DB[i] for i in matched_ids if i in CHEBI_DB]
+    """
+    for j in range(0, len(matched_ids), 50):
+        complete_entities = chebi_service.getCompleteEntityByList(
+            matched_ids[j : j + 50]
+        )
+        all_complete_entities.extend(complete_entities)
+    """
     exact_matches = []
     for i, met in enumerate(all_complete_entities):
         if (("Formulae" in dict(met)) and (met["Formulae"] == metabolite.formula)) or met["ChEBI Name"].lower() == metabolite.name.lower():
@@ -433,7 +440,10 @@ def link_metabolite_to_db(metabolite: Metabolite) -> dict:
     # standardize SMILES
     smiles_key = [k for k,v in meta_dict.items() if ("smiles" in k) and (v is not None)]
     if len(smiles_key):
-        meta_dict["smiles"] = Chem.CanonSmiles(meta_dict[smiles_key[0]])
+        try:
+            meta_dict["smiles"] = Chem.CanonSmiles(meta_dict[smiles_key[0]])
+        except:
+            meta_dict["smiles"] = None
     else:
         meta_dict["smiles"] = None
 
@@ -471,17 +481,7 @@ if __name__ == "__main__":
     chebi_service = ChEBI()
     uniprot_service = UniProt()
 
-    dataset = []
-
-    model = load_matlab_model(
-        os.path.join(args.bigg_model_dir, f"{args.organism_name}.mat")
-    )
-
-    # Get list of reactions
-    reactions = model.reactions
-
-    # For each reaction
-    for rxn in tqdm(reactions, position=0):
+    def get_reaction(rxn):
         rxn_dict = defaultdict(list)
         rxn_dict["rxn_id"] = rxn.id
         # Reaction metadata: compartments, id, name, reverse_id, reverse_variable, reversibility
@@ -546,8 +546,16 @@ if __name__ == "__main__":
 
         # if r.status_code == 200:
         #     json.loads(r.content.decode("utf-8"))
+        return rxn_dict 
 
-        dataset.append(rxn_dict)
+    model = load_matlab_model(
+        os.path.join(args.bigg_model_dir, f"{args.organism_name}.mat")
+    )
+
+    # Get list of reactions
+    reactions = model.reactions
+
+    dataset = p_umap(get_reaction, reactions)
 
     json.dump(
         dataset,
