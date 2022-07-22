@@ -69,6 +69,7 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
                     self.args.protein_encoder_name,
                     self.args.pretrained_hub_dir,
                     self.args.train_encoder,
+                    self.args.organism_name,
                 ]
             )
         )
