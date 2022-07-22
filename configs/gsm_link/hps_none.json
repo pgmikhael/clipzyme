@@ -44,10 +44,6 @@
     "strict_negative":[true],
     "adversarial_temperature": [0.5],
     "rdkit_fingerprint_name": ["rdkit_fingerprint"],
-    "gat_num_heads": [1, 2],
-    "gat_node_dim": [9],
-    "gat_edge_dim": [3],
-    "gat_num_layers": [6, 12],
     "weight_decay": [0, 0.001],
     "max_epochs": [20],
     "batch_size": [64],
@@ -67,8 +63,7 @@
     ]
   },
   "paired_hyperparams": {
-    "gat_hidden_dim": [32, 128, 256, 512],
     "input_dim":[32, 128, 256, 512]
   },
-  "available_gpus": ["4,5,6,7"]
+  "available_gpus": ["1"]
 }
