@@ -59,7 +59,9 @@ def get_metabolite_metadata(metabolite: Metabolite) -> dict:
     if not len(meta_dict.get("smiles", "")):
         try:
             mol = Chem.MolFromMolFile(molfile)
+            assert mol is not None
             smiles = Chem.MolToSmiles(mol)
+            assert len(smiles) > 0
             meta_dict["smiles"] = smiles
         except:
             try:
@@ -132,7 +134,9 @@ def get_reaction_elements(rxn: Reaction) -> dict:
                 )
             except:
                 try:
-                    protein_dict["protein_sequence"] = uniprot_service.get_fasta_sequence(
+                    protein_dict[
+                        "protein_sequence"
+                    ] = uniprot_service.get_fasta_sequence(
                         protein_dict["uniprot"].split("-")[0]
                     )
                 except:
