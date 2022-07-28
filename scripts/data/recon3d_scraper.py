@@ -120,11 +120,16 @@ def get_metabolite_metadata(metabolite: Metabolite) -> dict:
             except:
                 try:
                     # try to pull for chemical databases
+                    changed_metabolite_id = False
                     if metabolite.id.endswith(f"[{metabolite.compartment}]"):
                         metabolite.id = (
                             metabolite.id.split("[")[0] + "_" + metabolite.compartment
                         )
+                        changed_metabolite_id = True
                     bigg_scraped_metadata = link_metabolite_to_db(metabolite)
+                    # change metabolite back since it can be called again
+                    if changed_metabolite_id and metabolite.id.endswith(f"_{metabolite.compartment}"):
+                        metabolite.id = metabolite.id.split("_")[0] + "[" + metabolite.compartment + "]"
                     if "smiles" in bigg_scraped_metadata and (
                         len(bigg_scraped_metadata["smiles"]) > 0
                         or bigg_scraped_metadata["smiles"] is not None
@@ -238,8 +243,8 @@ model = load_matlab_model(
 #reaction1 = get_reaction_elements(model.reactions[0])
 
 # Get list of reactions
-#dataset = p_map(get_reaction_elements, model.reactions)
-for rxn in model.reactions:
-    get_reaction_elements(rxn)
+dataset = p_map(get_reaction_elements, model.reactions)
+#for rxn in model.reactions:
+#    get_reaction_elements(rxn)
 
 json.dump(dataset, open(RECON3_DATASET_PATH, "w"))
