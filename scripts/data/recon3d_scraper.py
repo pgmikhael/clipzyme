@@ -14,7 +14,7 @@ from rdkit.Chem.rdchem import Mol
 from typing import Union
 import warnings
 
-warnings.filterwarnings("ignore")
+warnings.filterwarnings("ignore", "*WARNING: not removing hydrogen*")
 
 # https://www.nature.com/articles/nbt.4072
 RECON3_METABOLITES = pd.read_excel(
