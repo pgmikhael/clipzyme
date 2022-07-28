@@ -43,16 +43,18 @@ uniprot_service = UniProt(verbose=False)
 
 
 def assert_rdkit_fp_safe(mol: Union[Mol, str]) -> None:
-    if isinstance(mol, str):
-        assert len("smiles") > 0
-        mol = Chem.MolFromSmiles(mol)
-        assert mol is not None
-    if isinstance(mol, Mol):
-        fp = Chem.RDKFingerprint(mol)
-        assert fp is not None
-
-    raise TypeError(f"smiles must be str or rdkit.Chem.rdchem.Mol. received {mol}")
-
+    try:
+        if isinstance(mol, str):
+            assert len("smiles") > 0, "assertion error: empty smiles"
+            mol = Chem.MolFromSmiles(mol)
+            assert mol is not None, "assertion error: smiles is none"
+        if isinstance(mol, Mol):
+            fp = Chem.RDKFingerprint(mol)
+            assert fp is not None, "assertion error: fingerprint is none"
+    except TypeError:
+        raise TypeError(f"smiles must be str or rdkit.Chem.rdchem.Mol. received {mol}")
+    except AssertionError as msg:
+        raise AssertionError(msg)
 
 def get_metabolite_metadata(metabolite: Metabolite) -> dict:
     """Get the metabolite metdata from local Recon3D supplementary file or from .mol file if present
@@ -109,6 +111,7 @@ def get_metabolite_metadata(metabolite: Metabolite) -> dict:
                 vmh_page = requests.get(
                     f"https://www.vmh.life/_api/metabolites/?abbreviation={molid}&format=json"
                 ).json()
+                smiles = vmh_page["results"][0]["smile"]
                 assert_rdkit_fp_safe(smiles)
                 meta_dict["smiles"] = vmh_page["results"][0]["smile"]
             except:
@@ -119,7 +122,7 @@ def get_metabolite_metadata(metabolite: Metabolite) -> dict:
                         len(bigg_scraped_metadata["smiles"]) > 0
                         or bigg_scraped_metadata["smiles"] is not None
                     ):
-                        assert_rdkit_fp_safe(smiles)
+                        assert_rdkit_fp_safe(bigg_scraped_metadata["smiles"])
                         meta_dict.update(bigg_scraped_metadata)
                 except:
                     meta_dict["smiles"] = None
