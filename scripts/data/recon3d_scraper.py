@@ -14,7 +14,7 @@ from rdkit.Chem.rdchem import Mol
 from typing import Union
 import warnings
 
-warnings.filterwarnings("ignore", "*WARNING: not removing hydrogen*")
+warnings.filterwarnings("ignore")
 
 # https://www.nature.com/articles/nbt.4072
 RECON3_METABOLITES = pd.read_excel(
@@ -190,7 +190,7 @@ def get_reaction_elements(rxn: Reaction) -> dict:
             "pdb": populate_empty_with_none(row["struct_pdb"]),
         }
         # check if existing
-        fasta_path = f"Recon3D_GP/genes/{row['m_gene']}/{row['m_gene']}_protein/sequences/{row['seq_file']}"
+        fasta_path = f"/Mounts/rbg-storage1/datasets/Metabo/Recon3D/Recon3D_GP/genes/{row['m_gene']}/{row['m_gene']}_protein/sequences/{row['seq_file']}"
         if os.path.exists(fasta_path):
             fasta_service = FASTA()
             fasta_service.read_fasta(fasta_path)
@@ -228,9 +228,11 @@ model = load_matlab_model(
     "/Mounts/rbg-storage1/datasets/Metabo/VMH/Recon3D/Recon3D_301/Recon3D_301.mat"
 )
 
-reaction1 = get_reaction_elements(model.reactions[0])
+#reaction1 = get_reaction_elements(model.reactions[0])
 
 # Get list of reactions
-dataset = p_map(get_reaction_elements, model.reactions)
+#dataset = p_map(get_reaction_elements, model.reactions)
+for rxn in model.reactions:
+    get_reaction_elements(rxn)
 
 json.dump(dataset, open(RECON3_DATASET_PATH, "w"))
