@@ -23,11 +23,11 @@ RECON3_METABOLITES = pd.read_excel(
 )
 RECON3_METABOLITES.fillna("", inplace=True)
 
-#RECON3_PROTEINS = pd.read_excel(
+# RECON3_PROTEINS = pd.read_excel(
 #   "/Mounts/rbg-storage1/datasets/Metabo/VMH/Recon3D/41587_2018_BFnbt4072_MOESM11_ESM.xlsx",
 #    sheet_name="Supplementary Data File 11",
-#)
-#RECON3_PROTEINS.fillna("", inplace=True)
+# )
+# RECON3_PROTEINS.fillna("", inplace=True)
 
 # https://github.com/SBRG/ssbio
 RECON3_PROTEINS_GEMPRO = pd.read_csv(
@@ -41,17 +41,17 @@ RECON3_DATASET_PATH = (
 
 uniprot_service = UniProt(verbose=False)
 
+
 def assert_rdkit_fp_safe(mol: Union[Mol, str]) -> None:
     if isinstance(mol, str):
         assert len("smiles") > 0
-        mol = Chem.MolFromSmiles(mol) 
+        mol = Chem.MolFromSmiles(mol)
         assert mol is not None
     if isinstance(mol, Mol):
-        fp = Chem.RDKFingerprint(mol) 
+        fp = Chem.RDKFingerprint(mol)
         assert fp is not None
-    
+
     raise TypeError(f"smiles must be str or rdkit.Chem.rdchem.Mol. received {mol}")
-    
 
 
 def get_metabolite_metadata(metabolite: Metabolite) -> dict:
@@ -87,23 +87,22 @@ def get_metabolite_metadata(metabolite: Metabolite) -> dict:
         meta_dict["smiles"] = "[H]N(CCC1=CN([H])C2=CC(OS(O)(=O)=O)=C(OC)C=C12)C(C)=O"
         return meta_dict
 
-
-    # if smiles found 
+    # if smiles found
     if len(meta_dict.get("smiles", "")):
         try:
             assert_rdkit_fp_safe(meta_dict["smiles"])
-        except: 
+        except Exception as e:
             meta_dict["smiles"] = ""
             print("Could not load original smile", e)
 
-    # if smiles not found 
+    # if smiles not found
     if not len(meta_dict.get("smiles", "")):
         try:
-            # try to get smiles from molfile 
+            # try to get smiles from molfile
             mol = Chem.MolFromMolFile(molfile)
             assert_rdkit_fp_safe(mol)
             meta_dict["smiles"] = Chem.MolToSmiles(mol)
-            
+
         except:
             try:
                 # try to pull for vmh website
@@ -113,7 +112,7 @@ def get_metabolite_metadata(metabolite: Metabolite) -> dict:
                 assert_rdkit_fp_safe(smiles)
                 meta_dict["smiles"] = vmh_page["results"][0]["smile"]
             except:
-                try: 
+                try:
                     # try to pull for chemical databases
                     bigg_scraped_metadata = link_metabolite_to_db(metabolite)
                     if "smiles" in bigg_scraped_metadata and (
@@ -124,7 +123,7 @@ def get_metabolite_metadata(metabolite: Metabolite) -> dict:
                         meta_dict.update(bigg_scraped_metadata)
                 except:
                     meta_dict["smiles"] = None
-                        
+
     return meta_dict
 
 
@@ -137,7 +136,7 @@ def populate_empty_with_none(x: str) -> Union[str, None]:
     Returns:
         Union[str, None]: string itself or None
     """
-    if (x == "" or x == 'None'):
+    if x == "" or x == "None":
         return None
     elif isinstance(x, (int, float)):
         return str(x)
