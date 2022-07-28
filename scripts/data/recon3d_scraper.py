@@ -91,6 +91,10 @@ def get_metabolite_metadata(metabolite: Metabolite) -> dict:
     elif molid == "CE2120":
         meta_dict["smiles"] = "[H]N(CCC1=CN([H])C2=CC(OS(O)(=O)=O)=C(OC)C=C12)C(C)=O"
         return meta_dict
+    elif "aqcobal" in molid:
+        meta_dict[
+            "smiles"
+        ] = "CC1=CC2=C(C=C1C)N(C=N2)C3C(C(C(O3)CO)OP(=O)(O)OC(C)CNC(=O)CCC4(C(C5C6(C(C(C(=N6)C(=C7C(C(C(=N7)C=C8C(C(C(=N8)C(=C4[N-]5)C)CCC(=O)N)(C)C)CCC(=O)N)(C)CC(=O)N)C)CCC(=O)N)(C)CC(=O)N)C)CC(=O)N)C)O.O.[Co+2]"
 
     # if smiles found
     if len(meta_dict.get("smiles", "")):
@@ -235,10 +239,10 @@ model = load_matlab_model(
     "/Mounts/rbg-storage1/datasets/Metabo/VMH/Recon3D/Recon3D_301/Recon3D_301.mat"
 )
 
-#reaction1 = get_reaction_elements(model.reactions[0])
+# reaction1 = get_reaction_elements(model.reactions[0])
 
 # Get list of reactions
-#dataset = p_map(get_reaction_elements, model.reactions)
+# dataset = p_map(get_reaction_elements, model.reactions)
 for rxn in model.reactions:
     get_reaction_elements(rxn)
 
