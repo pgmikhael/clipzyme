@@ -6,10 +6,11 @@ import pandas as pd
 from collections import defaultdict
 from bioservices import UniProt
 from bioservices.apps.fasta import FASTA
-from scripts.data.bigg_scraper import link_metabolite_to_db
+from bigg_scraper import link_metabolite_to_db
 from p_tqdm import p_map
 import requests
 import rdkit.Chem as Chem
+from rdkit.Chem.rdchem import Mol
 from typing import Union
 import warnings
 
@@ -22,11 +23,11 @@ RECON3_METABOLITES = pd.read_excel(
 )
 RECON3_METABOLITES.fillna("", inplace=True)
 
-RECON3_PROTEINS = pd.read_excel(
-    "/Mounts/rbg-storage1/datasets/Metabo/VMH/Recon3D/41587_2018_BFnbt4072_MOESM11_ESM.xlsx",
-    sheet_name="Supplementary Data File 11",
-)
-RECON3_PROTEINS.fillna("", inplace=True)
+#RECON3_PROTEINS = pd.read_excel(
+#   "/Mounts/rbg-storage1/datasets/Metabo/VMH/Recon3D/41587_2018_BFnbt4072_MOESM11_ESM.xlsx",
+#    sheet_name="Supplementary Data File 11",
+#)
+#RECON3_PROTEINS.fillna("", inplace=True)
 
 # https://github.com/SBRG/ssbio
 RECON3_PROTEINS_GEMPRO = pd.read_csv(
@@ -39,6 +40,18 @@ RECON3_DATASET_PATH = (
 )
 
 uniprot_service = UniProt(verbose=False)
+
+def assert_rdkit_fp_safe(mol: Union[Mol, str]) -> None:
+    if isinstance(mol, str):
+        assert len("smiles") > 0
+        mol = Chem.MolFromSmiles(mol) 
+        assert mol is not None
+    if isinstance(mol, Mol):
+        fp = Chem.RDKFingerprint(mol) 
+        assert fp is not None
+    
+    raise TypeError(f"smiles must be str or rdkit.Chem.rdchem.Mol. received {mol}")
+    
 
 
 def get_metabolite_metadata(metabolite: Metabolite) -> dict:
@@ -65,29 +78,53 @@ def get_metabolite_metadata(metabolite: Metabolite) -> dict:
     molfile = "/Mounts/rbg-storage1/datasets/Metabo/VMH/Recon3D/mol/{}.mol".format(
         molid
     )
+
+    # manually curated
+    if molid == "CE6252":
+        meta_dict["smiles"] = "Oc1nc(O)c2[n-]c(O)nc2n1"
+        return meta_dict
+    elif molid == "CE2120":
+        meta_dict["smiles"] = "[H]N(CCC1=CN([H])C2=CC(OS(O)(=O)=O)=C(OC)C=C12)C(C)=O"
+        return meta_dict
+
+
+    # if smiles found 
+    if len(meta_dict.get("smiles", "")):
+        try:
+            assert_rdkit_fp_safe(meta_dict["smiles"])
+        except: 
+            meta_dict["smiles"] = ""
+            print("Could not load original smile", e)
+
+    # if smiles not found 
     if not len(meta_dict.get("smiles", "")):
         try:
+            # try to get smiles from molfile 
             mol = Chem.MolFromMolFile(molfile)
-            assert mol is not None
-            smiles = Chem.MolToSmiles(mol)
-            assert len(smiles) > 0
-            meta_dict["smiles"] = smiles
+            assert_rdkit_fp_safe(mol)
+            meta_dict["smiles"] = Chem.MolToSmiles(mol)
+            
         except:
             try:
+                # try to pull for vmh website
                 vmh_page = requests.get(
                     f"https://www.vmh.life/_api/metabolites/?abbreviation={molid}&format=json"
                 ).json()
+                assert_rdkit_fp_safe(smiles)
                 meta_dict["smiles"] = vmh_page["results"][0]["smile"]
             except:
-                bigg_scraped_metadata = link_metabolite_to_db(metabolite)
-                if "smiles" in bigg_scraped_metadata and (
-                    len(bigg_scraped_metadata["smiles"]) > 0
-                    or bigg_scraped_metadata["smiles"] is not None
-                ):
-                    meta_dict.update(bigg_scraped_metadata)
-                else:
+                try: 
+                    # try to pull for chemical databases
+                    bigg_scraped_metadata = link_metabolite_to_db(metabolite)
+                    if "smiles" in bigg_scraped_metadata and (
+                        len(bigg_scraped_metadata["smiles"]) > 0
+                        or bigg_scraped_metadata["smiles"] is not None
+                    ):
+                        assert_rdkit_fp_safe(smiles)
+                        meta_dict.update(bigg_scraped_metadata)
+                except:
                     meta_dict["smiles"] = None
-
+                        
     return meta_dict
 
 
@@ -100,7 +137,12 @@ def populate_empty_with_none(x: str) -> Union[str, None]:
     Returns:
         Union[str, None]: string itself or None
     """
-    return None if x == "" else x
+    if (x == "" or x == 'None'):
+        return None
+    elif isinstance(x, (int, float)):
+        return str(x)
+    else:
+        return x
 
 
 def get_reaction_elements(rxn: Reaction) -> dict:
@@ -184,6 +226,7 @@ model = load_matlab_model(
     "/Mounts/rbg-storage1/datasets/Metabo/VMH/Recon3D/Recon3D_301/Recon3D_301.mat"
 )
 
+reaction1 = get_reaction_elements(model.reactions[0])
 
 # Get list of reactions
 dataset = p_map(get_reaction_elements, model.reactions)
