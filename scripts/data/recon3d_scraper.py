@@ -4,7 +4,8 @@ from cobra.core.metabolite import Metabolite
 from cobra.core.reaction import Reaction
 import pandas as pd
 from collections import defaultdict
-from bioservices import UniProt, FASTA
+from bioservices import UniProt
+from bioservices.apps.fasta import FASTA 
 from p_tqdm import p_map
 import requests
 import rdkit.Chem as Chem
@@ -27,7 +28,7 @@ RECON3_PROTEINS = pd.read_excel(
 RECON3_PROTEINS.fillna("", inplace=True)
 
 # https://github.com/SBRG/ssbio
-RECON3_PROTEINS_GEMPRO = pd.read_csv("/Mounts/rbg-storage1/datasets/Metabo/Recon3D/Recon3D_GP/DF_GEMPRO.csv")
+RECON3_PROTEINS_GEMPRO = pd.read_csv("/Mounts/rbg-storage1/datasets/Metabo/Recon3D/Recon3D_GP/data/DF_GEMPRO.csv")
 RECON3_PROTEINS_GEMPRO.fillna("", inplace=True)
 
 RECON3_DATASET_PATH = (
@@ -64,7 +65,9 @@ def get_metabolite_metadata(metabolite: Metabolite) -> dict:
     if not len(meta_dict.get("smiles", "")):
         try:
             mol = Chem.MolFromMolFile(molfile)
+            assert mol is not None
             smiles = Chem.MolToSmiles(mol)
+            assert len(smiles) > 0
             meta_dict["smiles"] = smiles
         except:
             try:
@@ -116,7 +119,7 @@ def get_reaction_elements(rxn: Reaction) -> dict:
         rxn_dict["products"].append(metabolite_dict)
 
     # 3. Get proteins
-    protein_meta = RECON3_PROTEINS_GEMPRO[protein_meta["m_reaction"] == rxn.id]
+    protein_meta = RECON3_PROTEINS_GEMPRO[RECON3_PROTEINS_GEMPRO["m_reaction"] == rxn.id]
     proteins = []
     for i, row in protein_meta.iterrows():
         if row["m_gene"] == "":
@@ -167,9 +170,8 @@ model = load_matlab_model(
     "/Mounts/rbg-storage1/datasets/Metabo/VMH/Recon3D/Recon3D_301/Recon3D_301.mat"
 )
 
-# Get list of reactions
-# get_reaction_elements(model.reactions[0])
 
+# Get list of reactions
 dataset = p_map(get_reaction_elements, model.reactions)
 
 json.dump(dataset, open(RECON3_DATASET_PATH, "w"))

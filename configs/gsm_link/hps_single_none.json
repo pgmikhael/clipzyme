@@ -25,7 +25,7 @@
     "test": [true],
     "num_sanity_val_steps": [0],
     "val_check_interval": [1.0],
-    "gpus": [1],
+    "gpus": [4],
     "ignore_warnings": [false],
     "checkpoint_dir": ["/Mounts/rbg-storage1/snapshots/metabolomics"],
     "hits_at_n": ["hits@1 hits@3 hits@10 hits@10_50"],
@@ -46,7 +46,7 @@
     "rdkit_fingerprint_name": ["rdkit_fingerprint"],
     "weight_decay": [0],
     "max_epochs": [20],
-    "batch_size": [32],
+    "batch_size": [16],
     "lr": [1e-4],
     "dropout": [0.0],
     "logger_tags": ["recon3d none_protein none_metabos"],
@@ -61,5 +61,5 @@
   "paired_hyperparams": {
     "input_dim":[32]
   },
-  "available_gpus": ["2"]
+  "available_gpus": ["0,1,2,3"]
 }
