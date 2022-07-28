@@ -44,10 +44,12 @@ uniprot_service = UniProt(verbose=False)
 
 def assert_rdkit_fp_safe(mol: Union[Mol, str]) -> None:
     try:
+        # can occur if you build mol from molfile but it fails
+        assert mol is not None
         if isinstance(mol, str):
             assert len("smiles") > 0, "assertion error: empty smiles"
             mol = Chem.MolFromSmiles(mol)
-            assert mol is not None, "assertion error: smiles is none"
+            assert mol is not None, "assertion error: smiles cannot be converted to mol"
         if isinstance(mol, Mol):
             fp = Chem.RDKFingerprint(mol)
             assert fp is not None, "assertion error: fingerprint is none"
@@ -55,6 +57,7 @@ def assert_rdkit_fp_safe(mol: Union[Mol, str]) -> None:
         raise TypeError(f"smiles must be str or rdkit.Chem.rdchem.Mol. received {mol}")
     except AssertionError as msg:
         raise AssertionError(msg)
+
 
 def get_metabolite_metadata(metabolite: Metabolite) -> dict:
     """Get the metabolite metdata from local Recon3D supplementary file or from .mol file if present
@@ -117,6 +120,10 @@ def get_metabolite_metadata(metabolite: Metabolite) -> dict:
             except:
                 try:
                     # try to pull for chemical databases
+                    if metabolite.id.endswith(f"[{metabolite.compartment}]"):
+                        metabolite.id = (
+                            metabolite.id.split("[")[0] + "_" + metabolite.compartment
+                        )
                     bigg_scraped_metadata = link_metabolite_to_db(metabolite)
                     if "smiles" in bigg_scraped_metadata and (
                         len(bigg_scraped_metadata["smiles"]) > 0
