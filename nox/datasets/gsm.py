@@ -26,8 +26,6 @@ class GSMDataset(AbstractDataset):
 
         constructs: standard pytorch Dataset obj, which can be fed in a DataLoader for batching
         """
-        __metaclass__ = ABCMeta
-
         super(GSMDataset, self).__init__()
 
         self.split_group = split_group
