@@ -50,7 +50,7 @@
     "gat_num_layers": [6],
     "weight_decay": [0],
     "max_epochs": [20],
-    "batch_size": [16],
+    "batch_size": [8],
     "lr": [1e-4],
     "dropout": [0.0],
     "logger_tags": ["recon3d precomputed_protein trained_metabos debug"],

@@ -46,20 +46,18 @@
     "rdkit_fingerprint_name": ["rdkit_fingerprint"],
     "weight_decay": [0],
     "max_epochs": [20],
-    "batch_size": [8],
+    "batch_size": [42],
     "lr": [1e-4],
     "dropout": [0.0],
-    "logger_tags": ["recon3d none_protein none_metabos"],
-    "metabolite_feature_type": [ "none"],
-    "metabolite_model": ["identity"],
+    "logger_tags": ["recon3d precomputed_protein precomputed_metabos"],
+    "metabolite_feature_type": ["precomputed"],
+    "metabolite_model": ["linear"],
     "metabolite_dim": ["2048"],
-    "protein_feature_type": ["none"],
-    "protein_model": ["identity"],
+    "protein_feature_type": ["precomputed"],
+    "protein_model": ["linear"],
     "protein_dim": ["1280"],
-    "hidden_dims": ["32 32 32 32 32 32"]
-  },
-  "paired_hyperparams": {
+    "hidden_dims": ["32 32 32 32 32 32"],
     "input_dim":[32]
   },
-  "available_gpus": ["0,1,2,3"]
+  "available_gpus": ["4,5,6,7"]
 }
