@@ -50,8 +50,8 @@
     "gat_num_layers": [6],
     "weight_decay": [0],
     "max_epochs": [20],
-    "batch_size": [8],
-    "lr": [1e-4],
+    "batch_size": [16],
+    "lr": [1e-5],
     "dropout": [0.0],
     "logger_tags": ["recon3d precomputed_protein trained_metabos debug"],
     "metabolite_feature_type": ["trained"],
@@ -62,7 +62,8 @@
     "protein_dim": ["1280"],
     "hidden_dims": ["32 32 32 32 32 32"],
     "gat_hidden_dim": [32],
-    "input_dim":[32]
+    "input_dim":[32],
+    "strategy": ["ddp_spawn"]
   },
   "available_gpus": ["0,1,2,3"]
 }
