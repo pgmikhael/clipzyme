@@ -38,7 +38,7 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
 
         self.version = self.get_version()
 
-        self.name = self.get_name()
+        self.name = self.get_name
         self.root = args.data_dir
         # self.version = None
 
