@@ -46,8 +46,8 @@
     "rdkit_fingerprint_name": ["rdkit_fingerprint"],
     "weight_decay": [0],
     "max_epochs": [20],
-    "batch_size": [8],
-    "lr": [1e-4],
+    "batch_size": [16],
+    "lr": [1e-5],
     "dropout": [0.0],
     "logger_tags": ["recon3d none_protein none_metabos"],
     "metabolite_feature_type": [ "none"],
@@ -56,10 +56,9 @@
     "protein_feature_type": ["none"],
     "protein_model": ["identity"],
     "protein_dim": ["1280"],
-    "hidden_dims": ["32 32 32 32 32 32"]
-  },
-  "paired_hyperparams": {
-    "input_dim":[32]
+    "hidden_dims": ["32 32 32 32 32 32"],
+    "input_dim": [32],
+    "strategy": ["ddp_spawn"]
   },
   "available_gpus": ["0,1,2,3"]
 }
