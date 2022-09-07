@@ -6,6 +6,7 @@ import warnings
 from random import Random
 from collections import defaultdict
 from typing import List
+from nox.datasets.gsm_link import GSMLinkDataset
 from nox.utils.registry import register_object
 from nox.datasets.abstract import AbstractDataset
 from nox.utils.rdkit import generate_scaffold, get_rdkit_feature
@@ -25,6 +26,7 @@ class MoleNet(AbstractDataset, MoleculeNet):
         constructs: standard pytorch Dataset obj, which can be fed in a DataLoader for batching
         """
         self.args = args
+        self.split_group = split_group
 
         # self.version = None
         MoleculeNet.__init__(self, root=args.data_dir, name=args.moleculenet_dataset)
@@ -175,3 +177,37 @@ class MoleNet(AbstractDataset, MoleculeNet):
             default=False,
             help="balance the scaffold sets",
         )
+
+
+class ToxicityMetabolismDataset(MoleNet):
+    def __init__(self, args: argparse.ArgumentParser, split_group: str) -> None:
+        """
+        Dataset to predict toxicity using the metabolic graph
+        params: args - config.
+        params: split_group - ['train'|'dev'|'test'].
+
+        constructs: standard pytorch Dataset obj, which can be fed in a DataLoader for batching
+        """
+        # TODO: in some cases we will want to use the split group (if we're training end-to-end) but in others we may want the fixed graph
+        # TODO: double check that this doesn't override anything produced by super
+        self.metabolic_graph = GSMLinkDataset(self.args, split_group)
+
+        super(ToxicityMetabolismDataset, self).__init__(args, split_group)
+
+        # update labels to pathways
+        for d in self.dataset:
+            # get smile
+            # lookup pathway
+            # update label
+            # update has_y
+
+    def lookup_pathway(self, smile):
+        pass
+
+    def get_smile(self, graph: torch_geometric.data.Data):
+        return graph.smiles 
+
+    
+    # may want to print a different summary statement here
+    # def print_summary_statement(dataset, split_group):
+        # pass
