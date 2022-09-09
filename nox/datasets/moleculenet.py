@@ -13,6 +13,7 @@ from nox.utils.rdkit import generate_scaffold, get_rdkit_feature
 from torch_geometric.datasets import MoleculeNet
 from torch_geometric.data.separate import separate
 from tqdm import tqdm
+from torch_geometric.data import Data
 
 
 @register_object("moleculenet", "dataset")
@@ -41,9 +42,10 @@ class MoleNet(AbstractDataset, MoleculeNet):
             )
             dataset.append(copy.deepcopy(data))
 
-        self.assign_splits(dataset, args.split_probs, args.split_type, seed=args.split_seed)
+        self.assign_splits(
+            dataset, args.split_probs, args.split_type, seed=args.split_seed
+        )
         self.dataset = self.create_dataset(dataset, split_group)
-        
 
     def create_dataset(self, full_dataset, split_group):
         dataset = []
@@ -55,10 +57,11 @@ class MoleNet(AbstractDataset, MoleculeNet):
             d.has_y = ~torch.isnan(d.y)
             d.y[torch.isnan(d.y)] = 0
             if self.args.use_rdkit_features:
-                d.rdkit_features = torch.tensor(get_rdkit_feature(d.smiles, method=self.args.rdkit_features_name) )
+                d.rdkit_features = torch.tensor(
+                    get_rdkit_feature(d.smiles, method=self.args.rdkit_features_name)
+                )
             dataset.append(d)
         return dataset
-
 
     def __getitem__(self, index):
         try:
@@ -71,7 +74,7 @@ class MoleNet(AbstractDataset, MoleculeNet):
         np.random.seed(seed)
         if method == "random":
             for idx in range(len(metadata_json)):
-                metadata_json[idx]['split'] = np.random.choice(
+                metadata_json[idx]["split"] = np.random.choice(
                     ["train", "dev", "test"], p=split_probs
                 )
         elif method == "scaffold":
@@ -84,7 +87,7 @@ class MoleNet(AbstractDataset, MoleculeNet):
     def scaffold_split(self, meta: List[dict], split_probs: List[float], seed):
         scaffold_to_indices = defaultdict(list)
         for m_i, m in enumerate(meta):
-            scaffold = generate_scaffold(m['smiles'])
+            scaffold = generate_scaffold(m["smiles"])
             scaffold_to_indices[scaffold].append(m_i)
 
         # Split
@@ -134,7 +137,7 @@ class MoleNet(AbstractDataset, MoleculeNet):
 
         for idx_list, split in [(train, "train"), (val, "dev"), (test, "test")]:
             for idx in idx_list:
-                meta[idx]['split'] = split
+                meta[idx]["split"] = split
 
     @staticmethod
     def add_args(parser) -> None:
@@ -177,37 +180,3 @@ class MoleNet(AbstractDataset, MoleculeNet):
             default=False,
             help="balance the scaffold sets",
         )
-
-
-class ToxicityMetabolismDataset(MoleNet):
-    def __init__(self, args: argparse.ArgumentParser, split_group: str) -> None:
-        """
-        Dataset to predict toxicity using the metabolic graph
-        params: args - config.
-        params: split_group - ['train'|'dev'|'test'].
-
-        constructs: standard pytorch Dataset obj, which can be fed in a DataLoader for batching
-        """
-        # TODO: in some cases we will want to use the split group (if we're training end-to-end) but in others we may want the fixed graph
-        # TODO: double check that this doesn't override anything produced by super
-        self.metabolic_graph = GSMLinkDataset(self.args, split_group)
-
-        super(ToxicityMetabolismDataset, self).__init__(args, split_group)
-
-        # update labels to pathways
-        for d in self.dataset:
-            # get smile
-            # lookup pathway
-            # update label
-            # update has_y
-
-    def lookup_pathway(self, smile):
-        pass
-
-    def get_smile(self, graph: torch_geometric.data.Data):
-        return graph.smiles 
-
-    
-    # may want to print a different summary statement here
-    # def print_summary_statement(dataset, split_group):
-        # pass

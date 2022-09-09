@@ -10,6 +10,7 @@ from nox.utils.registry import register_object, get_object, md5
 from nox.utils.classes import set_nox_type, classproperty
 from nox.utils.rdkit import get_rdkit_feature
 from nox.datasets.abstract import AbstractDataset
+from nox.datasets.moleculenet import MoleNet
 from torch_geometric.data import InMemoryDataset, Data
 from nox.utils.pyg import from_smiles
 
@@ -1030,3 +1031,33 @@ class GSMReactionEnzymesDataset(GSMLinkDataset):
             assert triplet[2] in relation2id.values()
         triplets = torch.tensor(triplets)
         return triplets, node2id, original_node_ids2metadicts
+
+
+# class MoleculeMetabolismDataset(GSMLinkDataset):
+#     def __init__(self, args: argparse.ArgumentParser, split_group: str) -> None:
+#         """
+#         Dataset to predict molecular properties using a genome-scale metabolic network
+#         params: args - config.
+#         params: split_group - ['train'|'dev'|'test'].
+
+#         constructs: standard pytorch Dataset obj, which can be fed in a DataLoader for batching
+#         """
+#         # TODO: in some cases we will want to use the split group (if we're training end-to-end) but in others we may want the full graph
+#         self.molecule_dataset = MoleNet(self.args, split_group)
+
+#         super(MoleculeMetabolismDataset, self).__init__(args, split_group)
+
+#         # update labels to pathways
+#         for d in self.molecule_dataset.dataset:
+#             # update aux_label (pathway, reaction, enzyme, etc)
+#             d.aux_label = self.lookup_aux_label(d.smiles)
+#             # update aux_has_y
+#             d.aux_has_y = ~torch.isnan(d.aux_label)
+
+#     def lookup_aux_label(self, smile):
+#         # default is pathway
+#         pass
+
+#     # may want to print a different summary statement here
+#     # def print_summary_statement(dataset, split_group):
+#     # pass
