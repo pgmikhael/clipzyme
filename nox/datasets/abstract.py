@@ -199,8 +199,8 @@ class AbstractDataset(data.Dataset, Nox):
         parser.add_argument(
             "--data_dir",
             type=str,
-            default="/Mounts/rbg-storage1/datasets/NLST/full_nlst_google.json",
-            help="Path to dataset file either as json or csv",
+            default=None,
+            help="Path to dataset directory",
         )
         parser.add_argument(
             "--num_classes", type=int, default=6, help="Number of classes to predict"

@@ -23,7 +23,7 @@ class FairEsm(AbstractModel):
     def forward(self, x, batch=None):
         output = {}
         fair_x = [
-            (i, s[: 1024 - 2]) for i, s in enumerate(x)
+            (i, s[: 1024 - 2]) if not isinstance(x[0], list) else (i, s[0][: 1024 - 2]) for i, s in enumerate(x) 
         ]  # max length allowed is 1024
         batch_labels, batch_strs, batch_tokens = self.batch_converter(fair_x)
         batch_tokens = batch_tokens.to(self.devicevar.device)
@@ -71,6 +71,20 @@ class FairEsm(AbstractModel):
             default=False,
             help="do not update encoder weights",
         )
+
+@register_object("fair_esm2", "model")
+class FairEsm2(FairEsm):
+    def __init__(self, args):
+        super(FairEsm2, self).__init__()
+        self.args = args
+        torch.hub.set_dir(args.pretrained_hub_dir)
+        self.model, self.alphabet = torch.hub.load(
+            "facebookresearch/esm:main", "esm2_t33_650M_UR50D"
+        )
+        self.batch_converter = self.alphabet.get_batch_converter()
+        self.register_buffer("devicevar", torch.zeros(1, dtype=torch.int8))
+        if not self.args.train_encoder:
+            self.model.eval()
 
 
 @register_object("protein_encoder", "model")
