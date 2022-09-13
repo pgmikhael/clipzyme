@@ -102,7 +102,7 @@ class AbstractDataset(data.Dataset, Nox):
         pass
 
     def print_summary_statement(self, dataset, split_group):
-        statement = "{} DATASET CREATED FOR {}\n.{}".format(
+        statement = "{} DATASET CREATED FOR {}.\n{}".format(
             split_group.upper(), self.args.dataset_name.upper(), self.SUMMARY_STATEMENT
         )
         print(statement)
