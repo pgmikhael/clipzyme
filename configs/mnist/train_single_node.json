@@ -85,7 +85,7 @@
     "project_name": [
       "sanity-checks"
     ],
-    "comet_tags": [
+    "logger_tags": [
       "nox args"
     ],
     "num_sanity_val_steps": [
