@@ -4,65 +4,18 @@ import torch
 import copy
 import warnings
 from random import Random
-from collections import defaultdict
+from collections import defaultdict, Counter
 from typing import List
-from nox.datasets.gsm_link import GSMLinkDataset
 from nox.utils.registry import register_object
 from nox.datasets.abstract import AbstractDataset
 from nox.utils.rdkit import generate_scaffold, get_rdkit_feature
+from nox.utils.pyg import from_smiles
 from torch_geometric.datasets import MoleculeNet
 from torch_geometric.data.separate import separate
 from tqdm import tqdm
-from torch_geometric.data import Data
 
 
-@register_object("moleculenet", "dataset")
-class MoleNet(AbstractDataset, MoleculeNet):
-    def __init__(self, args: argparse.ArgumentParser, split_group: str) -> None:
-        """
-        MoleculeNet Dataset
-        params: args - config.
-        params: split_group - ['train'|'dev'|'test'].
-
-        constructs: standard pytorch Dataset obj, which can be fed in a DataLoader for batching
-        """
-        self.args = args
-        self.split_group = split_group
-
-        # self.version = None
-        MoleculeNet.__init__(self, root=args.data_dir, name=args.moleculenet_dataset)
-        dataset = []
-        for idx in tqdm(range(self.len()), position=0, desc="Converting to pyg.Data"):
-            data = separate(
-                cls=self.data.__class__,
-                batch=self.data,
-                idx=idx,
-                slice_dict=self.slices,
-                decrement=False,
-            )
-            dataset.append(copy.deepcopy(data))
-
-        self.assign_splits(
-            dataset, args.split_probs, args.split_type, seed=args.split_seed
-        )
-        self.dataset = self.create_dataset(dataset, split_group)
-
-    def create_dataset(self, full_dataset, split_group):
-        dataset = []
-        for d in tqdm(full_dataset, "Constructing dataset"):
-            if d.split != split_group:
-                continue
-            if self.args.moleculenet_task is not None:
-                d.y = d.y[:, torch.tensor(self.args.moleculenet_task)]
-            d.has_y = ~torch.isnan(d.y)
-            d.y[torch.isnan(d.y)] = 0
-            if self.args.use_rdkit_features:
-                d.rdkit_features = torch.tensor(
-                    get_rdkit_feature(d.smiles, method=self.args.rdkit_features_name)
-                )
-            dataset.append(d)
-        return dataset
-
+class Molecules(AbstractDataset):
     def __getitem__(self, index):
         try:
             return self.dataset[index]
@@ -146,6 +99,70 @@ class MoleNet(AbstractDataset, MoleculeNet):
         Args:
             parser (argparse.ArgumentParser): argument parser
         """
+        super(Molecules).add_args(parser)
+
+        parser.add_argument(
+            "--scaffold_balanced",
+            action="store_true",
+            default=False,
+            help="balance the scaffold sets",
+        )
+
+
+@register_object("moleculenet", "dataset")
+class MoleNet(Molecules, MoleculeNet):
+    def __init__(self, args: argparse.ArgumentParser, split_group: str) -> None:
+        """
+        MoleculeNet Dataset
+        params: args - config.
+        params: split_group - ['train'|'dev'|'test'].
+
+        constructs: standard pytorch Dataset obj, which can be fed in a DataLoader for batching
+        """
+        self.args = args
+        self.split_group = split_group
+
+        # self.version = None
+        MoleculeNet.__init__(self, root=args.data_dir, name=args.moleculenet_dataset)
+        dataset = []
+        for idx in tqdm(range(self.len()), position=0, desc="Converting to pyg.Data"):
+            data = separate(
+                cls=self.data.__class__,
+                batch=self.data,
+                idx=idx,
+                slice_dict=self.slices,
+                decrement=False,
+            )
+            dataset.append(copy.deepcopy(data))
+
+        self.assign_splits(
+            dataset, args.split_probs, args.split_type, seed=args.split_seed
+        )
+        self.dataset = self.create_dataset(dataset, split_group)
+
+    def create_dataset(self, full_dataset, split_group):
+        dataset = []
+        for d in tqdm(full_dataset, "Constructing dataset"):
+            if d.split != split_group:
+                continue
+            if self.args.moleculenet_task is not None:
+                d.y = d.y[:, torch.tensor(self.args.moleculenet_task)]
+            d.has_y = ~torch.isnan(d.y)
+            d.y[torch.isnan(d.y)] = 0
+            if self.args.use_rdkit_features:
+                d.rdkit_features = torch.tensor(
+                    get_rdkit_feature(d.smiles, method=self.args.rdkit_features_name)
+                )
+            dataset.append(d)
+        return dataset
+
+    @staticmethod
+    def add_args(parser) -> None:
+        """Add class specific args
+
+        Args:
+            parser (argparse.ArgumentParser): argument parser
+        """
         super(MoleNet, MoleNet).add_args(parser)
         parser.add_argument(
             "--moleculenet_dataset",
@@ -179,4 +196,66 @@ class MoleNet(AbstractDataset, MoleculeNet):
             action="store_true",
             default=False,
             help="balance the scaffold sets",
+        )
+
+
+@register_object("stokes_antiobiotics", "dataset")
+class StokesAntibiotics(Molecules):
+    def load_dataset(self, args: argparse.ArgumentParser) -> None:
+        super().load_dataset(args)
+        self.assign_splits(
+            self.metadata_json, args.split_probs, args.split_type, seed=args.split_seed
+        )
+
+    def create_dataset(self, split_group):
+        dataset = []
+        for sample in tqdm(self.metadata_json, "Constructing dataset"):
+
+            if self.skip_sample(sample, split_group):
+                continue
+
+            mol_datapoint = from_smiles(sample["smiles"])
+
+            mol_datapoint.y = self.get_label(sample)
+            mol_datapoint.mean_inhibition = sample["mean_inhibition"]
+            mol_datapoint.compound_name = sample["name"]
+
+            if self.args.use_rdkit_features:
+                mol_datapoint.rdkit_features = torch.tensor(
+                    get_rdkit_feature(
+                        sample["smiles"], method=self.args.rdkit_features_name
+                    )
+                )
+            dataset.append(mol_datapoint)
+        return dataset
+
+    def skip_sample(self, sample, split_group) -> bool:
+        """
+        Return True if sample should be skipped and not included in data
+        """
+        if sample["split"] != split_group:
+            return True
+
+        return False
+
+    def get_label(self, sample):
+        """
+        Get task specific label for a given sample
+        """
+        return int(sample["activity"] == "Active")
+
+    @property
+    def SUMMARY_STATEMENT(self) -> None:
+        """
+        Prints summary statement with dataset stats
+        """
+        class_dist = [s.y for s in self.dataset]
+        return f"Class Distribution: {Counter(class_dist)}"
+
+    @staticmethod
+    def set_args(args) -> None:
+        super().set_args(args)
+        args.num_classes = 2
+        args.dataset_file_path = (
+            "/Mounts/rbg-storage1/datasets/Metabo/antibiotics/stokes2019_dataset.json"
         )
