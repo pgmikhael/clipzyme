@@ -22,7 +22,7 @@ finally:
 import nox.datasets.mnist
 import nox.datasets.indrellinkpred
 import nox.datasets.gsm_link
-import nox.datasets.moleculenet
+import nox.datasets.molecules
 
 # augmentation
 import nox.augmentations.rawinput

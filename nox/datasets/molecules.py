@@ -99,7 +99,7 @@ class Molecules(AbstractDataset):
         Args:
             parser (argparse.ArgumentParser): argument parser
         """
-        super(Molecules).add_args(parser)
+        super(Molecules,Molecules).add_args(parser)
 
         parser.add_argument(
             "--scaffold_balanced",
@@ -254,7 +254,7 @@ class StokesAntibiotics(Molecules):
 
     @staticmethod
     def set_args(args) -> None:
-        super().set_args(args)
+        super(StokesAntibiotics,StokesAntibiotics).set_args(args)
         args.num_classes = 2
         args.dataset_file_path = (
             "/Mounts/rbg-storage1/datasets/Metabo/antibiotics/stokes2019_dataset.json"
