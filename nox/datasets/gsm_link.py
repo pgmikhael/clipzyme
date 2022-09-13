@@ -1,5 +1,4 @@
 import argparse
-from email.policy import default
 import warnings
 from typing import List, Literal, Dict, Iterable, Tuple, Set
 import numpy as np
@@ -78,6 +77,8 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
                     self.args.train_encoder,
                     self.args.organism_name,
                     self.args.simple_graph,
+                    self.args.assign_splits,
+                    self.args.split_type,
                 ]
             )
         )
@@ -121,6 +122,7 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
         train_reactions, val_reactions, test_reactions = self.assign_splits(
             self.metadata_json, self.args.split_probs, self.args.split_seed
         )
+
         originalid2nodeid = {}
         originalids2metadict = {}
         # Must do any skipping here or in self.get_triplets otherwise they will be assigned a node id
@@ -156,6 +158,9 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
         test_relation_type = test_triplets[:, 2]
 
         id2metabolites, id2enzymes = self.get_node_features(nodeid2metadict)
+
+        # store mapping for gsm_chemistry purposes
+        self.nodeid2nodeidx = originalid2nodeid
 
         # collate expects keys to be strings instead of ints
         id2metabolites = {str(k): v for k, v in id2metabolites.items()}
@@ -592,12 +597,14 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
             "dev": [],
             "test": [],
         }
-        for idx in range(len(metadata_json)):
-            splits[np.random.choice(["train", "dev", "test"], p=split_probs)].append(
-                metadata_json[idx]
-            )
-
-        return splits.values()
+        if self.args.assign_splits:
+            for idx in range(len(metadata_json)):
+                splits[
+                    np.random.choice(["train", "dev", "test"], p=split_probs)
+                ].append(metadata_json[idx])
+            return splits.values()
+        else:
+            return metadata_json, metadata_json, metadata_json
 
     @classproperty
     def DATASET_ITEM_KEYS(self) -> List:
@@ -1031,33 +1038,3 @@ class GSMReactionEnzymesDataset(GSMLinkDataset):
             assert triplet[2] in relation2id.values()
         triplets = torch.tensor(triplets)
         return triplets, node2id, original_node_ids2metadicts
-
-
-# class MoleculeMetabolismDataset(GSMLinkDataset):
-#     def __init__(self, args: argparse.ArgumentParser, split_group: str) -> None:
-#         """
-#         Dataset to predict molecular properties using a genome-scale metabolic network
-#         params: args - config.
-#         params: split_group - ['train'|'dev'|'test'].
-
-#         constructs: standard pytorch Dataset obj, which can be fed in a DataLoader for batching
-#         """
-#         # TODO: in some cases we will want to use the split group (if we're training end-to-end) but in others we may want the full graph
-#         self.molecule_dataset = MoleNet(self.args, split_group)
-
-#         super(MoleculeMetabolismDataset, self).__init__(args, split_group)
-
-#         # update labels to pathways
-#         for d in self.molecule_dataset.dataset:
-#             # update aux_label (pathway, reaction, enzyme, etc)
-#             d.aux_label = self.lookup_aux_label(d.smiles)
-#             # update aux_has_y
-#             d.aux_has_y = ~torch.isnan(d.aux_label)
-
-#     def lookup_aux_label(self, smile):
-#         # default is pathway
-#         pass
-
-#     # may want to print a different summary statement here
-#     # def print_summary_statement(dataset, split_group):
-#     # pass
