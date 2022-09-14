@@ -78,3 +78,6 @@ class GSMChemistryFCDataset(GSMLinkDataset):
                     pathway2node_id[pathway.id].add(gene.id)
 
         return pathway2node_id
+
+    def __getitem__(self, index: int) -> Data:
+        return {"mol": self.molecule_dataset.dataset[index]}
