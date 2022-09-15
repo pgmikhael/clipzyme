@@ -23,6 +23,7 @@ import nox.datasets.mnist
 import nox.datasets.benchmark_graphs
 import nox.datasets.gsm_link
 import nox.datasets.molecules
+import nox.datasets.gsm_chemistry
 
 # augmentation
 import nox.augmentations.rawinput
@@ -61,6 +62,7 @@ import nox.models.gat
 import nox.models.fair_esm
 import nox.models.gat
 import nox.models.linear
+import nox.models.metabonet
 
 
 # comet

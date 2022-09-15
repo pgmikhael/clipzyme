@@ -6,10 +6,10 @@ from nox.utils.pyg import from_smiles
 from nox.utils.classes import set_nox_type
 import torch
 import torch.nn.functional as F
-from torch_geometric.nn.conv.gatv2_conv import GAT
+from nox.models.gat import GAT
 
 
-@register_object("metabonet_pathways")
+@register_object("metabonet_pathways", "model")
 class MetaboNetPathways(AbstractModel):
     def __init__(self, args):
         super(MetaboNetPathways, self).__init__()
@@ -19,16 +19,19 @@ class MetaboNetPathways(AbstractModel):
         self.metabolite_feature_type = args.metabolite_feature_type
         self.protein_feature_type = args.protein_feature_type
 
-        self.molecule_encoder = GraphClassifier(args)
-
+        margs = copy.deepcopy(args)
+        margs.linear_input_dim = margs.metabolite_dim
+        margs.linear_output_dim = margs.input_dim
+        self.metabolite_encoder = get_object(args.metabolite_model, "model")(margs)
+        
         pargs = copy.deepcopy(args)
         pargs.linear_input_dim = pargs.protein_dim
         pargs.linear_output_dim = pargs.input_dim
         self.protein_encoder = get_object(args.protein_model, "model")(pargs)
 
-        self.gsm_encoder = GAT(args)
+        self.gsm_encoder = get_object(args.gsm_model, "model")(args)
 
-        self.mlp = MLPClassifier(args)
+        self.mlp = get_object(args.final_classifier, "model")(args)
 
         # !
         self.unk_gsm_molecules = args.unk_metabolites
@@ -117,7 +120,7 @@ class MetaboNetPathways(AbstractModel):
             "--metabolite_model",
             action=set_nox_type("model"),
             type=str,
-            default="identity",
+            default="gatv2",
             help="name of molecule/metabolite model",
         )
         parser.add_argument(
@@ -131,4 +134,36 @@ class MetaboNetPathways(AbstractModel):
             type=int,
             default=128,
             help="dimensions of final node embedding",
+        )
+        parser.add_argument(
+            "--gsm_model",
+            action=set_nox_type("model"),
+            type=str,
+            default="identity",
+            help="name of model for metabolic graph",
+        )
+        parser.add_argument(
+            "--final_classifier",
+            action=set_nox_type("model"),
+            type=str,
+            default="mlp_classifier",
+            help="name of model for task classifier",
+        )
+        parser.add_argument(
+            "--use_rdkit_features",
+            action="store_true",
+            default=False,
+            help="whether using graph-level features from rdkit",
+        )
+        parser.add_argument(
+            "--rdkit_features_dim",
+            type=int,
+            default=0,
+            help="number of features",
+        )
+        parser.add_argument(
+            "--rdkit_features_name",
+            type=str,
+            default="rdkit_fingerprint",
+            help="name of rdkit features to use",
         )

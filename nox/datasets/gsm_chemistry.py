@@ -91,3 +91,18 @@ class GSMChemistryFCDataset(GSMLinkDataset):
 
     def __getitem__(self, index: int) -> Data:
         return {"mol": self.molecule_dataset.dataset[index]}
+
+    @staticmethod
+    def add_args(parser) -> None:
+        """Add class specific args
+
+        Args:
+            parser (argparse.ArgumentParser): argument parser
+        """
+        super(GSMChemistryFCDataset, GSMChemistryFCDataset).add_args(parser)
+        parser.add_argument(
+            "--scaffold_balanced",
+            action="store_true",
+            default=False,
+            help="balance the scaffold sets",
+        )
