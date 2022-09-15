@@ -14,9 +14,8 @@ from nox.utils.messages import METAFILE_NOTFOUND_ERR, LOAD_FAIL_MSG
 class AbstractDataset(data.Dataset, Nox):
     def __init__(self, args: argparse.ArgumentParser, split_group: str) -> None:
         """
-        NLST Dataset
+        Abstract Dataset
         params: args - config.
-        params: transformer - A transformer object, takes in a PIL image, performs some transforms and returns a Tensor
         params: split_group - ['train'|'dev'|'test'].
 
         constructs: standard pytorch Dataset obj, which can be fed in a DataLoader for batching
@@ -193,8 +192,8 @@ class AbstractDataset(data.Dataset, Nox):
         parser.add_argument(
             "--dataset_file_path",
             type=str,
-            default="/Mounts/rbg-storage1/datasets/NLST/full_nlst_google.json",
-            help="Path to dataset file either as json or csv",
+            default=None,
+            help="Path to dataset file",
         )
         parser.add_argument(
             "--data_dir",

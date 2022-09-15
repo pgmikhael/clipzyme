@@ -7,6 +7,7 @@ from nox.datasets.molecules import StokesAntibiotics
 from nox.datasets.gsm_link import GSMLinkDataset
 
 from nox.utils.registry import register_object
+from nox.utils.classes import set_nox_type
 
 from torch_geometric.data import Data
 from torch_geometric.utils import index_to_mask
@@ -24,7 +25,7 @@ class GSMChemistryFCDataset(GSMLinkDataset):
         constructs: standard pytorch Dataset obj, which can be fed in a DataLoader for batching
         """
 
-        self.molecule_dataset = StokesAntibiotics(self.args, split_group)
+        self.molecule_dataset = StokesAntibiotics(args, split_group)
 
         # need assign split for molecules but not for gsm
         metabo_args = copy.deepcopy(args)
@@ -81,9 +82,11 @@ class GSMChemistryFCDataset(GSMLinkDataset):
             for reaction in pathway.members:
                 for metabolite in reaction.metabolites:
                     pathway2node_id[pathway.id].add(metabolite.id)
-                for gene in pathway.genes:
+                for gene in reaction.genes:
                     pathway2node_id[pathway.id].add(gene.id)
-
+        
+        # ? Add "other"
+    
         return pathway2node_id
 
     def __len__(self) -> int:
@@ -106,3 +109,6 @@ class GSMChemistryFCDataset(GSMLinkDataset):
             default=False,
             help="balance the scaffold sets",
         )
+    
+    def process(self) -> None:
+        super().process()
