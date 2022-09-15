@@ -134,15 +134,18 @@ class GraphClassifier(Classifier):
     def __init__(self, args):
         super(GraphClassifier, self).__init__(args)
         cargs = copy.deepcopy(args)
-        cargs.mlp_input_dim = args.mlp_input_dim + args.rdkit_features_dim
+        if self.args.use_rdkit_features:
+            cargs.mlp_input_dim = args.mlp_input_dim + args.rdkit_features_dim
         self.mlp = get_object("mlp_classifier", "model")(cargs)
 
     def forward(self, batch=None):
         output = {}
-        output["encoder_hidden"] = self.encoder(batch)[self.encoder_hidden_key]
+        graph_x = self.encoder(batch)[self.encoder_hidden_key]
+        output["encoder_hidden"] = graph_x 
         batch_size = output["encoder_hidden"].shape[0]
-        features = batch["rdkit_features"].view(batch_size, -1)
-        graph_x = torch.concat([output["encoder_hidden"], features ], dim=-1)
+        if self.args.use_rdkit_features:
+            features = batch["rdkit_features"].view(batch_size, -1)
+            graph_x = torch.concat([graph_x, features ], dim=-1)
         output.update(self.mlp({"x": graph_x.float() }))
         return output
 

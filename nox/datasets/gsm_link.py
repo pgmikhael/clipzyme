@@ -1,5 +1,4 @@
 import argparse
-from email.policy import default
 import warnings
 from typing import List, Literal, Dict, Iterable, Tuple, Set
 import numpy as np
@@ -10,6 +9,7 @@ from nox.utils.registry import register_object, get_object, md5
 from nox.utils.classes import set_nox_type, classproperty
 from nox.utils.rdkit import get_rdkit_feature
 from nox.datasets.abstract import AbstractDataset
+from nox.datasets.molecules import MoleNet
 from torch_geometric.data import InMemoryDataset, Data
 from nox.utils.pyg import from_smiles
 
@@ -77,6 +77,8 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
                     self.args.train_encoder,
                     self.args.organism_name,
                     self.args.simple_graph,
+                    self.args.assign_splits,
+                    self.args.split_type,
                 ]
             )
         )
@@ -120,6 +122,7 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
         train_reactions, val_reactions, test_reactions = self.assign_splits(
             self.metadata_json, self.args.split_probs, self.args.split_seed
         )
+
         originalid2nodeid = {}
         originalids2metadict = {}
         # Must do any skipping here or in self.get_triplets otherwise they will be assigned a node id
@@ -155,6 +158,9 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
         test_relation_type = test_triplets[:, 2]
 
         id2metabolites, id2enzymes = self.get_node_features(nodeid2metadict)
+
+        # store mapping for gsm_chemistry purposes
+        self.nodeid2nodeidx = originalid2nodeid
 
         # collate expects keys to be strings instead of ints
         id2metabolites = {str(k): v for k, v in id2metabolites.items()}
@@ -591,12 +597,14 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
             "dev": [],
             "test": [],
         }
-        for idx in range(len(metadata_json)):
-            splits[np.random.choice(["train", "dev", "test"], p=split_probs)].append(
-                metadata_json[idx]
-            )
-
-        return splits.values()
+        if self.args.assign_splits:
+            for idx in range(len(metadata_json)):
+                splits[
+                    np.random.choice(["train", "dev", "test"], p=split_probs)
+                ].append(metadata_json[idx])
+            return splits.values()
+        else:
+            return metadata_json, metadata_json, metadata_json
 
     @classproperty
     def DATASET_ITEM_KEYS(self) -> List:

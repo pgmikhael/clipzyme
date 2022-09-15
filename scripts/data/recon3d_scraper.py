@@ -23,12 +23,6 @@ RECON3_METABOLITES = pd.read_excel(
 )
 RECON3_METABOLITES.fillna("", inplace=True)
 
-# RECON3_PROTEINS = pd.read_excel(
-#   "/Mounts/rbg-storage1/datasets/Metabo/VMH/Recon3D/41587_2018_BFnbt4072_MOESM11_ESM.xlsx",
-#    sheet_name="Supplementary Data File 11",
-# )
-# RECON3_PROTEINS.fillna("", inplace=True)
-
 # https://github.com/SBRG/ssbio
 RECON3_PROTEINS_GEMPRO = pd.read_csv(
     "/Mounts/rbg-storage1/datasets/Metabo/Recon3D/Recon3D_GP/data/DF_GEMPRO.csv"
@@ -206,12 +200,21 @@ def get_reaction_elements(rxn: Reaction) -> dict:
             "pdb": populate_empty_with_none(row["struct_pdb"]),
         }
         # check if existing
-        fasta_path = f"/Mounts/rbg-storage1/datasets/Metabo/Recon3D/Recon3D_GP/genes/{row['m_gene']}/{row['m_gene']}_protein/sequences/{row['seq_file']}"
-        if os.path.exists(fasta_path):
+        fasta_dir = f"/Mounts/rbg-storage1/datasets/Metabo/Recon3D/Recon3D_GP/genes/{row['m_gene']}/{row['m_gene']}_protein/sequences/"
+        if os.path.exists(fasta_dir) and (row['seq_file'] == ""):
+            existing_seq_file = [f for f in os.listdir(fasta_dir) if f.endswith(".fasta") ]
+            if len(existing_seq_file) == 1:
+                row['seq_file'] == existing_seq_file[0]
+        
+        fasta_path = f"/Mounts/rbg-storage1/datasets/Metabo/Recon3D/Recon3D_GP/genes/{row['m_gene']}/{row['m_gene']}_protein/sequences/{row['seq_file']}"        
+        if os.path.exists(fasta_path) and (row['seq_file'] != ""):
             fasta_service = FASTA()
-            fasta_service.read_fasta(fasta_path)
+            fh = open(fasta_path, "r")
+            data = fh.read()
+            fh.close()
+            assert data.startswith(">")
+            fasta_service._fasta = fasta_service._interpret(data[1:])
             protein_dict["protein_sequence"] = (fasta_service.sequence,)
-
         else:
             if protein_dict["uniprot"]:
                 try:
@@ -244,11 +247,7 @@ model = load_matlab_model(
     "/Mounts/rbg-storage1/datasets/Metabo/VMH/Recon3D/Recon3D_301/Recon3D_301.mat"
 )
 
-# reaction1 = get_reaction_elements(model.reactions[0])
-
 # Get list of reactions
 dataset = p_map(get_reaction_elements, model.reactions)
-#for rxn in model.reactions:
-#    get_reaction_elements(rxn)
 
 json.dump(dataset, open(RECON3_DATASET_PATH, "w"))

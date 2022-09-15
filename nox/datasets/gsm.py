@@ -10,7 +10,7 @@ from torch.utils import data
 from nox.utils.loading import get_sample_loader
 from nox.utils.registry import register_object, md5
 from nox.utils.classes import Nox, set_nox_type
-from nox.datasets.utils import METAFILE_NOTFOUND_ERR, LOAD_FAIL_MSG
+from nox.utils.messages import METAFILE_NOTFOUND_ERR, LOAD_FAIL_MSG
 from nox.datasets import AbstractDataset
 from torch_geometric.data import HeteroData
 import tqdm

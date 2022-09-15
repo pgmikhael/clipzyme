@@ -8,7 +8,7 @@ import numpy as np
 from torch.utils import data
 from nox.utils.loading import get_sample_loader
 from nox.utils.classes import Nox, set_nox_type, classproperty
-from nox.datasets.utils import METAFILE_NOTFOUND_ERR, LOAD_FAIL_MSG
+from nox.utils.messages import METAFILE_NOTFOUND_ERR, LOAD_FAIL_MSG
 
 
 class AbstractDataset(data.Dataset, Nox):
@@ -102,7 +102,7 @@ class AbstractDataset(data.Dataset, Nox):
         pass
 
     def print_summary_statement(self, dataset, split_group):
-        statement = "{} DATASET CREATED FOR {}\n.{}".format(
+        statement = "{} DATASET CREATED FOR {}.\n{}".format(
             split_group.upper(), self.args.dataset_name.upper(), self.SUMMARY_STATEMENT
         )
         print(statement)
@@ -199,8 +199,8 @@ class AbstractDataset(data.Dataset, Nox):
         parser.add_argument(
             "--data_dir",
             type=str,
-            default="/Mounts/rbg-storage1/datasets/NLST/full_nlst_google.json",
-            help="Path to dataset file either as json or csv",
+            default=None,
+            help="Path to dataset directory",
         )
         parser.add_argument(
             "--num_classes", type=int, default=6, help="Number of classes to predict"
