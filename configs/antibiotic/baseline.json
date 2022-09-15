@@ -6,13 +6,14 @@
       "class_bal": [true],
       "class_bal_key": ["y"],
       "assign_splits": [true],
-      "split_type": ["random"],
+      "split_type": ["scaffold"],
+      "scaffold_balanced": [true,false],
       "split_probs": ["0.8 0.1 0.1"],
       "lightning_name": ["base"],
       "model_name": ["graph_classifier"],
       "model_name_for_encoder": ["gatv2"],
       "encoder_hidden_key": ["graph_features"],
-      "use_rdkit_features": [true],
+      "use_rdkit_features": [true,false],
       "rdkit_features_dim": [2048],
       "gat_num_heads": [1],
       "gat_node_dim": [9],
@@ -22,7 +23,7 @@
       "mlp_input_dim": [300],
       "mlp_layer_configuration": ["300 300"],
       "callback_names": ["lr_monitor"],
-      "max_epochs": [100],
+      "max_epochs": [50],
       "lr_decay": [0.1],
       "lr": [5e-4],
       "loss_names": ["cross_entropy"],
@@ -46,6 +47,6 @@
       "project_name": ["metabolomics"],
       "logger_tags": ["gatv2 stokes"]
     },
-    "available_gpus": ["1,2,3"]
+    "available_gpus": [0,1,2,3]
   }
   
