@@ -20,7 +20,7 @@ finally:
 
 # data
 import nox.datasets.mnist
-import nox.datasets.indrellinkpred
+import nox.datasets.benchmark_graphs
 import nox.datasets.gsm_link
 import nox.datasets.molecules
 
