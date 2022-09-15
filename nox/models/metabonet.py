@@ -20,13 +20,13 @@ class MetaboNetPathways(AbstractModel):
         self.protein_feature_type = args.protein_feature_type
 
         margs = copy.deepcopy(args)
-        margs.linear_input_dim = margs.metabolite_dim
-        margs.linear_output_dim = margs.input_dim
+        margs.linear_input_dim = args.metabolite_dim
+        margs.linear_output_dim = args.node_dim
         self.metabolite_encoder = get_object(args.metabolite_model, "model")(margs)
         
         pargs = copy.deepcopy(args)
-        pargs.linear_input_dim = pargs.protein_dim
-        pargs.linear_output_dim = pargs.input_dim
+        pargs.linear_input_dim = args.protein_dim
+        pargs.linear_output_dim = args.node_dim
         self.protein_encoder = get_object(args.protein_model, "model")(pargs)
 
         self.gsm_encoder = get_object(args.gsm_model, "model")(args)
@@ -130,7 +130,7 @@ class MetaboNetPathways(AbstractModel):
             help="dimensions of metabolite embedding",
         )
         parser.add_argument(
-            "--node_out_dim",
+            "--node_dim",
             type=int,
             default=128,
             help="dimensions of final node embedding",
