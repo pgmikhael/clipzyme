@@ -3,7 +3,7 @@
   "cartesian_hyperparams": {
     "batch_size": [64],
     "accumulate_grad_batches": [1],
-    "dataset_name": ["gsm_link"],
+    "dataset_name": ["gsm"],
     "lightning_name": ["linker"],
     "weight_decay": [0],
     "max_epochs": [20],

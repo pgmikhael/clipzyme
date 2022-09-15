@@ -21,7 +21,7 @@ finally:
 # data
 import nox.datasets.mnist
 import nox.datasets.benchmark_graphs
-import nox.datasets.gsm_link
+import nox.datasets.gsm
 import nox.datasets.molecules
 import nox.datasets.gsm_chemistry
 

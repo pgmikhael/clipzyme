@@ -4,7 +4,7 @@ import torch
 import copy
 
 from nox.datasets.molecules import StokesAntibiotics
-from nox.datasets.gsm_link import GSMLinkDataset
+from nox.datasets.gsm import GSMLinkDataset
 
 from nox.utils.registry import register_object
 from nox.utils.classes import set_nox_type
@@ -33,11 +33,13 @@ class GSMChemistryFCDataset(GSMLinkDataset):
         super(GSMChemistryFCDataset, self).__init__(metabo_args, split_group)
 
         args.unk_metabolites = [
-            k for k, v in self.data.metabolite_features.items() if v is None
+            k for k, v in self.split_graph.metabolite_features.items() if v is None
         ]
         args.unk_enzymes = [
-            k for k, v in self.data.enzyme_features.items() if v is None
+            k for k, v in self.split_graph.enzyme_features.items() if v is None
         ]
+
+        self.set_sample_weights(args)
 
     def create_dataset(
         self, split_group: Literal["train", "dev", "test"]
@@ -53,23 +55,26 @@ class GSMChemistryFCDataset(GSMLinkDataset):
         }
 
         # k pathways x n nodes
-        self.data.pathway_mask = torch.stack(
+        self.split_graph.pathway_mask = torch.stack(
             [
-                index_to_mask(torch.tensor(indices), self.data.num_nodes)
+                index_to_mask(torch.tensor(list(indices)), self.split_graph.num_nodes).int()
                 for path, indices in self.pathway2node_indx.items()
             ]
         )
 
         # data to metabolite or enzyme
-        self.data.node2type = {
+        self.split_graph.node2type = {
             i: type_name
             for type_ids, type_name in [
-                (self.data.id2metabolites, "metabolite"),
-                (self.data.id2enzymes, "enzyme"),
+                (self.split_graph.metabolite_features, "metabolite"),
+                (self.split_graph.enzyme_features, "enzyme"),
             ]
             for i in type_ids
         }
 
+        if self.args.metabolite_feature_type == "precomputed":
+
+        
         return self.molecule_dataset.dataset
 
     def get_pathway2node_id(self):
@@ -81,9 +86,11 @@ class GSMChemistryFCDataset(GSMLinkDataset):
             pathway2node_id.setdefault(pathway.id, set())
             for reaction in pathway.members:
                 for metabolite in reaction.metabolites:
-                    pathway2node_id[pathway.id].add(metabolite.id)
+                    if metabolite.id in self.nodeid2nodeidx:
+                        pathway2node_id[pathway.id].add(metabolite.id)
                 for gene in reaction.genes:
-                    pathway2node_id[pathway.id].add(gene.id)
+                    if gene.id in self.nodeid2nodeidx:
+                        pathway2node_id[pathway.id].add(gene.id)
         
         # ? Add "other"
     

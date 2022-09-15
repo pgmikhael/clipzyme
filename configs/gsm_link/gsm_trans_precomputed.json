@@ -7,7 +7,7 @@
     "workspace": ["peteranditamar"],
     "project_name": ["metabolomics"],
     "accumulate_grad_batches": [1],
-    "dataset_name": ["gsm_link"],
+    "dataset_name": ["gsm"],
     "lightning_name": ["linker"],
     "lr_decay": [0.1],
     "limit_train_batches": [1.0],
