@@ -95,10 +95,10 @@ class MetaboNetPathways(AbstractModel):
         else:
             molecule_embeddings = self.molecule_encoder(batch)
 
-        batch["gsm"].x = self.encode_gsm_entities(batch["gsm"])["node_features"]
+        batch["gsm"].x = self.encode_gsm_entities(batch["gsm"])
 
         # Encode the GSMs
-        gsm_embeddings = self.gsm_encoder(batch["gsm"])
+        gsm_embeddings = self.gsm_encoder(batch["gsm"])["node_features"]
 
         # Calculate attention over gsm embeddings
         pathway_attention = F.softmax(
@@ -120,7 +120,7 @@ class MetaboNetPathways(AbstractModel):
             embeddings = gsm_embedding
 
         # Predict
-        return self.mlp(embeddings)
+        return self.mlp({"x": embeddings})
 
     def encode_gsm_entities(self, gsm):
         # use from_smiles & support Nones

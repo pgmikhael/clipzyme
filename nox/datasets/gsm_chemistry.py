@@ -70,7 +70,7 @@ class GSMChemistryFCDataset(GSMLinkDataset):
             [
                 index_to_mask(
                     torch.tensor(list(indices)), self.split_graph.num_nodes
-                ).int()
+                ).float()
                 for path, indices in self.pathway2node_indx.items()
             ]
         )
