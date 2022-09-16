@@ -49,3 +49,35 @@ class Linear(AbstractModel):
             default=512,
             help="Dimension of output",
         )
+
+
+@register_object("embedding", "model")
+class Embedding(AbstractModel):
+    def __init__(self, args):
+        super(Embedding, self).__init__()
+        self.args = args
+        self.model = nn.Embedding(args.num_embed, args.embed_dim)
+
+    def forward(self, data):
+        output = {"hidden": self.model(data)}
+        return output
+
+    @staticmethod
+    def add_args(parser) -> None:
+        """Add class specific args
+
+        Args:
+            parser (argparse.ArgumentParser): argument parser
+        """
+        parser.add_argument(
+            "--num_embed",
+            type=int,
+            default=512,
+            help="Number of rows in the embedding table",
+        )
+        parser.add_argument(
+            "--embed_dim",
+            type=int,
+            default=512,
+            help="Dimension of row",
+        )

@@ -52,6 +52,8 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
             return
 
         args.num_relations = self.num_relations
+        args.num_proteins = len(self.split_graph.enzyme_features)
+        args.num_metabolites = len(self.split_graph.metabolite_features)
         self.print_summary_statement(self.dataset, split_group)
 
     @property

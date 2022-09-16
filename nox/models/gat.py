@@ -139,7 +139,7 @@ class GAT(AbstractModel):
                     in_channels=in_hidden,
                     out_channels=out_hidden // n_heads,
                     heads=n_heads,
-                    concat=args.gat_concat,
+                    concat=True, #args.gat_concat,
                     negative_slope=args.gat_negative_slope,
                     dropout=args.dropout,
                     add_self_loops=args.gat_add_self_loops,
@@ -153,7 +153,7 @@ class GAT(AbstractModel):
                     in_channels=in_hidden,
                     out_channels=out_hidden // n_heads,
                     heads=n_heads,
-                    concat=args.gat_concat,
+                    concat=True, #args.gat_concat,
                     negative_slope=args.gat_negative_slope,
                     dropout=args.dropout,
                     add_self_loops=args.gat_add_self_loops,
@@ -166,6 +166,8 @@ class GAT(AbstractModel):
 
         self.input_drop = nn.Dropout(args.dropout)
         self.dropout = nn.Dropout(args.dropout)
+
+        self.pool_type = args.gat_pool
 
     def forward(self, graph):
         output = {}
@@ -192,8 +194,10 @@ class GAT(AbstractModel):
             h = F.relu(h, inplace=True)
             h = self.dropout(h)
 
+        
         output["node_features"] = h
-        output["graph_features"] = scatter(h, graph.batch, dim=0, reduce="add")
+        if self.pool_type != "none":
+            output["graph_features"] = scatter(h, graph.batch, dim=0, reduce=self.pool_type)
         return output
 
     @staticmethod
@@ -268,4 +272,11 @@ class GAT(AbstractModel):
             action="store_true",
             default=False,
             help="If set to True, the same matrix will be applied to the source and the target node of every edge",
+        )
+        parser.add_argument(
+            "--gat_pool",
+            type=str,
+            choices=["none", "sum", "mul", "mean", "min", "max"],
+            default="sum",
+            help="Type of pooling to do to obtain graph features"
         )

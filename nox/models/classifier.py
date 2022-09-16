@@ -146,6 +146,7 @@ class GraphClassifier(Classifier):
         if self.args.use_rdkit_features:
             features = batch["rdkit_features"].view(batch_size, -1)
             graph_x = torch.concat([graph_x, features ], dim=-1)
+        output['hidden'] = graph_x
         output.update(self.mlp({"x": graph_x.float() }))
         return output
 

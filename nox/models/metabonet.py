@@ -38,15 +38,19 @@ class MetaboNetPathways(AbstractModel):
 
         self.mlp = get_object(args.final_classifier, "model")(args)
 
+        # init embedding table for entities with unknown structure
         self.unk_gsm_molecules = args.unk_metabolites
         self.unk_gsm_proteins = args.unk_enzymes
 
-        self.unk_gsm_molecule_embed = torch.nn.Embedding(
-            len(args.unk_metabolites), args.gsm_node_dim
-        )
-        self.unk_gsm_protein_embed = torch.nn.Embedding(
-            len(args.unk_enzymes), args.gsm_node_dim
-        )
+        if len(self.unk_gsm_molecules) != 0:
+            self.unk_gsm_molecule_embed = torch.nn.Embedding(
+                len(args.unk_metabolites), args.gsm_node_dim
+            )
+
+        if len(self.unk_gsm_proteins) != 0:
+            self.unk_gsm_protein_embed = torch.nn.Embedding(
+                len(args.unk_enzymes), args.gsm_node_dim
+            )
 
     def customize_args_for_model(
         self, args, input_type: Literal["molecule", "protein", "gsm"]
@@ -63,27 +67,35 @@ class MetaboNetPathways(AbstractModel):
                 if args.use_rdkit_features
                 else args.gsm_node_dim
             )
-            custom_args.gat_num_heads = args.molecule_model_num_heads
-            custom_args.gat_num_layers = args.molecule_model_num_layers  # ! dynamics
+            custom_args.gat_num_heads = args.molecule_num_heads
+            custom_args.gat_num_layers = args.molecule_num_layers 
 
         if input_type == "protein":
             custom_args.linear_input_dim = args.protein_dim
             custom_args.linear_output_dim = args.gsm_node_dim
+            custom_args.num_embed = args.num_proteins
+            custom_args.embed_dim = args.gsm_node_dim
 
         if input_type == "gsm":
             custom_args.gat_node_dim = args.gsm_node_dim
-            custom_args.gat_edge_dim = 3  # !
+            custom_args.gat_edge_dim = 1  
             custom_args.gat_hidden_dim = args.gsm_hidden_dim
             custom_args.gat_num_heads = args.gsm_num_heads
             custom_args.gat_num_layers = args.gsm_num_layers
+            custom_args.gat_pool = "none"
 
         return custom_args
 
     def forward(self, batch):
         # Encode the molecules
-        molecule_embeddings = self.molecule_encoder(batch)
+        batch_size = batch["mol"].batch.unique().shape[0]
+        if self.metabolite_feature_type == "precomputed":
+            mol_features = batch["mol"]["rdkit_features"].view(batch_size, -1).float()
+            molecule_embeddings = self.molecule_encoder(mol_features)["hidden"]  
+        else:
+            molecule_embeddings = self.molecule_encoder(batch)
 
-        batch["gsm"].x = self.encode_gsm_entities(batch)
+        batch["gsm"].x = self.encode_gsm_entities(batch["gsm"])["node_features"]
 
         # Encode the GSMs
         gsm_embeddings = self.gsm_encoder(batch["gsm"])
@@ -110,31 +122,33 @@ class MetaboNetPathways(AbstractModel):
         # Predict
         return self.mlp(embeddings)
 
-    def encode_gsm_entities(self, batch):
+    def encode_gsm_entities(self, gsm):
         # use from_smiles & support Nones
         # this may be too slow, might need to do in batches
         node_features = []
-        for node in range(batch.data.num_nodes):
-            if batch.data.metabolite_features.get(node, False):
-                mol = batch.data.metabolite_features[node]
-                if self.metabolite_feature_type == "trained":
-                    mol = self.molecule_encoder(from_smiles(mol))
-                node_features.append(mol)
+        for node in range(gsm.num_nodes):
+            if gsm.metabolite_features.get(node, None) is not None:
+                mol = gsm.metabolite_features[node]
+                mol_embed = self.molecule_encoder(mol)['hidden']
+                node_features.append(mol_embed)
 
-            elif batch.data.enzyme_features.get(node, False):
-                protein = batch.data.enzyme_features[node]
-                if self.protein_feature_type in ["precomputed", "trained"]:
-                    protein = self.protein_encoder(protein)
-                node_features.append(protein)
+            elif gsm.enzyme_features.get(node, None) is not None:
+                protein = gsm.enzyme_features[node]
+                protein_embed = self.protein_encoder(protein)['hidden']
+                node_features.append(protein_embed)
 
-            elif batch.data.node2type[node] == "metabolite":
+            elif gsm.node2type[node] == "metabolite":
                 node_features.append(
-                    self.unk_gsm_molecule_embed[self.unk_gsm_molecules.index(node)]
+                    self.unk_gsm_molecule_embed(
+                        torch.tensor( self.unk_gsm_molecules.index(node), device = self.unk_gsm_molecule_embed.weight.device)
+                    )
                 )
 
-            elif batch.data.node2type[node] == "enzyme":
+            elif gsm.node2type[node] == "enzyme":
                 node_features.append(
-                    self.unk_gsm_protein_embed[self.unk_gsm_proteins(node)]
+                    self.unk_gsm_protein_embed(
+                        torch.tensor(self.unk_gsm_proteins.index(node), device = self.unk_gsm_protein_embed.weight.device)
+                    )
                 )
 
         return torch.stack(node_features)  # (num_nodes, hidden_dim)
@@ -163,7 +177,7 @@ class MetaboNetPathways(AbstractModel):
             help="name of molecule/metabolite model",
         )
         parser.add_argument(
-            "--molecule_model_num_heads",
+            "--molecule_num_heads",
             type=int,
             default=2,
             help="attention heads",
@@ -194,7 +208,7 @@ class MetaboNetPathways(AbstractModel):
             help="gsm dimension",
         )
         parser.add_argument(
-            "--gsm_model_num_heads",
+            "--gsm_num_heads",
             type=int,
             default=2,
             help="attention heads",

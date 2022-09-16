@@ -40,6 +40,9 @@ class GSMChemistryFCDataset(GSMLinkDataset):
         ]
 
         args.num_pathways = len(self.pathway2node_indx)
+        args.num_relations = self.num_relations
+        args.num_proteins = len(self.split_graph.enzyme_features)
+        args.num_metabolites = len(self.split_graph.metabolite_features)
 
         self.set_sample_weights(args)
 
@@ -48,6 +51,8 @@ class GSMChemistryFCDataset(GSMLinkDataset):
     ) -> List[Dict]:
 
         _ = super().create_dataset(split_group)
+
+        self.split_graph.edge_attr = self.split_graph.edge_type
 
         self.pathway2node_id = self.get_pathway2node_id()
 
@@ -120,7 +125,7 @@ class GSMChemistryFCDataset(GSMLinkDataset):
 
     @staticmethod
     def set_args(args) -> None:
-        super().set_args(args)
+        super(GSMChemistryFCDataset, GSMChemistryFCDataset).set_args(args)
         if args.metabolite_feature_type == "precomputed":
             args.use_rdkit_features = True
 
