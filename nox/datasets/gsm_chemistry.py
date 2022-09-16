@@ -27,6 +27,10 @@ class GSMChemistryFCDataset(GSMLinkDataset):
 
         self.molecule_dataset = StokesAntibiotics(args, split_group)
 
+        self.NUM_PATHWAYS = 0
+        # self.NUM_REACTIONS = 0
+        self.NUM_NODES = 0
+
         # need assign split for molecules but not for gsm
         metabo_args = copy.deepcopy(args)
         metabo_args.assign_splits = False
@@ -90,13 +94,16 @@ class GSMChemistryFCDataset(GSMLinkDataset):
         )
         for pathway in gsm_model.groups:
             pathway2node_id.setdefault(pathway.id, set())
+            self.NUM_PATHWAYS += 1
             for reaction in pathway.members:
                 for metabolite in reaction.metabolites:
                     if metabolite.id in self.nodeid2nodeidx:
                         pathway2node_id[pathway.id].add(metabolite.id)
+                        self.NUM_NODES += 1
                 for gene in reaction.genes:
                     if gene.id in self.nodeid2nodeidx:
                         pathway2node_id[pathway.id].add(gene.id)
+                        self.NUM_NODES += 1
 
         # ? Add "other"
 
@@ -107,6 +114,22 @@ class GSMChemistryFCDataset(GSMLinkDataset):
 
     def __getitem__(self, index: int) -> Data:
         return {"mol": self.molecule_dataset.dataset[index]}
+
+    @property
+    def SUMMARY_STATEMENT(self) -> str:
+        """
+        Prints summary statement with dataset stats
+        """
+        num_nodes = self.split_graph.num_nodes
+
+        summary = f"Containing GSM JSON graph with {num_nodes} nodes and .MAT graph with {self.NUM_NODES} nodes, {self.NUM_PATHWAYS} pathways and {self.NUM_REACTIONS} reactions"
+        return summary
+
+    def print_summary_statement(
+        self, dataset, split_group: Literal["train", "dev", "test"]
+    ) -> None:
+        statement = f"{split_group.upper()} DATASET CREATED FOR {self.args.dataset_name.upper()}\n{self.SUMMARY_STATEMENT}"
+        print(statement)
 
     @staticmethod
     def add_args(parser) -> None:
