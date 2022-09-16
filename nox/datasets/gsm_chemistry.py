@@ -28,7 +28,7 @@ class GSMChemistryFCDataset(GSMLinkDataset):
         self.molecule_dataset = StokesAntibiotics(args, split_group)
 
         self.NUM_PATHWAYS = 0
-        # self.NUM_REACTIONS = 0
+        self.NUM_REACTIONS = 0
         self.NUM_NODES = 0
 
         # need assign split for molecules but not for gsm
@@ -70,7 +70,7 @@ class GSMChemistryFCDataset(GSMLinkDataset):
             [
                 index_to_mask(
                     torch.tensor(list(indices)), self.split_graph.num_nodes
-                ).int()
+                ).float()
                 for path, indices in self.pathway2node_indx.items()
             ]
         )

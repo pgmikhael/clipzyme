@@ -24,6 +24,7 @@ class GSMBase(Base):
         batch["gsm"] = self.trainer.train_dataloader.dataset.datasets.split_graph.to(
             self.device
         )
+        batch["y"] = batch["mol"].y
         output = super(GSMBase, self).training_step(batch, batch_idx, optimizer_idx)
         return output
 
@@ -31,6 +32,7 @@ class GSMBase(Base):
         batch["gsm"] = self.trainer.val_dataloaders[0].dataset.split_graph.to(
             self.device
         )
+        batch["y"] = batch["mol"].y
         output = super(GSMBase, self).validation_step(batch, batch_idx, optimizer_idx)
         return output
 
@@ -38,5 +40,6 @@ class GSMBase(Base):
         batch["gsm"] = self.trainer.test_dataloaders[0].dataset.split_graph.to(
             self.device
         )
+        batch["y"] = batch["mol"].y
         output = super(GSMBase, self).test_step(batch, batch_idx)
         return output
