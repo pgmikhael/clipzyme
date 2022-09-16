@@ -28,7 +28,7 @@ class GSMChemistryFCDataset(GSMLinkDataset):
         self.molecule_dataset = StokesAntibiotics(args, split_group)
 
         self.NUM_PATHWAYS = 0
-        # self.NUM_REACTIONS = 0
+        self.NUM_REACTIONS = 0
         self.NUM_NODES = 0
 
         # need assign split for molecules but not for gsm
