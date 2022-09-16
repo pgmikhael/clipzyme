@@ -7,6 +7,7 @@ from nox.utils.classes import set_nox_type
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch_geometric.data import Batch
 
 
 @register_object("metabonet_pathways", "model")
@@ -93,7 +94,7 @@ class MetaboNetPathways(AbstractModel):
             mol_features = batch["mol"]["rdkit_features"].view(batch_size, -1).float()
             molecule_embeddings = self.molecule_encoder(mol_features)["hidden"]  
         else:
-            molecule_embeddings = self.molecule_encoder(batch)
+            molecule_embeddings = self.molecule_encoder(batch["mol"])
 
         batch["gsm"].x = self.encode_gsm_entities(batch["gsm"])
 
@@ -126,30 +127,59 @@ class MetaboNetPathways(AbstractModel):
         # use from_smiles & support Nones
         # this may be too slow, might need to do in batches
         node_features = []
+        metabolites = []
+        enzymes = []
+
         for node in range(gsm.num_nodes):
             if gsm.metabolite_features.get(node, None) is not None:
                 mol = gsm.metabolite_features[node]
-                mol_embed = self.molecule_encoder(mol)['hidden']
-                node_features.append(mol_embed)
+                metabolites.append((node, mol))
+            # if gsm.metabolite_features.get(node, None) is not None:
+            #     mol = gsm.metabolite_features[node]
+            #     mol_embed = self.molecule_encoder(mol)['hidden']
+            #     node_features.append(mol_embed)
 
             elif gsm.enzyme_features.get(node, None) is not None:
                 protein = gsm.enzyme_features[node]
-                protein_embed = self.protein_encoder(protein)['hidden']
-                node_features.append(protein_embed)
+                enzymes.append((node, protein))
+
+            # elif gsm.enzyme_features.get(node, None) is not None:
+            #     protein = gsm.enzyme_features[node]
+            #     protein_embed = self.protein_encoder(protein)['hidden']
+            #     node_features.append(protein_embed)
 
             elif gsm.node2type[node] == "metabolite":
-                node_features.append(
+                node_features.append((node,
                     self.unk_gsm_molecule_embed(
                         torch.tensor( self.unk_gsm_molecules.index(node), device = self.unk_gsm_molecule_embed.weight.device)
                     )
-                )
+                ))
 
             elif gsm.node2type[node] == "enzyme":
-                node_features.append(
+                node_features.append((node,
                     self.unk_gsm_protein_embed(
                         torch.tensor(self.unk_gsm_proteins.index(node), device = self.unk_gsm_protein_embed.weight.device)
                     )
-                )
+                ))
+        
+        follow_batch = None
+        exclude_keys = None
+        for i in range(0, len(metabolites), self.args.batch_size):
+            indx_batch = [j[0] for j in metabolites[i:i+self.args.batch_size]]
+            mol_batch = Batch.from_data_list([j[1] for j in metabolites[i:i+self.args.batch_size]], follow_batch, exclude_keys)
+            mol_embeds = self.molecule_encoder(mol_batch)['hidden']
+            indexed_mol_embeds = list(zip(indx_batch, mol_embeds.tolist()))
+            node_features += indexed_mol_embeds
+
+        for i in range(0, len(enzymes), self.args.batch_size):
+            indx_batch = [j[0] for j in enzymes[i:i+self.args.batch_size]]
+            prot_batch = [j[1] for j in enzymes[i:i+self.args.batch_size]]
+            prot_embeds = self.protein_encoder(prot_batch)['hidden']
+            indexed_prot_embeds = list(zip(indx_batch, prot_embeds.tolist()))
+            node_features += indexed_prot_embeds
+
+        # sort node features
+        node_features = [feat[1] for feat in sorted(node_features, key=lambda x: x[0])]
 
         return torch.stack(node_features)  # (num_nodes, hidden_dim)
 

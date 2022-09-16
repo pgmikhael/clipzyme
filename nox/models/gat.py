@@ -49,6 +49,7 @@ class GATv2Op(AbstractModel):
         encoded_features = unbatch(encoded_features, graph.batch)
         output["node_features"] = encoded_features
         output["graph_features"] = graph_features
+        output["hidden"] = output["graph_features"]
         return output
 
     @staticmethod
