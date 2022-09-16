@@ -197,11 +197,12 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
             valid_data = self.pre_transform(valid_data)
             test_data = self.pre_transform(test_data)
 
-        torch.save({
-            "dataset": (self.collate([train_data, valid_data, test_data])),
-            "nodeid2nodeidx": originalid2nodeid
-        }
-            , self.processed_paths[0]
+        torch.save(
+            {
+                "dataset": (self.collate([train_data, valid_data, test_data])),
+                "nodeid2nodeidx": originalid2nodeid,
+            },
+            self.processed_paths[0],
         )
 
     def get_triplets(
@@ -408,17 +409,26 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
                 if "metabolite_id" in metadata_dict:
                     id2metabolite_features[id] = None
                     if metadata_dict["smiles"]:
-                        if self.args.metabolite_feature_type == "precomputed":
-                            id2metabolite_features[id] = torch.tensor(
+                        if (
+                            self.args.metabolite_feature_type == "precomputed"
+                        ) or self.args.use_rdkit_features:
+                            rdkit_features = torch.tensor(
                                 get_rdkit_feature(
                                     metadata_dict["smiles"],
                                     method=self.args.rdkit_fingerprint_name,
                                 )
                             ).type(torch.FloatTensor)
+
+                        if self.args.metabolite_feature_type == "precomputed":
+                            id2metabolite_features[id] = rdkit_features
                         elif self.args.metabolite_feature_type == "trained":
                             id2metabolite_features[id] = from_smiles(
                                 metadata_dict["smiles"]
                             )
+                            if self.args.use_rdkit_features:
+                                id2metabolite_features[
+                                    id
+                                ].rdkit_features = rdkit_features
 
                 elif "bigg_gene_id" in metadata_dict:
                     id2enzyme_features[id] = None

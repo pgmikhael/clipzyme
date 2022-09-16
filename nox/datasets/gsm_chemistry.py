@@ -39,6 +39,8 @@ class GSMChemistryFCDataset(GSMLinkDataset):
             k for k, v in self.split_graph.enzyme_features.items() if v is None
         ]
 
+        args.num_pathways = len(self.pathway2node_indx)
+
         self.set_sample_weights(args)
 
     def create_dataset(
@@ -57,7 +59,9 @@ class GSMChemistryFCDataset(GSMLinkDataset):
         # k pathways x n nodes
         self.split_graph.pathway_mask = torch.stack(
             [
-                index_to_mask(torch.tensor(list(indices)), self.split_graph.num_nodes).int()
+                index_to_mask(
+                    torch.tensor(list(indices)), self.split_graph.num_nodes
+                ).int()
                 for path, indices in self.pathway2node_indx.items()
             ]
         )
@@ -72,9 +76,6 @@ class GSMChemistryFCDataset(GSMLinkDataset):
             for i in type_ids
         }
 
-        if self.args.metabolite_feature_type == "precomputed":
-
-        
         return self.molecule_dataset.dataset
 
     def get_pathway2node_id(self):
@@ -91,9 +92,9 @@ class GSMChemistryFCDataset(GSMLinkDataset):
                 for gene in reaction.genes:
                     if gene.id in self.nodeid2nodeidx:
                         pathway2node_id[pathway.id].add(gene.id)
-        
+
         # ? Add "other"
-    
+
         return pathway2node_id
 
     def __len__(self) -> int:
@@ -116,6 +117,12 @@ class GSMChemistryFCDataset(GSMLinkDataset):
             default=False,
             help="balance the scaffold sets",
         )
-    
+
+    @staticmethod
+    def set_args(args) -> None:
+        super().set_args(args)
+        if args.metabolite_feature_type == "precomputed":
+            args.use_rdkit_features = True
+
     def process(self) -> None:
         super().process()
