@@ -1,12 +1,12 @@
 import copy
+from typing import Literal
 from nox.models.abstract import AbstractModel
-from nox.models.classifier import MLPClassifier, GraphClassifier
 from nox.utils.registry import register_object, get_object
 from nox.utils.pyg import from_smiles
 from nox.utils.classes import set_nox_type
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
-from nox.models.gat import GAT
 
 
 @register_object("metabonet_pathways", "model")
@@ -19,30 +19,65 @@ class MetaboNetPathways(AbstractModel):
         self.metabolite_feature_type = args.metabolite_feature_type
         self.protein_feature_type = args.protein_feature_type
 
-        margs = copy.deepcopy(args)
-        margs.linear_input_dim = args.metabolite_dim
-        margs.linear_output_dim = args.node_dim
-        self.metabolite_encoder = get_object(args.metabolite_model, "model")(margs)
-        
-        pargs = copy.deepcopy(args)
-        pargs.linear_input_dim = args.protein_dim
-        pargs.linear_output_dim = args.node_dim
+        margs = self.customize_args_for_model(args, "molecule")
+        self.molecule_encoder = get_object(args.molecule_model, "model")(margs)
+
+        pargs = self.customize_args_for_model(args, "protein")
         self.protein_encoder = get_object(args.protein_model, "model")(pargs)
 
-        self.gsm_encoder = get_object(args.gsm_model, "model")(args)
+        gargs = self.customize_args_for_model(args, "gsm")
+        self.gsm_encoder = get_object(args.gsm_model, "model")(gargs)
+
+        self.attention_fc = nn.Linear(args.gsm_node_dim, args.num_pathways)
+
+        args.mlp_input_dim = (
+            args.gsm_node_dim + args.gsm_hidden_dim
+            if args.concat_drug
+            else args.gsm_hidden_dim
+        )  # ! num heads?
 
         self.mlp = get_object(args.final_classifier, "model")(args)
 
-        # !
         self.unk_gsm_molecules = args.unk_metabolites
         self.unk_gsm_proteins = args.unk_enzymes
 
         self.unk_gsm_molecule_embed = torch.nn.Embedding(
-            len(args.unk_metabolites), args.node_out_dim
+            len(args.unk_metabolites), args.gsm_node_dim
         )
         self.unk_gsm_protein_embed = torch.nn.Embedding(
-            len(args.unk_enzymes), args.node_out_dim
+            len(args.unk_enzymes), args.gsm_node_dim
         )
+
+    def customize_args_for_model(
+        self, args, input_type: Literal["molecule", "protein", "gsm"]
+    ):
+        custom_args = copy.deepcopy(args)
+
+        if input_type == "molecule":
+            custom_args.linear_input_dim = args.rdkit_features_dim
+            custom_args.linear_output_dim = args.gsm_node_dim
+            custom_args.gat_node_dim = 9
+            custom_args.gat_edge_dim = 3
+            custom_args.gat_hidden_dim = (
+                args.gsm_node_dim - args.rdkit_features_dim
+                if args.use_rdkit_features
+                else args.gsm_node_dim
+            )
+            custom_args.gat_num_heads = args.molecule_model_num_heads
+            custom_args.gat_num_layers = args.molecule_model_num_layers  # ! dynamics
+
+        if input_type == "protein":
+            custom_args.linear_input_dim = args.protein_dim
+            custom_args.linear_output_dim = args.gsm_node_dim
+
+        if input_type == "gsm":
+            custom_args.gat_node_dim = args.gsm_node_dim
+            custom_args.gat_edge_dim = 3  # !
+            custom_args.gat_hidden_dim = args.gsm_hidden_dim
+            custom_args.gat_num_heads = args.gsm_num_heads
+            custom_args.gat_num_layers = args.gsm_num_layers
+
+        return custom_args
 
     def forward(self, batch):
         # Encode the molecules
@@ -54,19 +89,23 @@ class MetaboNetPathways(AbstractModel):
         gsm_embeddings = self.gsm_encoder(batch["gsm"])
 
         # Calculate attention over gsm embeddings
-        # ! not how attention works
-        attention = F.softmax(molecule_embeddings, dim=1)  # (batch_size, num_pathways)
+        pathway_attention = F.softmax(
+            self.attention_fc(molecule_embeddings), dim=-1
+        )  # (batch_size, num_pathways)
 
         pathways_embeddings = torch.mm(
             batch["gsm"].pathway_mask, gsm_embeddings
         )  # MM[(num_pathways, num_nodes), (num_nodes, hidden)] = (num_pathways, hidden)
 
         gsm_embedding = torch.mm(
-            attention, pathways_embeddings
+            pathway_attention, pathways_embeddings
         )  # MM[(batch_size, num_pathways), (num_pathways, hidden)] = (batch_size, hidden)
 
         # Concatenate the embeddings
-        embeddings = torch.cat([molecule_embeddings, gsm_embedding], dim=1)
+        if self.args.concat_drug:
+            embeddings = torch.cat([molecule_embeddings, gsm_embedding], dim=1)
+        else:
+            embeddings = gsm_embedding
 
         # Predict
         return self.mlp(embeddings)
@@ -117,20 +156,26 @@ class MetaboNetPathways(AbstractModel):
             help="dimensions of protein embedding",
         )
         parser.add_argument(
-            "--metabolite_model",
+            "--molecule_model",
             action=set_nox_type("model"),
             type=str,
             default="gatv2",
             help="name of molecule/metabolite model",
         )
         parser.add_argument(
-            "--metabolite_dim",
+            "--molecule_model_num_heads",
             type=int,
-            default=2048,
-            help="dimensions of metabolite embedding",
+            default=2,
+            help="attention heads",
         )
         parser.add_argument(
-            "--node_dim",
+            "--molecule_num_layers",
+            type=int,
+            default=2,
+            help="num layers",
+        )
+        parser.add_argument(
+            "--gsm_node_dim",
             type=int,
             default=128,
             help="dimensions of final node embedding",
@@ -141,6 +186,24 @@ class MetaboNetPathways(AbstractModel):
             type=str,
             default="identity",
             help="name of model for metabolic graph",
+        )
+        parser.add_argument(
+            "--gsm_hidden_dim",
+            type=int,
+            default=32,
+            help="gsm dimension",
+        )
+        parser.add_argument(
+            "--gsm_model_num_heads",
+            type=int,
+            default=2,
+            help="attention heads",
+        )
+        parser.add_argument(
+            "--gsm_num_layers",
+            type=int,
+            default=2,
+            help="num layers",
         )
         parser.add_argument(
             "--final_classifier",
@@ -166,4 +229,10 @@ class MetaboNetPathways(AbstractModel):
             type=str,
             default="rdkit_fingerprint",
             help="name of rdkit features to use",
+        )
+        parser.add_argument(
+            "--concat_drug",
+            action="store_true",
+            default=False,
+            help="use drug with pathway representation in final layer",
         )
