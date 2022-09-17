@@ -411,10 +411,7 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
                 if "metabolite_id" in metadata_dict:
                     id2metabolite_features[id] = None
                     if metadata_dict["smiles"]:
-                        if (
-                            self.args.metabolite_feature_type == "precomputed"
-                        ) or self.args.use_rdkit_features:
-                            rdkit_features = torch.tensor(
+                        rdkit_features = torch.tensor(
                                 get_rdkit_feature(
                                     metadata_dict["smiles"],
                                     method=self.args.rdkit_fingerprint_name,
@@ -427,10 +424,7 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
                             id2metabolite_features[id] = from_smiles(
                                 metadata_dict["smiles"]
                             )
-                            if self.args.use_rdkit_features:
-                                id2metabolite_features[
-                                    id
-                                ].rdkit_features = rdkit_features
+                            id2metabolite_features[id].rdkit_features = rdkit_features
 
                 elif "bigg_gene_id" in metadata_dict:
                     id2enzyme_features[id] = None

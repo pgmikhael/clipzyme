@@ -162,13 +162,14 @@ class MetaboNetPathways(AbstractModel):
             indx_batch = [j[0] for j in metabolites[i:i+self.args.batch_size]]
             met_batch = [j[1] for j in metabolites[i:i+self.args.batch_size]]
 
-            if self.args.metabolite_feature_type == "trained":
-                mol_batch = Batch.from_data_list(met_batch, follow_batch, exclude_keys) 
-            elif self.args.metabolite_feature_type == "precomputed":
+            if self.args.metabolite_feature_type == "precomputed":
                 mol_batch = torch.stack(met_batch)
             
+            elif self.args.metabolite_feature_type == "trained":
+                mol_batch = Batch.from_data_list(met_batch, follow_batch, exclude_keys) 
+            
             mol_embeds = self.molecule_encoder(mol_batch)['hidden']
-            if self.args.use_rdkit_features:
+            if self.args.use_rdkit_features and self.args.metabolite_feature_type == "trained":
                 features = mol_batch["rdkit_features"].view(len(met_batch), -1).float()
                 mol_embeds = torch.concat([mol_embeds, features ], dim=-1)
             
