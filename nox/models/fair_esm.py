@@ -22,9 +22,7 @@ class FairEsm(AbstractModel):
 
     def forward(self, x, batch=None):
         output = {}
-        fair_x = [
-            (i, s[: 1024 - 2]) if not isinstance(x[0], list) else (i, s[0][: 1024 - 2]) for i, s in enumerate(x) 
-        ]  # max length allowed is 1024
+        fair_x = self.truncate_protein(x)
         batch_labels, batch_strs, batch_tokens = self.batch_converter(fair_x)
         batch_tokens = batch_tokens.to(self.devicevar.device)
         repr_layer = 33  # TODO: add arg?
@@ -48,9 +46,15 @@ class FairEsm(AbstractModel):
                 ].mean(0)
             )
 
-        output["protein_hidden"] = torch.stack(hiddens)
+        output["hidden"] = torch.stack(hiddens)
 
         return output
+    
+    def truncate_protein(self, x, max_length=1024):
+        # max length allowed is 1024
+        return [
+            (i, s[: 1024 - 2]) if not isinstance(x[0], list) else (i, s[0][: 1024 - 2]) for i, s in enumerate(x) 
+        ]  
 
     @staticmethod
     def add_args(parser) -> None:
@@ -86,6 +90,8 @@ class FairEsm2(FairEsm):
         if not self.args.train_encoder:
             self.model.eval()
 
+    def truncate_protein(self, x, max_length=torch.inf):
+        return x
 
 @register_object("protein_encoder", "model")
 class ProteinEncoder(AbstractModel):
@@ -104,8 +110,8 @@ class ProteinEncoder(AbstractModel):
                 output_esm = self.encoder(x, batch)
         else:
             output_esm = self.encoder(x, batch)
-        output["protein_hidden"] = output_esm["protein_hidden"]
-        output["hidden"] = self.mlp(output_esm["protein_hidden"])["hidden"]
+        output["protein_hidden"] = output_esm["hidden"]
+        output["hidden"] = self.mlp(output_esm["hidden"])["hidden"]
         return output
 
     @staticmethod

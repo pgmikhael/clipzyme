@@ -199,6 +199,7 @@ class GAT(AbstractModel):
         output["node_features"] = h
         if self.pool_type != "none":
             output["graph_features"] = scatter(h, graph.batch, dim=0, reduce=self.pool_type)
+            output["hidden"] = output["graph_features"]
         return output
 
     @staticmethod

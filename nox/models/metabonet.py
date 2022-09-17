@@ -35,7 +35,7 @@ class MetaboNetPathways(AbstractModel):
             args.gsm_node_dim + args.gsm_hidden_dim
             if args.concat_drug
             else args.gsm_hidden_dim
-        )  # ! num heads?
+        )  
 
         self.mlp = get_object(args.final_classifier, "model")(args)
 
@@ -52,6 +52,12 @@ class MetaboNetPathways(AbstractModel):
             self.unk_gsm_protein_embed = torch.nn.Embedding(
                 len(args.unk_enzymes), args.gsm_node_dim
             )
+        
+        if self.transform_mol_dim:
+            self.mol_to_gsm_dim_fc = nn.Linear(args.gsm_node_dim + args.rdkit_features_dim, args.gsm_node_dim)
+
+        if self.transform_protein_dim:
+            self.prot_to_gsm_dim_fc = nn.Linear(args.protein_dim, args.gsm_node_dim)
 
     def customize_args_for_model(
         self, args, input_type: Literal["molecule", "protein", "gsm"]
@@ -63,19 +69,17 @@ class MetaboNetPathways(AbstractModel):
             custom_args.linear_output_dim = args.gsm_node_dim
             custom_args.gat_node_dim = 9
             custom_args.gat_edge_dim = 3
-            custom_args.gat_hidden_dim = (
-                args.gsm_node_dim - args.rdkit_features_dim
-                if args.use_rdkit_features
-                else args.gsm_node_dim
-            )
+            custom_args.gat_hidden_dim = args.gsm_node_dim
             custom_args.gat_num_heads = args.molecule_num_heads
             custom_args.gat_num_layers = args.molecule_num_layers 
-
+            self.transform_mol_dim =  (args.use_rdkit_features) and (args.metabolite_feature_type == 'trained')
+                
         if input_type == "protein":
             custom_args.linear_input_dim = args.protein_dim
             custom_args.linear_output_dim = args.gsm_node_dim
             custom_args.num_embed = args.num_proteins
             custom_args.embed_dim = args.gsm_node_dim
+            self.transform_protein_dim = (args.protein_dim != args.gsm_node_dim) and (args.protein_feature_type == 'trained')
 
         if input_type == "gsm":
             custom_args.gat_node_dim = args.gsm_node_dim
@@ -94,7 +98,14 @@ class MetaboNetPathways(AbstractModel):
             mol_features = batch["mol"]["rdkit_features"].view(batch_size, -1).float()
             molecule_embeddings = self.molecule_encoder(mol_features)["hidden"]  
         else:
-            molecule_embeddings = self.molecule_encoder(batch["mol"])
+            molecule_embeddings = self.molecule_encoder(batch["mol"])["hidden"]
+            if self.args.use_rdkit_features:
+                features = batch["mol"]["rdkit_features"].view(batch_size, -1).float()
+                molecule_embeddings = torch.concat([molecule_embeddings, features ], dim=-1)
+        
+        # project to gsm node dim if trained and fp 
+        if self.transform_mol_dim:
+            molecule_embeddings = self.mol_to_gsm_dim_fc(molecule_embeddings)
 
         batch["gsm"].x = self.encode_gsm_entities(batch["gsm"])
 
@@ -128,54 +139,58 @@ class MetaboNetPathways(AbstractModel):
         # this may be too slow, might need to do in batches
         node_features = []
         metabolites = []
-        enzymes = []
+        proteins = []
 
         for node in range(gsm.num_nodes):
             if gsm.metabolite_features.get(node, None) is not None:
                 mol = gsm.metabolite_features[node]
                 metabolites.append((node, mol))
-            # if gsm.metabolite_features.get(node, None) is not None:
-            #     mol = gsm.metabolite_features[node]
-            #     mol_embed = self.molecule_encoder(mol)['hidden']
-            #     node_features.append(mol_embed)
 
             elif gsm.enzyme_features.get(node, None) is not None:
                 protein = gsm.enzyme_features[node]
-                enzymes.append((node, protein))
+                proteins.append((node, protein))
 
-            # elif gsm.enzyme_features.get(node, None) is not None:
-            #     protein = gsm.enzyme_features[node]
-            #     protein_embed = self.protein_encoder(protein)['hidden']
-            #     node_features.append(protein_embed)
-
-            elif gsm.node2type[node] == "metabolite":
-                node_features.append((node,
-                    self.unk_gsm_molecule_embed(
-                        torch.tensor( self.unk_gsm_molecules.index(node), device = self.unk_gsm_molecule_embed.weight.device)
-                    )
-                ))
-
-            elif gsm.node2type[node] == "enzyme":
-                node_features.append((node,
-                    self.unk_gsm_protein_embed(
-                        torch.tensor(self.unk_gsm_proteins.index(node), device = self.unk_gsm_protein_embed.weight.device)
-                    )
-                ))
+        if len(self.unk_gsm_molecules) > 0:
+            node_features += list(zip(self.unk_gsm_molecules, self.unk_gsm_molecule_embed.weight))
         
+        if len(self.unk_gsm_proteins) > 0:
+            node_features += list(zip(self.unk_gsm_proteins, self.unk_gsm_protein_embed.weight))
+
         follow_batch = None
         exclude_keys = None
         for i in range(0, len(metabolites), self.args.batch_size):
             indx_batch = [j[0] for j in metabolites[i:i+self.args.batch_size]]
-            mol_batch = Batch.from_data_list([j[1] for j in metabolites[i:i+self.args.batch_size]], follow_batch, exclude_keys)
+            met_batch = [j[1] for j in metabolites[i:i+self.args.batch_size]]
+
+            if self.args.metabolite_feature_type == "trained":
+                mol_batch = Batch.from_data_list(met_batch, follow_batch, exclude_keys) 
+            elif self.args.metabolite_feature_type == "precomputed":
+                mol_batch = torch.stack(met_batch)
+            
             mol_embeds = self.molecule_encoder(mol_batch)['hidden']
-            indexed_mol_embeds = list(zip(indx_batch, mol_embeds.tolist()))
+            if self.args.use_rdkit_features:
+                features = mol_batch["rdkit_features"].view(len(met_batch), -1).float()
+                mol_embeds = torch.concat([mol_embeds, features ], dim=-1)
+            
+            # project to gsm node dim if trained and fp 
+            if self.transform_mol_dim:
+                mol_embeds = self.mol_to_gsm_dim_fc(mol_embeds)
+
+            indexed_mol_embeds = list(zip(indx_batch, mol_embeds))
             node_features += indexed_mol_embeds
 
-        for i in range(0, len(enzymes), self.args.batch_size):
-            indx_batch = [j[0] for j in enzymes[i:i+self.args.batch_size]]
-            prot_batch = [j[1] for j in enzymes[i:i+self.args.batch_size]]
+        for i in range(0, len(proteins), self.args.batch_size):
+            indx_batch = [j[0] for j in proteins[i:i+self.args.batch_size]]
+            prot_batch = [j[1] for j in proteins[i:i+self.args.batch_size]]
+            if self.args.protein_feature_type == "precomputed":
+                prot_batch = torch.stack(prot_batch)
+            
             prot_embeds = self.protein_encoder(prot_batch)['hidden']
-            indexed_prot_embeds = list(zip(indx_batch, prot_embeds.tolist()))
+            # project to gsm node dim if trained 
+            if self.transform_protein_dim:
+                prot_embeds = self.prot_to_gsm_dim_fc(prot_embeds)
+
+            indexed_prot_embeds = list(zip(indx_batch, prot_embeds))
             node_features += indexed_prot_embeds
 
         # sort node features
