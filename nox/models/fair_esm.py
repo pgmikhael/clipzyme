@@ -91,7 +91,9 @@ class FairEsm2(FairEsm):
             self.model.eval()
 
     def truncate_protein(self, x, max_length=torch.inf):
-        return x
+        return [
+            (i, s) if not isinstance(x[0], list) else (i, s[0]) for i, s in enumerate(x) 
+        ]  
 
 @register_object("protein_encoder", "model")
 class ProteinEncoder(AbstractModel):
