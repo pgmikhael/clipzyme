@@ -458,7 +458,7 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
             for i in tqdm(range(0, len(ids), batch_size)):
                 # every batch_size, add to batches
                 preds = self.protein_encoder(seqs[i : i + batch_size])
-                preds = preds["protein_hidden"].cpu()
+                preds = preds["hidden"].cpu()
                 for j, id in enumerate(ids[i : i + batch_size]):
                     id2enzyme_features[id] = preds[j]
             # if there are any remaining proteins, add to batches
@@ -466,7 +466,7 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
             if remainder:
                 print("Computing protein features for remaining proteins, almost done!")
                 preds = self.protein_encoder(seqs[-remainder:])
-                preds = preds["protein_hidden"].cpu()
+                preds = preds["hidden"].cpu()
                 for j, id in enumerate(ids[-remainder:]):
                     id2enzyme_features[id] = preds[j]
 

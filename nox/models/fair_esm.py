@@ -79,7 +79,7 @@ class FairEsm(AbstractModel):
 @register_object("fair_esm2", "model")
 class FairEsm2(FairEsm):
     def __init__(self, args):
-        super(FairEsm2, self).__init__()
+        super(FairEsm2, self).__init__(args)
         self.args = args
         torch.hub.set_dir(args.pretrained_hub_dir)
         self.model, self.alphabet = torch.hub.load(
