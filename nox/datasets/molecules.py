@@ -197,7 +197,7 @@ class MoleNet(Molecules, MoleculeNet):
             default=False,
             help="balance the scaffold sets",
         )
-
+        
 
 @register_object("stokes_antiobiotics", "dataset")
 class StokesAntibiotics(Molecules):
@@ -249,7 +249,7 @@ class StokesAntibiotics(Molecules):
         """
         Prints summary statement with dataset stats
         """
-        class_dist = [s.y for s in self.dataset]
+        class_dist = [s['y'] for s in self.dataset]
         return f"Class Distribution: {Counter(class_dist)}"
 
     @staticmethod
