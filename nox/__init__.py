@@ -60,8 +60,8 @@ import nox.models.vision
 import nox.models.classifier
 import nox.models.nbfnet
 import nox.models.gat
+import nox.models.chemprop
 import nox.models.fair_esm
-import nox.models.gat
 import nox.models.linear
 import nox.models.metabonet
 
