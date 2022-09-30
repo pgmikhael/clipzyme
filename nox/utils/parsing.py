@@ -244,6 +244,12 @@ def get_parser():
         default=False,
         help="Whether or not to evaluate model on train split",
     )
+    parser.add_argument(
+        "--replicate",
+        type=int,
+        default=1,
+        help="The replicate number for the experiment for running same experiments multiple times",
+    )
 
     # -------------------------------------
     # Data

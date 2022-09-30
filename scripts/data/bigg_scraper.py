@@ -11,6 +11,7 @@ from p_tqdm import p_umap
 from xml.etree import cElementTree as ET
 import argparse
 from rdkit import Chem
+from tqdm import tqdm
 
 parser = argparse.ArgumentParser(
     description="Scrape metabolite data from external databases"
@@ -195,10 +196,13 @@ def get_biocyc(db_meta: pd.Series) -> dict:
     biocyc = [f for f in db_meta.values[0].split(";") if "biocyc" in f]
     if len(biocyc):
         biocycid = urllib.parse.quote( os.path.basename(biocyc[0]) )
-        page = requests.get(
-            f"https://websvc.biocyc.org/getxml?id={biocycid}&detail=full"
-        )
-        xml_data = xml2dict(ET.XML(page.text))["ptools-xml"]
+        try:
+            page = requests.get(
+                f"https://websvc.biocyc.org/getxml?id={biocycid}&detail=full"
+            )
+            xml_data = xml2dict(ET.XML(page.text))["ptools-xml"]
+        except:
+            return dict()
         if xml_data.get("Compound", False) and len(
             xml_data["Compound"]["cml"]["molecule"].get("string", "")
         ):
@@ -554,7 +558,6 @@ if __name__ == "__main__":
 
     # Get list of reactions
     reactions = model.reactions
-
     dataset = p_umap(get_reaction, reactions)
 
     json.dump(
