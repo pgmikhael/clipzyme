@@ -49,12 +49,13 @@ class FairEsm(AbstractModel):
         output["hidden"] = torch.stack(hiddens)
 
         return output
-    
+
     def truncate_protein(self, x, max_length=1024):
         # max length allowed is 1024
         return [
-            (i, s[: 1024 - 2]) if not isinstance(x[0], list) else (i, s[0][: 1024 - 2]) for i, s in enumerate(x) 
-        ]  
+            (i, s[: 1024 - 2]) if not isinstance(x[0], list) else (i, s[0][: 1024 - 2])
+            for i, s in enumerate(x)
+        ]
 
     @staticmethod
     def add_args(parser) -> None:
@@ -76,6 +77,7 @@ class FairEsm(AbstractModel):
             help="do not update encoder weights",
         )
 
+
 @register_object("fair_esm2", "model")
 class FairEsm2(FairEsm):
     def __init__(self, args):
@@ -92,8 +94,9 @@ class FairEsm2(FairEsm):
 
     def truncate_protein(self, x, max_length=torch.inf):
         return [
-            (i, s) if not isinstance(x[0], list) else (i, s[0]) for i, s in enumerate(x) 
-        ]  
+            (i, s) if not isinstance(x[0], list) else (i, s[0]) for i, s in enumerate(x)
+        ]
+
 
 @register_object("protein_encoder", "model")
 class ProteinEncoder(AbstractModel):

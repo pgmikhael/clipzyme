@@ -28,7 +28,7 @@ class RankingMetrics(Nox):
         num_negative = torch.cat(num_negatives)
         all_size = torch.zeros(world_size, dtype=torch.long, device=device)
         all_size[rank] = len(ranking)
-        if world_size > 1: 
+        if world_size > 1:
             dist.all_reduce(all_size, op=dist.ReduceOp.SUM)
         cum_size = all_size.cumsum(0)
         all_ranking = torch.zeros(all_size.sum(), dtype=torch.long, device=device)
@@ -38,15 +38,14 @@ class RankingMetrics(Nox):
             cum_size[rank] - all_size[rank] : cum_size[rank]
         ] = num_negative
 
-        if world_size > 1:  
+        if world_size > 1:
             dist.all_reduce(all_ranking, op=dist.ReduceOp.SUM)
             dist.all_reduce(all_num_negative, op=dist.ReduceOp.SUM)
 
         stats_dict["mean_rank"] = all_ranking.float().mean()
         stats_dict["mean_reciprocal_rank"] = (1 / all_ranking.float()).mean()
         for hit_n in args.hits_at_n:
-            stats_dict[hit_n] = self.calc_hits_at(
-                all_ranking, all_num_negative, hit_n)
+            stats_dict[hit_n] = self.calc_hits_at(all_ranking, all_num_negative, hit_n)
 
         return stats_dict
 

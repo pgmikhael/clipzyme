@@ -412,11 +412,11 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
                     id2metabolite_features[id] = None
                     if metadata_dict["smiles"]:
                         rdkit_features = torch.tensor(
-                                get_rdkit_feature(
-                                    metadata_dict["smiles"],
-                                    method=self.args.rdkit_fingerprint_name,
-                                )
-                            ).type(torch.FloatTensor)
+                            get_rdkit_feature(
+                                metadata_dict["smiles"],
+                                method=self.args.rdkit_fingerprint_name,
+                            )
+                        ).type(torch.FloatTensor)
 
                         if self.args.metabolite_feature_type == "precomputed":
                             id2metabolite_features[id] = rdkit_features

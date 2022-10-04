@@ -140,7 +140,7 @@ class GAT(AbstractModel):
                     in_channels=in_hidden,
                     out_channels=out_hidden // n_heads,
                     heads=n_heads,
-                    concat=True, #args.gat_concat,
+                    concat=True,  # args.gat_concat,
                     negative_slope=args.gat_negative_slope,
                     dropout=args.dropout,
                     add_self_loops=args.gat_add_self_loops,
@@ -154,7 +154,7 @@ class GAT(AbstractModel):
                     in_channels=in_hidden,
                     out_channels=out_hidden // n_heads,
                     heads=n_heads,
-                    concat=True, #args.gat_concat,
+                    concat=True,  # args.gat_concat,
                     negative_slope=args.gat_negative_slope,
                     dropout=args.dropout,
                     add_self_loops=args.gat_add_self_loops,
@@ -195,10 +195,11 @@ class GAT(AbstractModel):
             h = F.relu(h, inplace=True)
             h = self.dropout(h)
 
-        
         output["node_features"] = h
         if self.pool_type != "none":
-            output["graph_features"] = scatter(h, graph.batch, dim=0, reduce=self.pool_type)
+            output["graph_features"] = scatter(
+                h, graph.batch, dim=0, reduce=self.pool_type
+            )
             output["hidden"] = output["graph_features"]
         return output
 
@@ -280,5 +281,5 @@ class GAT(AbstractModel):
             type=str,
             choices=["none", "sum", "mul", "mean", "min", "max"],
             default="sum",
-            help="Type of pooling to do to obtain graph features"
+            help="Type of pooling to do to obtain graph features",
         )

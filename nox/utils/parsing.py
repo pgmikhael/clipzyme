@@ -652,7 +652,7 @@ def parse_args(args_strings=None):
         args.strategy = "ddp"
         args.replace_sampler_ddp = False
     else:
-        args.strategy  = None 
+        args.strategy = None
         args.replace_sampler_ddp = False
 
     # username
