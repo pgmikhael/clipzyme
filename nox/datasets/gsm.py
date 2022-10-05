@@ -7,7 +7,7 @@ import inspect
 
 from nox.utils.registry import register_object, get_object, md5
 from nox.utils.classes import set_nox_type, classproperty
-from nox.utils.rdkit import get_rdkit_feature
+from nox.utils.smiles import get_rdkit_feature
 from nox.datasets.abstract import AbstractDataset
 from nox.datasets.molecules import MoleNet
 from torch_geometric.data import InMemoryDataset, Data

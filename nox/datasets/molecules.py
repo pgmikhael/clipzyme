@@ -8,7 +8,7 @@ from collections import defaultdict, Counter
 from typing import List
 from nox.utils.registry import register_object
 from nox.datasets.abstract import AbstractDataset
-from nox.utils.rdkit import generate_scaffold, get_rdkit_feature
+from nox.utils.smiles import generate_scaffold, get_rdkit_feature
 from nox.utils.pyg import from_smiles
 from torch_geometric.datasets import MoleculeNet
 from torch_geometric.data.separate import separate
