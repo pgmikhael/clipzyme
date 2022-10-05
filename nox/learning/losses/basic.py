@@ -7,6 +7,24 @@ import pdb
 from nox.utils.classes import Nox
 
 
+@register_object("precomputed_loss", "loss")
+class PreComputedLoss(Nox):
+    """Method for when loss is computed through model automatically, e.g., hugging face transformers"""
+
+    def __init__(self) -> None:
+        super().__init__()
+
+    def __call__(self, model_output, batch, model, args):
+        logging_dict, predictions = OrderedDict(), OrderedDict()
+        loss = model_output["loss"]
+        logging_dict["loss"] = loss.detach()
+        for k, v in model_output.items():
+            if k != "loss":
+                predictions[k] = v.detach()
+
+        return loss, logging_dict, predictions
+
+
 @register_object("cross_entropy", "loss")
 class CrossEntropyLoss(Nox):
     def __init__(self) -> None:
