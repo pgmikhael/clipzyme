@@ -116,8 +116,9 @@ class LFormerModel(AbstractModel):
 
         output = {
             "loss": result.get("loss", None),
-            "logit": result["logit"],
+            "logit": result["logit"].view(-1, self.config.vocab_size),
             "hidden": hidden,
+            "y": labels.view(-1),
         }
 
         return output
