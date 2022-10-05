@@ -5,8 +5,8 @@ dataset_files = [
         "train",
         "/Mounts/rbg-storage1/datasets/ChemicalReactions/uspto_all_reactions_training.txt",
     ),
-    ("val", "/Mounts/rbg-storage1/datasets/ChemicalReactions/eval_schneider.json"),
-    ("val", "/Mounts/rbg-storage1/datasets/ChemicalReactions/test_schneider.json"),
+    ("dev", "/Mounts/rbg-storage1/datasets/ChemicalReactions/eval_schneider.json"),
+    ("dev", "/Mounts/rbg-storage1/datasets/ChemicalReactions/test_schneider.json"),
     ("test", "/Mounts/rbg-storage1/datasets/ChemicalReactions/test_natcomm.json"),
 ]
 
@@ -19,7 +19,7 @@ if __name__ == "__main__":
                 for rxn in f:
                     dataset.append(
                         {
-                            "reaction": rxn,
+                            "reaction": rxn.rstrip("\n"),
                             "split": split,
                             "from": filepath,
                             "rxnid": line_counter,
