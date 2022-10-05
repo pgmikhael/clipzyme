@@ -100,7 +100,7 @@ def generate_scaffold(
     return scaffold
 
 
-def tokenize_smiles(smiles: str) -> List[str]:
+def tokenize_smiles(smiles: str, return_as_str=False) -> Union[List[str], str]:
     """
     From https://github.com/rxn4chemistry/rxnmapper/blob/main/rxnmapper/smiles_utils.py
 
@@ -108,6 +108,8 @@ def tokenize_smiles(smiles: str) -> List[str]:
     regex = re.compile(SMI_REGEX_PATTERN)
     tokens = [token for token in regex.findall(smiles)]
     assert smiles == "".join(tokens)
+    if return_as_str:
+        tokens = " ".join(tokens)
     return tokens
 
 
