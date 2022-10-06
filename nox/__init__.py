@@ -38,6 +38,7 @@ import nox.loaders.image_loaders
 import nox.lightning.base
 import nox.lightning.linker
 import nox.lightning.gsm_base
+import nox.lightning.step_base
 
 # optimizers
 import nox.learning.optimizers.basic
