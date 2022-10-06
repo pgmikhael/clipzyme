@@ -1,16 +1,18 @@
 import argparse
 from typing import List, Literal
-from nox.utils.registry import register_object
-from nox.utils.smiles import tokenize_smiles
+from nox.utils.registry import register_object, get_object
 from nox.datasets.abstract import AbstractDataset
 import warnings
 from tqdm import tqdm
 import random
 from rxn.chemutils.smiles_randomization import randomize_smiles_rotated
 
-
 @register_object("chemical_reactions", "dataset")
 class ChemRXN(AbstractDataset):
+    def __init__(self, args: argparse.ArgumentParser, split_group: str) -> None:
+        super().__init__(args, split_group)
+        self.tokenizer = get_object(args.model_name, "model").init_tokenizer(args)
+
     def create_dataset(
         self, split_group: Literal["train", "dev", "test"]
     ) -> List[dict]:
@@ -18,7 +20,7 @@ class ChemRXN(AbstractDataset):
         for rxn_dict in tqdm(self.metadata_json):
             if self.skip_sample(rxn_dict, split_group):
                 continue
-            dataset.append({"x": rxn_dict["reaction"]})
+            dataset.append({"x": rxn_dict["reaction"], "sample_id": rxn_dict["rxnid"]})
         return dataset
 
     def skip_sample(self, sample, split_group) -> bool:
@@ -44,16 +46,20 @@ class ChemRXN(AbstractDataset):
                 reaction = "{}>>{}".format(".".join(reactants), ".".join(products))
 
             if self.args.use_random_smiles_representation:
-                reactants = [randomize_smiles_rotated(s) for s in reactants]
-                products = [randomize_smiles_rotated(s) for s in products]
-                reaction = "{}>>{}".format(".".join(reactants), ".".join(products))
+                try: 
+                    reactants = [randomize_smiles_rotated(s) for s in reactants]
+                    products = [randomize_smiles_rotated(s) for s in products]
+                    reaction = "{}>>{}".format(".".join(reactants), ".".join(products))
+                except:
+                    pass 
+            
 
             item["x"] = reaction
 
-            return item
+            return item 
 
         except Exception:
-            warnings.warn("Could not load sample")
+            warnings.warn(f"Could not load sample: {item['sample_id']}")
 
     @staticmethod
     def add_args(parser) -> None:

@@ -11,6 +11,8 @@ from transformers import (
     LongformerTokenizer,
     LongformerConfig,
     LongformerForMaskedLM,
+    AlbertForMaskedLM,
+    AlbertConfig
 )
 
 
@@ -36,9 +38,14 @@ class LFormerModel(AbstractModel):
             vocab_size=self.tokenizer.vocab_size,
             output_hidden_states=True,
             output_attentions=True,
+            hidden_size=args.hidden_size, 
+            intermediate_size=args.intermediate_size, 
+            embedding_size = args.embedding_size, 
+            num_attention_heads=args.num_heads,
             num_hidden_layers = args.num_hidden_layers
         )
         self.model = LongformerForMaskedLM(config)
+
 
         # variable to easily access device
         self.register_buffer("devicevar", torch.zeros(1, dtype=torch.int8))
@@ -48,7 +55,8 @@ class LFormerModel(AbstractModel):
         if self.freeze_encoder:
             self.model.eval()
 
-    def init_tokenizer(self, args):
+    @staticmethod
+    def init_tokenizer(args):
         return LongformerTokenizer(
             vocab_file=args.vocab_path,
             merges_file=args.merges_file_path,
@@ -58,9 +66,6 @@ class LFormerModel(AbstractModel):
             truncation=True,
             model_max_length=args.max_seq_len,
         )
-
-    def tokenize(self, list_of_text):
-        raise NotImplementedError
 
     def forward(self, batch):
         """
@@ -73,8 +78,12 @@ class LFormerModel(AbstractModel):
             _type_: _description_
         """
         output = {}
+        
+        tokenized_inputs = self.tokenize(batch["x"], self.tokenizer, self.args)
 
-        tokenized_inputs = self.tokenize(batch["x"])
+        # move to device
+        for k, v in tokenized_inputs.items():
+            tokenized_inputs[k] = v.to(self.devicevar.device)
 
         # from https://github.com/huggingface/transformers/blob/main/src/transformers/data/data_collator.py#L607
         # If special token mask has been preprocessed, pop it from the dict.
@@ -94,6 +103,7 @@ class LFormerModel(AbstractModel):
             if self.tokenizer.pad_token_id is not None:
                 labels[labels == self.tokenizer.pad_token_id] = -100
             tokenized_inputs["labels"] = labels
+
 
         # run through model
         if self.args.freeze_encoder:
@@ -184,6 +194,10 @@ class LFormerModel(AbstractModel):
         return inputs, labels
 
     @staticmethod
+    def tokenize(list_of_text: List[str], tokenizer, args):
+        raise NotImplementedError 
+
+    @staticmethod
     def add_args(parser) -> None:
         parser.add_argument(
             "--vocab_path",
@@ -217,6 +231,30 @@ class LFormerModel(AbstractModel):
             help="maximum length allowed for the input sequence",
         )
         parser.add_argument(
+            "--hidden_size",
+            type=int,
+            default=256,
+            help="maximum length allowed for the input sequence",
+        )
+        parser.add_argument(
+            "--intermediate_size",
+            type=int,
+            default=512,
+            help="maximum length allowed for the input sequence",
+        )
+        parser.add_argument(
+            "--embedding_size",
+            type=int,
+            default=128,
+            help="maximum length allowed for the input sequence",
+        )
+        parser.add_argument(
+            "--num_heads",
+            type=int,
+            default=8,
+            help="maximum length allowed for the input sequence",
+        )
+        parser.add_argument(
             "--do_masked_language_model",
             "-mlm",
             action="store_true",
@@ -243,10 +281,13 @@ class LFormerModel(AbstractModel):
             help="use cls token as hidden representation of sequence",
         )
 
+              
 
 @register_object("reaction_mlm", "model")
 class ReactionMLM(LFormerModel):
-    def init_tokenizer(self, args):
+
+    @staticmethod
+    def init_tokenizer(args):
         return BertTokenizer(
             vocab_file=args.vocab_path,
             do_lower_case=False,
@@ -259,29 +300,30 @@ class ReactionMLM(LFormerModel):
             eos_token="[EOS]",
         )
 
-    def tokenize(self, list_of_text: List[str]):
+    @staticmethod
+    def tokenize(list_of_text: List[str], tokenizer, args):
         # standardize reaction
         x = [standardize_reaction(r) for r in list_of_text]
         x = [tokenize_smiles(r, return_as_str=True) for r in x]
-        if self.args.use_cls_token:
+        if args.use_cls_token:
             # add [CLS] and [EOS] tokens
             x = [
-                f"{self.tokenizer.cls_token} {r} {self.tokenizer.eos_token}" for r in x
+                f"{tokenizer.cls_token} {r} {tokenizer.eos_token}" for r in x
             ]
 
         # tokenize str characters into tensor of indices with corresponding masks
-        tokenized_inputs = self.tokenizer(
+        tokenized_inputs = tokenizer(
             x,
             add_special_tokens=False,
             padding=True,
             truncation=True,
-            max_length=self.tokenizer.model_max_length,
+            max_length=tokenizer.model_max_length,
             return_tensors="pt",
         )
 
         # get mask for special tokens that are not masked in MLM (return_special_tokens_mask=True doesn't work for additional special tokens)
         special_tokens_mask = [
-            self.tokenizer.get_special_tokens_mask(
+            tokenizer.get_special_tokens_mask(
                 toks, None, already_has_special_tokens=True
             )
             for toks in tokenized_inputs["input_ids"]
@@ -290,9 +332,5 @@ class ReactionMLM(LFormerModel):
         tokenized_inputs["special_tokens_mask"] = torch.tensor(
             special_tokens_mask, dtype=torch.int64
         )
-
-        # move to device
-        for k, v in tokenized_inputs.items():
-            tokenized_inputs[k] = v.to(self.devicevar.device)
 
         return tokenized_inputs
