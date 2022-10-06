@@ -37,7 +37,7 @@ class LFormerModel(AbstractModel):
             output_hidden_states=True,
             output_attentions=True,
         )
-        self.model = LongformerForMaskedLM(config, add_pooling_layer=True)
+        self.model = LongformerForMaskedLM(config)
 
         # variable to easily access device
         self.register_buffer("devicevar", torch.zeros(1, dtype=torch.int8))
@@ -108,18 +108,28 @@ class LFormerModel(AbstractModel):
         # log outputs of interest
         hidden = result["hidden_states"]
         if self.hidden_aggregate_func == "mean":
-            hidden = result["hidden_states"].mean(1)
+            hidden = result["hidden_states"][-1].mean(1)
         elif self.hidden_aggregate_func == "sum":
-            hidden = result["hidden_states"].sum(1)
+            hidden = result["hidden_states"][-1].sum(1)
         elif self.hidden_aggregate_func == "cls":
-            hidden = result["hidden_states"][:, 0]
+            hidden = result["hidden_states"][-1, 0]
 
-        output = {
-            "loss": result.get("loss", None),
-            "logit": result["logit"].view(-1, self.config.vocab_size),
-            "hidden": hidden,
-            "y": labels.view(-1),
-        }
+        if self.mlm:
+            masked_indices = (tokenized_inputs['input_ids'] == self.tokenizer.mask_token_id ).bool()
+            output = {
+                "loss": result.get("loss", None),
+                "logit": result["logits"][masked_indices],
+                "hidden": hidden,
+                "y": tokenized_inputs["labels"][masked_indices],
+            }
+
+        else:
+            output = {
+                "loss": result.get("loss", None),
+                "logit": result["logits"].view(-1, self.tokenizer.vocab_size),
+                "hidden": hidden,
+                "y": tokenized_inputs["labels"].view(-1),
+            }
 
         return output
 
@@ -134,7 +144,7 @@ class LFormerModel(AbstractModel):
 
         labels = inputs.clone()
         # We sample a few tokens in each sequence for MLM training (with probability `self.mlm_probability`)
-        probability_matrix = torch.full(labels.shape, self.mlm_probability)
+        probability_matrix = torch.full(labels.shape, self.mlm_probability, device = self.devicevar.device)
         if special_tokens_mask is None:
             special_tokens_mask = [
                 self.tokenizer.get_special_tokens_mask(
@@ -152,7 +162,7 @@ class LFormerModel(AbstractModel):
 
         # 80% of the time, we replace masked input tokens with tokenizer.mask_token ([MASK])
         indices_replaced = (
-            torch.bernoulli(torch.full(labels.shape, 0.8)).bool() & masked_indices
+            torch.bernoulli(torch.full(labels.shape, 0.8, device = self.devicevar.device)).bool() & masked_indices
         )
         inputs[indices_replaced] = self.tokenizer.convert_tokens_to_ids(
             self.tokenizer.mask_token
@@ -160,12 +170,12 @@ class LFormerModel(AbstractModel):
 
         # 10% of the time, we replace masked input tokens with random word
         indices_random = (
-            torch.bernoulli(torch.full(labels.shape, 0.5)).bool()
+            torch.bernoulli(torch.full(labels.shape, 0.5,device = self.devicevar.device)).bool()
             & masked_indices
             & ~indices_replaced
         )
         random_words = torch.randint(
-            len(self.tokenizer), labels.shape, dtype=torch.long
+            len(self.tokenizer), labels.shape, dtype=torch.long, device = self.devicevar.device
         )
         inputs[indices_random] = random_words[indices_random]
 
@@ -271,7 +281,7 @@ class ReactionMLM(LFormerModel):
         ]
 
         tokenized_inputs["special_tokens_mask"] = torch.tensor(
-            special_tokens_mask, dtype=tokenized_inputs["special_tokens_mask"].dtype
+            special_tokens_mask, dtype=torch.int64
         )
 
         # move to device

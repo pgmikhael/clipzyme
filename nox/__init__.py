@@ -17,6 +17,7 @@ except PackageNotFoundError:  # pragma: no cover
 finally:
     del version, PackageNotFoundError
 
+import rdkit
 
 # data
 import nox.datasets.mnist

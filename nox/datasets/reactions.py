@@ -57,7 +57,7 @@ class ChemRXN(AbstractDataset):
 
     @staticmethod
     def add_args(parser) -> None:
-        super().add_args(parser)
+        super(ChemRXN,ChemRXN).add_args(parser)
         parser.add_argument(
             "--randomize_order_in_reaction",
             action="store_true",
