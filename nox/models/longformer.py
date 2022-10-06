@@ -36,6 +36,7 @@ class LFormerModel(AbstractModel):
             vocab_size=self.tokenizer.vocab_size,
             output_hidden_states=True,
             output_attentions=True,
+            num_hidden_layers = args.num_hidden_layers
         )
         self.model = LongformerForMaskedLM(config)
 
@@ -202,6 +203,12 @@ class LFormerModel(AbstractModel):
             action="store_true",
             default=False,
             help="whether use model as pre-trained encoder and not update weights",
+        )
+        parser.add_argument(
+            "--num_hidden_layers",
+            type=int,
+            default=6,
+            help="number of layers in the transformer",
         )
         parser.add_argument(
             "--max_seq_len",
