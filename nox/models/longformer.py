@@ -130,7 +130,7 @@ class LFormerModel(AbstractModel):
             output = {
                 "loss": result.get("loss", None),
                 "logit": result["logits"][masked_indices],
-                "hidden": hidden,
+                # "hidden": hidden,
                 "y": tokenized_inputs["labels"][masked_indices],
             }
 
@@ -138,7 +138,7 @@ class LFormerModel(AbstractModel):
             output = {
                 "loss": result.get("loss", None),
                 "logit": result["logits"].view(-1, self.tokenizer.vocab_size),
-                "hidden": hidden,
+                # "hidden": hidden,
                 "y": tokenized_inputs["labels"].view(-1),
             }
 

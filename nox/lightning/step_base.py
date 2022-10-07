@@ -92,7 +92,7 @@ class StepBase(Base):
         metrics = self.compute_metric(output["preds_dict"])
         self.log_outputs(metrics, "train")
 
-        return output["loss"]
+        return {"loss": output["loss"]}
 
     def validation_step(self, batch, batch_idx, optimizer_idx=None):
         """
@@ -103,7 +103,7 @@ class StepBase(Base):
 
         metrics = self.compute_metric(output["preds_dict"])
         self.log_outputs(metrics, "val")
-        return output["loss"]
+        return {"loss": output["loss"]}
 
     def test_step(self, batch, batch_idx):
         """
@@ -126,4 +126,5 @@ class StepBase(Base):
         metrics = self.compute_metric(output["preds_dict"])
         self.log_outputs(metrics, "test")
 
-        return output["loss"]
+        return {"loss": output["loss"]}
+    
