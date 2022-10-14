@@ -125,16 +125,17 @@ def get_hmdb(db_meta: pd.Series) -> dict:
     """
     hmdb = [f for f in db_meta.values[0].split(";") if "hmdb" in f]
     if len(hmdb):
-        hmdbid = os.path.basename(hmdb[0].split(":")[-1])
-        hmdbid = hmdbid[:4] + (11 - len(hmdbid)) * "0" + hmdbid[4:]
-        row = HMDB_METABOLITES.get(hmdbid, False)
-        if row and len(row["smiles"]):
-            return {
-                "hmdb_id": hmdbid,
-                "hmdb_inchi": row["inchi"],
-                "hmdb_inchikey": row["inchikey"],
-                "hmdb_smiles": row["smiles"],
-            }
+        for hmdb_match in hmdb:
+            hmdbid = os.path.basename(hmdb_match.split(":")[-1])
+            hmdbid = hmdbid[:4] + (11 - len(hmdbid)) * "0" + hmdbid[4:]
+            row = HMDB_METABOLITES.get(hmdbid, False)
+            if row and len(row["smiles"]):
+                return {
+                    "hmdb_id": hmdbid,
+                    "hmdb_inchi": row["inchi"],
+                    "hmdb_inchikey": row["inchikey"],
+                    "hmdb_smiles": row["smiles"],
+                }
     return dict()
 
 
@@ -305,6 +306,36 @@ def get_pubchem(db_meta: pd.Series) -> dict:
         }
     return dict()
 
+def get_chebi(db_meta: pd.Series) -> dict:
+    """Get the metabolite metdata from Chebi downloaded DB 
+
+    Args:
+        db_meta (pandas row): pandas row matching metabolite to external links
+
+    Returns:
+        dict: metabolite properties
+    """
+    chebi_links = [f for f in db_meta.values[0].split(";") if "CHEBI" in f]
+    if len(chebi_links):
+        chebi_id = os.path.basename(chebi_links[0])
+        chebi_dict = CHEBI_DB.get(chebi_id, {})
+        meta_dict = {}
+        for dictkey, dbkey in [
+            ("id", "ChEBI ID"),
+            ("name", "ChEBI Name"),
+            ("star", "Star"),
+            ("smiles", "SMILES"),
+            ("inchi", "InChI"),
+            ("inchikey", "InChIKey"),
+            ("charge", "Charge"),
+            ("mass", "Mass"),
+            ("formulae", "Formulae")("monoisotopic_mass", "Monoisotopic Mass"),
+        ]:
+            meta_dict[f"chebi_{dictkey}"] = chebi_dict.get(dbkey, None)
+
+        return meta_dict
+
+    return dict()
 
 def search_chebi(metabolite: Metabolite) -> dict:
     """Search for metabolite in ChEBI using name and/or formula
@@ -415,12 +446,16 @@ def link_metabolite_to_db(metabolite: Metabolite) -> dict:
     meta_dict = get_hmdb(db_meta)
     
     if not any("smiles" in k for k in meta_dict.keys()):
-        # Try MetaNetX
-        meta_dict.update(get_metanetx(db_meta))
-
+        # Try Chebi DB
+        meta_dict.update(get_chebi(db_meta))
+    
     if not any("smiles" in k for k in meta_dict.keys()):
         # Try VMH
         meta_dict.update(get_vmh(metabolite))
+
+    if not any("smiles" in k for k in meta_dict.keys()):
+        # Try MetaNetX
+        meta_dict.update(get_metanetx(db_meta))
 
     if not any("smiles" in k for k in meta_dict.keys()):
         # Try BioCyc
