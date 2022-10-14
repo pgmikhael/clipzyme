@@ -99,13 +99,19 @@ class Molecules(AbstractDataset):
         Args:
             parser (argparse.ArgumentParser): argument parser
         """
-        super(Molecules,Molecules).add_args(parser)
+        super(Molecules, Molecules).add_args(parser)
 
         parser.add_argument(
             "--scaffold_balanced",
             action="store_true",
             default=False,
             help="balance the scaffold sets",
+        )
+        parser.add_argument(
+            "--rdkit_features_name",
+            type=str,
+            default="rdkit_fingerprint",
+            help="name of rdkit features to use",
         )
 
 
@@ -149,10 +155,9 @@ class MoleNet(Molecules, MoleculeNet):
                 d.y = d.y[:, torch.tensor(self.args.moleculenet_task)]
             d.has_y = ~torch.isnan(d.y)
             d.y[torch.isnan(d.y)] = 0
-            if self.args.use_rdkit_features:
-                d.rdkit_features = torch.tensor(
-                    get_rdkit_feature(d.smiles, method=self.args.rdkit_features_name)
-                )
+            d.rdkit_features = torch.tensor(
+                get_rdkit_feature(d.smiles, method=self.args.rdkit_features_name)
+            )
             dataset.append(d)
         return dataset
 
@@ -197,7 +202,7 @@ class MoleNet(Molecules, MoleculeNet):
             default=False,
             help="balance the scaffold sets",
         )
-        
+
 
 @register_object("stokes_antiobiotics", "dataset")
 class StokesAntibiotics(Molecules):
@@ -220,12 +225,11 @@ class StokesAntibiotics(Molecules):
             mol_datapoint.mean_inhibition = sample["mean_inhibition"]
             mol_datapoint.compound_name = sample["name"]
 
-            if self.args.use_rdkit_features:
-                mol_datapoint.rdkit_features = torch.tensor(
-                    get_rdkit_feature(
-                        sample["smiles"], method=self.args.rdkit_features_name
-                    )
+            mol_datapoint.rdkit_features = torch.tensor(
+                get_rdkit_feature(
+                    sample["smiles"], method=self.args.rdkit_features_name
                 )
+            )
             dataset.append(mol_datapoint)
         return dataset
 
@@ -249,12 +253,12 @@ class StokesAntibiotics(Molecules):
         """
         Prints summary statement with dataset stats
         """
-        class_dist = [s['y'] for s in self.dataset]
+        class_dist = [s["y"] for s in self.dataset]
         return f"Class Distribution: {Counter(class_dist)}"
 
     @staticmethod
     def set_args(args) -> None:
-        super(StokesAntibiotics,StokesAntibiotics).set_args(args)
+        super(StokesAntibiotics, StokesAntibiotics).set_args(args)
         args.num_classes = 2
         args.dataset_file_path = (
             "/Mounts/rbg-storage1/datasets/Metabo/antibiotics/stokes2019_dataset.json"

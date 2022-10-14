@@ -82,7 +82,7 @@ def get_targets(args: Args) -> None:
         target_ids = sorted({
             target_id
             for target_ids in compound_id_to_target_ids.values()
-            for target_id in target_ids
+            for target_id in target_ids if target_id is not None
         })
 
         target_data = pd.DataFrame(data={

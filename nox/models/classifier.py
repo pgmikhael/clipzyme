@@ -129,6 +129,7 @@ class MLPClassifier(AbstractModel):
             help="Use LayerNorm in mlp",
         )
 
+
 @register_object("graph_classifier", "model")
 class GraphClassifier(Classifier):
     def __init__(self, args):
@@ -141,13 +142,13 @@ class GraphClassifier(Classifier):
     def forward(self, batch=None):
         output = {}
         graph_x = self.encoder(batch)[self.encoder_hidden_key]
-        output["encoder_hidden"] = graph_x 
+        output["encoder_hidden"] = graph_x
         batch_size = output["encoder_hidden"].shape[0]
         if self.args.use_rdkit_features:
             features = batch["rdkit_features"].view(batch_size, -1)
-            graph_x = torch.concat([graph_x, features ], dim=-1)
-        output['hidden'] = graph_x
-        output.update(self.mlp({"x": graph_x.float() }))
+            graph_x = torch.concat([graph_x, features], dim=-1)
+        output["hidden"] = graph_x
+        output.update(self.mlp({"x": graph_x.float()}))
         return output
 
     @staticmethod
@@ -169,10 +170,4 @@ class GraphClassifier(Classifier):
             type=int,
             default=0,
             help="number of features",
-        )
-        parser.add_argument(
-            "--rdkit_features_name",
-            type=str,
-            default="rdkit_fingerprint",
-            help="name of rdkit features to use",
         )
