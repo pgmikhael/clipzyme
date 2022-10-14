@@ -196,13 +196,13 @@ class MoleNet(Molecules, MoleculeNet):
             default=None,
             help="task indices",
         )
-        parser.add_argument(
-            "--scaffold_balanced",
-            action="store_true",
-            default=False,
-            help="balance the scaffold sets",
-        )
-
+    
+    def process(self) -> None:
+        super().process()
+    
+    @property
+    def raw_dir(self) -> str:
+        return self.root
 
 @register_object("stokes_antiobiotics", "dataset")
 class StokesAntibiotics(Molecules):
