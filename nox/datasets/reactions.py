@@ -9,9 +9,6 @@ from rxn.chemutils.smiles_randomization import randomize_smiles_rotated
 
 @register_object("chemical_reactions", "dataset")
 class ChemRXN(AbstractDataset):
-    def __init__(self, args: argparse.ArgumentParser, split_group: str) -> None:
-        super().__init__(args, split_group)
-        self.tokenizer = get_object(args.model_name, "model").init_tokenizer(args)
 
     def create_dataset(
         self, split_group: Literal["train", "dev", "test"]
