@@ -4,6 +4,7 @@ from typing import List, Literal, Dict, Iterable, Tuple, Set
 import numpy as np
 import torch
 import inspect
+from collections import defaultdict
 
 from nox.utils.registry import register_object, get_object, md5
 from nox.utils.classes import set_nox_type, classproperty
@@ -20,7 +21,7 @@ import os
 
 
 @register_object("gsm", "dataset")
-class GSMLinkDataset(AbstractDataset, InMemoryDataset):
+class GSMDataset(AbstractDataset, InMemoryDataset):
     def __init__(self, args: argparse.ArgumentParser, split_group: str) -> None:
         """
         Genome Scale Model Dataset
@@ -425,6 +426,8 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
                                 metadata_dict["smiles"]
                             )
                             id2metabolite_features[id].rdkit_features = rdkit_features
+                        else:
+                            id2metabolite_features[id] = metadata_dict["smiles"]
 
                 elif "bigg_gene_id" in metadata_dict:
                     id2enzyme_features[id] = None
@@ -560,6 +563,9 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
                 or len(kwargs["reaction"].get("products", [])) == 0
             ):
                 return True
+            # biomass reaction is not true reaction
+            if "BIOMASS" in kwargs["reaction"]["rxn_id"]:
+                return True
 
         return False
 
@@ -632,7 +638,7 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
         Args:
             parser (argparse.ArgumentParser): argument parser
         """
-        super(GSMLinkDataset, GSMLinkDataset).add_args(parser)
+        super(GSMDataset, GSMDataset).add_args(parser)
         parser.add_argument(
             "--metabolite_feature_type",
             type=str,
@@ -677,37 +683,98 @@ class GSMLinkDataset(AbstractDataset, InMemoryDataset):
 
 
 @register_object("gsm_reactions", "dataset")
-class GSMReactionsDataset(GSMLinkDataset):
+class GSMReactionsDataset(GSMDataset):
     @property
     def get_name(self) -> str:
         return "gsm_reactions"
 
-    def get_triplets(
-        self,
-        reactions: List[Dict],
-        node2id: Dict = {},
-        original_node_ids2metadicts: Dict = {},
-    ) -> Tuple[List[Tuple[int, int, int]], Dict, Dict]:
+    def create_dataset(
+        self, split_group: Literal["train", "dev", "test"]
+    ) -> List[Dict]:
         """
-        params: reactions - list of reactions, typically a json/metadata json format
-        returns: triplets - tensor of triplets where each triplet is (head, tail, relation), of the following:
-            node types: reactant, product, enzyme
+        Creates the dataset of samples from json metadata file.
         """
-        relation2id = {
-            "is_co_reactant_of": 0,
-            "is_co_product_of": 1,
-            "is_co_enzyme_of": 2,
-            "is_co_product_enzyme": 3,
-            "is_co_reactant_enzyme": 4,
-            "is_enzyme_for_reaction": 5,
-            "is_reactant_for_reaction": 6,
-            "is_reaction_of_reactant": 7,
-            "is_product_of_reaction": 8,
-            "is_reaction_for_product": 9,
+        try:
+            saved_data = torch.load(self.processed_paths[0])
+            self.data = saved_data["dataset"]
+            self.nodeid2nodeidx = saved_data["nodeid2nodeidx"]
+
+        except Exception as e:
+            raise Exception("Unable to load dataset", e)
+
+        dataset = []
+
+        self.split_graph = self.data
+
+        self.data.metabolite_features = {
+            k: v for k, v in self.data.metabolite_features.items()
         }
 
-        triplets = []
+        self.data.enzyme_features = {k: v for k, v in self.data.enzyme_features.items()}
 
+        self.split_graph.metabolite_features = {
+            k: v for k, v in self.split_graph.metabolite_features.items()
+        }
+
+        self.split_graph.enzyme_features = {
+            k: v for k, v in self.split_graph.enzyme_features.items()
+        }
+
+        triplets = torch.cat(
+            [
+                self.split_graph.edge_index,
+                self.split_graph.edge_type.unsqueeze(0),
+            ]
+        ).t()
+
+        # make triplets
+        for i, t in enumerate(triplets):
+            dataset.append({"triplet": t})
+
+        return dataset
+
+    def process(self) -> None:
+
+        # list of reactions
+        reactions = self.metadata_json
+
+        # define edge types
+        relation2id = {"is_downstream_reaction": 0, "is_upstream_reaction": 1}
+
+        rxn_entities2metadict = {}
+
+        reactant2rxn = defaultdict(set)
+        product2rxn = defaultdict(set)
+        node2id = {}
+        for rxn_dict in tqdm(reactions):
+            if self.skip_sample(reaction=rxn_dict):
+                continue
+            reactants = rxn_dict.get("reactants", [])
+            products = rxn_dict.get("products", [])
+
+            # metabolites that are this reaction's reactants
+            for r in reactants:
+
+                if r["metabolite_id"] == "actp_c":
+                    print("h")
+
+                reactant2rxn[r["metabolite_id"]].add(rxn_dict["rxn_id"])
+                # store reactant metadict
+                if r["metabolite_id"] not in rxn_entities2metadict:
+                    rxn_entities2metadict[r["metabolite_id"]] = r
+
+            for p in products:
+                # store product metadict
+                if p["metabolite_id"] not in rxn_entities2metadict:
+                    rxn_entities2metadict[p["metabolite_id"]] = p
+                # product2rxn[p["metabolite_id"]].add( rxn_dict["rxn_id"] ) # ? not needed
+
+            reaction_id = rxn_dict["rxn_id"]
+            if reaction_id not in node2id:
+                node2id[reaction_id] = len(node2id)
+
+        triplets = []
+        rxn2entities = {}
         for rxn_dict in tqdm(reactions):
             # skip reactions that dont have any reactants or any products (pseudo-reactions)
             if self.skip_sample(reaction=rxn_dict):
@@ -716,189 +783,99 @@ class GSMReactionsDataset(GSMLinkDataset):
                 )
                 continue
 
-            # get id for each reaction node
             reaction_id = rxn_dict["rxn_id"]
-            if reaction_id not in node2id:
-                node2id[reaction_id] = len(node2id)
-
-            # node_id = node2id[reaction_id]
-
-            # store the dict of the reaction for later use
-            if reaction_id not in original_node_ids2metadicts:
-                original_node_ids2metadicts[reaction_id] = rxn_dict
-
-            reactants = rxn_dict["reactants"]
-            products = rxn_dict["products"]
+            rxn_node_id = node2id[reaction_id]
+            reactants = rxn_dict.get("reactants", [])
+            products = rxn_dict.get("products", [])
             enzymes = rxn_dict.get("proteins", [])
             enzymes = [e for e in enzymes if not self.skip_sample(enzyme=e)]
 
-            # used to make (m1, m2, is_co_reactant_of), bi-directional
-            is_co_reactant_of = set()
-            # used to make (p1, p2, is_co_product_of), bi-directional
-            is_co_product_of = set()
-            # used to make (e1, e2, is_co_enzyme_of), bi-directional
-            is_co_enzyme_of = set()
-            # (p1, e1, is_co_product_enzyme) bi-directional
-            is_co_product_enzyme = []
-            # (m1, e1, is_co_reactant_enzyme), bi-directional
-            is_co_reactant_enzyme = []
-            # (e1, r1, is_enzyme_for_reaction) bi-directional
-            is_enzyme_for_reaction = []
-            # (m1, r1, is_reactant_for_reaction), bi-directional called is_reaction_of_reactant
-            is_reactant_for_reaction = []
-            # (p1, r1, is_product_of_reaction), bi-directional called is_reaction_for_product
-            is_product_of_reaction = []
+            rxn2entities[rxn_node_id] = {
+                "proteins": [p["bigg_gene_id"] for p in enzymes],
+                "reactants": [r["metabolite_id"] for r in reactants],
+                "products": [p["metabolite_id"] for p in products],
+            }
 
-            for reactant in reactants:
-                metabolite_id = reactant["metabolite_id"]
-                if metabolite_id not in node2id:
-                    node2id[metabolite_id] = len(node2id)
+            for e in enzymes:
+                # store enzyme metadict
+                if e["bigg_gene_id"] not in rxn_entities2metadict:
+                    rxn_entities2metadict[e["bigg_gene_id"]] = e
 
-                node_id = node2id[metabolite_id]
-
-                # store the dict of the metabolite for later use
-                if metabolite_id not in original_node_ids2metadicts:
-                    original_node_ids2metadicts[metabolite_id] = reactant
-
-                # add reactants (metabolites) to any relevant relations
-                is_co_reactant_of.add(node_id)
-                if len(products) > 0:
-                    is_reactant_for_reaction += [
-                        node_id,
-                        relation2id["is_reactant_for_reaction"],
-                    ]
-
-                if len(enzymes) > 0:
-                    is_co_reactant_enzyme += [
-                        [node_id, relation2id["is_co_reactant_enzyme"]]
-                        for j in range(len(enzymes))
-                    ]
-
-            for indx, product in enumerate(products):
-                metabolite_id = product["metabolite_id"]
-                if metabolite_id not in node2id:
-                    node2id[metabolite_id] = len(node2id)
-
-                node_id = node2id[metabolite_id]
-
-                # store the dict of the metabolite for later use
-                if metabolite_id not in original_node_ids2metadicts:
-                    original_node_ids2metadicts[metabolite_id] = product
-
-                # add enzymes to reaction edges
-                is_product_of_reaction += [
-                    node_id,
-                    relation2id["is_product_of_reaction"],
-                ]
-
-                # add products (metabolites) to any relevant relations
-                is_co_product_of.add(node_id)
-                if len(enzymes) > 0:
-                    is_co_product_enzyme += [
-                        [node_id, relation2id["is_co_product_enzyme"]]
-                        for j in range(len(enzymes))
-                    ]
-
-            for indx, enzyme in enumerate(enzymes):
-                enzyme_id = enzyme["bigg_gene_id"]
-                if enzyme_id not in node2id:
-                    node2id[enzyme_id] = len(node2id)
-
-                node_id = node2id[enzyme_id]
-
-                # store the dict of the metabolite for later use
-                if enzyme_id not in original_node_ids2metadicts:
-                    original_node_ids2metadicts[enzyme_id] = enzyme
-
-                # add enzymes to reaction edges
-                is_enzyme_for_reaction += [
-                    node_id,
-                    relation2id["is_enzyme_for_reaction"],
-                ]
-
-                # add enzymes (proteins) to any relevant relations
-                is_co_enzyme_of.add(node_id)
-
-                # for each relation already created that requires a product, add those products
-                for i in range(len(reactants)):
-                    is_co_reactant_enzyme[indx + i * len(enzymes)].append(node_id)
-
-                for i in range(len(products)):
-                    is_co_product_enzyme[indx + i * len(enzymes)].append(node_id)
-
-            # add reaction nodes to reaction edges
-            for edge in is_reactant_for_reaction:
-                edge.append(reaction_id)
-            for edge in is_product_of_reaction:
-                edge.append(reaction_id)
-            for edge in is_enzyme_for_reaction:
-                edge.append(reaction_id)
-
-            # Add flip directions
-            # used to make (m1, m2, is_co_reactant_of), bi-directional
-            perms_is_co_reactant_of = [
-                [h, relation2id["is_co_reactant_of"], t]
-                for h, t in itertools.permutations(is_co_reactant_of, 2)
-            ]
-
-            # used to make (p1, p2, is_co_product_of), bi-directional
-            perms_is_co_product_of = [
-                [h, relation2id["is_co_product_of"], t]
-                for h, t in itertools.permutations(is_co_product_of, 2)
-            ]
-
-            # used to make (e1, e2, is_co_enzyme_of), bi-directional
-            perms_is_co_enzyme_of = [
-                [h, relation2id["is_co_enzyme_of"], t]
-                for h, t in itertools.permutations(is_co_enzyme_of, 2)
-            ]
-
-            # (m1, e1, is_co_reactant_enzyme), bi-directional
-            perms_co_reactant_enzymes = is_co_reactant_enzyme + [
-                trip[::-1] for trip in is_co_reactant_enzyme
-            ]
-
-            # is_co_product_enzyme
-            # (m1, e1, is_co_reactant_enzyme), bi-directional
-            perms_co_product_enzymes = is_co_product_enzyme + [
-                trip[::-1] for trip in is_co_product_enzyme
-            ]
-
-            # (e1, r1, is_enzyme_for_reaction), bi-directional
-            is_enzyme_for_reaction = is_enzyme_for_reaction + [
-                trip[::-1] for trip in is_enzyme_for_reaction
-            ]
-
-            # (r1, m1, is_reaction_of_reactant), not bi-directional!! Other direction called is_reactant_for_reaction
-            is_reaction_of_reactant = [trip[::-1] for trip in is_reactant_for_reaction]
-
-            # (e1, r1, is_product_of_reaction), not bi-directional!! Other direction called
-            is_reaction_for_product = [trip[::-1] for trip in is_product_of_reaction]
-
-            triplets += (
-                perms_is_co_reactant_of
-                + perms_is_co_product_of
-                + perms_is_co_enzyme_of
-                + perms_co_reactant_enzymes
-                + perms_co_product_enzymes
-                + is_product_of_reaction
-                + is_reactant_for_reaction
-                + is_enzyme_for_reaction
-                + is_reaction_of_reactant
-                + is_reaction_for_product
+            # find all downstream reactions (by id), i.e., those whose inputs are this rxn's outputs
+            downstream_reactions = list(
+                set([r for p in products for r in reactant2rxn[p["metabolite_id"]]])
             )
-            assert all([len(t) == 3 for t in triplets])
 
-        # change to (head, tail, relation) tuples, rather than [head, relation, tail]
-        triplets = [(triplet[0], triplet[2], triplet[1]) for triplet in triplets]
+            triplets.extend(
+                [
+                    (rxn_node_id, node2id[r], relation2id["is_upstream_reaction"])
+                    for r in downstream_reactions
+                ]
+            )
+
+            # make unidirectional if this reaction is catalyzed by enzyme / rate-limiting
+            if not (len(enzymes) and self.args.make_rate_limiting_rxns_unidirectional):
+                triplets.extend(
+                    [
+                        (node2id[r], rxn_node_id, relation2id["is_downstream_reaction"])
+                        for r in downstream_reactions
+                    ]
+                )
+
         for triplet in triplets:
             assert triplet[2] in relation2id.values()
+
         triplets = torch.tensor(triplets)
-        return triplets, node2id, original_node_ids2metadicts
+
+        # get small molecule / protein features
+        id2metabolites, id2enzymes = self.get_node_features(rxn_entities2metadict)
+
+        # collate expects keys to be strings instead of ints
+        id2metabolites = {str(k): v for k, v in id2metabolites.items()}
+        id2enzymes = {str(k): v for k, v in id2enzymes.items()}
+
+        # make edge and edge type tensors
+        edge_index = triplets[:, :2].t()
+        relation_type = triplets[:, 2]
+
+        # note: all nodes need to exist in the graph for link prediction
+        num_nodes = len(rxn2entities)
+
+        data = Data(
+            metabolite_features=id2metabolites,
+            enzyme_features=id2enzymes,
+            edge_index=edge_index,
+            edge_type=relation_type,
+            num_nodes=num_nodes,
+            node_features=rxn2entities,
+        )
+
+        torch.save(
+            {
+                "dataset": data,
+                "nodeid2nodeidx": node2id,
+            },
+            self.processed_paths[0],
+        )
+
+    @staticmethod
+    def add_args(parser) -> None:
+        """Add class specific args
+
+        Args:
+            parser (argparse.ArgumentParser): argument parser
+        """
+        super(GSMReactionsDataset, GSMReactionsDataset).add_args(parser)
+        parser.add_argument(
+            "--make_rate_limiting_rxns_unidirectional",
+            action="store_true",
+            default=False,
+            help="make unidirectional if there's an enzyme involved",
+        )
 
 
 @register_object("gsm_reaction_enzymes", "dataset")
-class GSMReactionEnzymesDataset(GSMLinkDataset):
+class GSMReactionEnzymesDataset(GSMDataset):
     @property
     def get_name(self) -> str:
         return "gsm_reaction_enzymes"
