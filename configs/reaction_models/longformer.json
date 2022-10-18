@@ -6,7 +6,7 @@
     "dataset_file_path": ["/Mounts/rbg-storage1/datasets/ChemicalReactions/chem_reactions_dataset.json"],
     "randomize_order_in_reaction": [true],
     "use_random_smiles_representation": [true],
-    "lightning_name": ["step_base"],
+    "lightning_name": ["base"],
     "model_name": ["reaction_mlm"],
     "num_hidden_layers": [6],
     "num_classes": [581],
