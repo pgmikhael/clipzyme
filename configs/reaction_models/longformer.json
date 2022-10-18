@@ -15,10 +15,10 @@
     "do_masked_language_model": [true],
     "mlm_probability": [0.2],
     "callback_names": ["lr_monitor checkpointer"],
-    "max_epochs": [20],
+    "max_epochs": [10],
     "lr_decay": [0.1],
-    "lr": [1e-5],
-    "weight_decay": [0.01],
+    "lr": [1e-4],
+    "weight_decay": [0.0001,0.01],
     "loss_names": ["cross_entropy"],
     "precomputed_loss": [true],
     "metric_names": ["classification"],
@@ -32,7 +32,7 @@
     "test": [true],
     "num_sanity_val_steps": [0],
     "val_check_interval": [1.0],
-    "gpus": [7],
+    "gpus": [8],
     "ignore_warnings": [false],
     "dropout": [0],
     "checkpoint_dir": ["/storage/pgmikhael/metabolomics/snapshots/"],
@@ -41,5 +41,5 @@
     "project_name": ["metabolomics"],
     "logger_tags": ["mlm"]
   },
-  "available_gpus": ["1,2,3,4,5,6,7"]
+  "available_gpus": ["0,1,2,3,4,5,6,7"]
 }
