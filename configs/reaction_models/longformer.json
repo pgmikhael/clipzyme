@@ -18,7 +18,7 @@
     "max_epochs": [10],
     "lr_decay": [0.1],
     "lr": [1e-4],
-    "weight_decay": [0.0001,0.01],
+    "weight_decay": [0.0001],
     "loss_names": ["cross_entropy"],
     "precomputed_loss": [true],
     "metric_names": ["classification"],
