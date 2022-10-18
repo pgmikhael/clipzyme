@@ -90,7 +90,8 @@ class StepBase(Base):
         output = self.step(batch, batch_idx, optimizer_idx)
 
         metrics = self.compute_metric(output["preds_dict"])
-        self.log_outputs(metrics, "train")
+        output.update(metrics)
+        self.log_outputs(output, "train")
 
         return {"loss": output["loss"]}
 
@@ -102,7 +103,8 @@ class StepBase(Base):
         output = self.step(batch, batch_idx, optimizer_idx)
 
         metrics = self.compute_metric(output["preds_dict"])
-        self.log_outputs(metrics, "val")
+        output.update(metrics)
+        self.log_outputs(output, "val")
         return {"loss": output["loss"]}
 
     def test_step(self, batch, batch_idx):
@@ -124,7 +126,8 @@ class StepBase(Base):
         }
 
         metrics = self.compute_metric(output["preds_dict"])
-        self.log_outputs(metrics, "test")
+        output.update(metrics)
+        self.log_outputs(output, "test")
 
         return {"loss": output["loss"]}
     
