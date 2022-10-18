@@ -11,8 +11,6 @@ from transformers import (
     LongformerTokenizer,
     LongformerConfig,
     LongformerForMaskedLM,
-    AlbertForMaskedLM,
-    AlbertConfig
 )
 
 
@@ -38,14 +36,18 @@ class LFormerModel(AbstractModel):
             vocab_size=self.tokenizer.vocab_size,
             output_hidden_states=True,
             output_attentions=True,
-            hidden_size=args.hidden_size, 
-            intermediate_size=args.intermediate_size, 
-            embedding_size = args.embedding_size, 
+            hidden_size=args.hidden_size,
+            intermediate_size=args.intermediate_size,
+            embedding_size=args.embedding_size,
             num_attention_heads=args.num_heads,
-            num_hidden_layers = args.num_hidden_layers
+            num_hidden_layers=args.num_hidden_layers,
         )
-        self.model = LongformerForMaskedLM(config)
-
+        if args.longformer_model_path is not None:
+            self.model = LongformerForMaskedLM.from_pretrained(
+                args.longformer_model_path
+            )
+        else:
+            self.model = LongformerForMaskedLM(config)
 
         # variable to easily access device
         self.register_buffer("devicevar", torch.zeros(1, dtype=torch.int8))
@@ -78,7 +80,7 @@ class LFormerModel(AbstractModel):
             _type_: _description_
         """
         output = {}
-        
+
         tokenized_inputs = self.tokenize(batch["x"], self.tokenizer, self.args)
 
         # move to device
@@ -104,7 +106,6 @@ class LFormerModel(AbstractModel):
                 labels[labels == self.tokenizer.pad_token_id] = -100
             tokenized_inputs["labels"] = labels
 
-
         # run through model
         if self.args.freeze_encoder:
             with torch.no_grad():
@@ -126,7 +127,9 @@ class LFormerModel(AbstractModel):
             hidden = result["hidden_states"][-1, 0]
 
         if self.mlm:
-            masked_indices = (tokenized_inputs['input_ids'] == self.tokenizer.mask_token_id ).bool()
+            masked_indices = (
+                tokenized_inputs["input_ids"] == self.tokenizer.mask_token_id
+            ).bool()
             output = {
                 "loss": result.get("loss", None),
                 "logit": result["logits"][masked_indices],
@@ -155,7 +158,9 @@ class LFormerModel(AbstractModel):
 
         labels = inputs.clone()
         # We sample a few tokens in each sequence for MLM training (with probability `self.mlm_probability`)
-        probability_matrix = torch.full(labels.shape, self.mlm_probability, device = self.devicevar.device)
+        probability_matrix = torch.full(
+            labels.shape, self.mlm_probability, device=self.devicevar.device
+        )
         if special_tokens_mask is None:
             special_tokens_mask = [
                 self.tokenizer.get_special_tokens_mask(
@@ -173,7 +178,10 @@ class LFormerModel(AbstractModel):
 
         # 80% of the time, we replace masked input tokens with tokenizer.mask_token ([MASK])
         indices_replaced = (
-            torch.bernoulli(torch.full(labels.shape, 0.8, device = self.devicevar.device)).bool() & masked_indices
+            torch.bernoulli(
+                torch.full(labels.shape, 0.8, device=self.devicevar.device)
+            ).bool()
+            & masked_indices
         )
         inputs[indices_replaced] = self.tokenizer.convert_tokens_to_ids(
             self.tokenizer.mask_token
@@ -181,12 +189,17 @@ class LFormerModel(AbstractModel):
 
         # 10% of the time, we replace masked input tokens with random word
         indices_random = (
-            torch.bernoulli(torch.full(labels.shape, 0.5,device = self.devicevar.device)).bool()
+            torch.bernoulli(
+                torch.full(labels.shape, 0.5, device=self.devicevar.device)
+            ).bool()
             & masked_indices
             & ~indices_replaced
         )
         random_words = torch.randint(
-            len(self.tokenizer), labels.shape, dtype=torch.long, device = self.devicevar.device
+            len(self.tokenizer),
+            labels.shape,
+            dtype=torch.long,
+            device=self.devicevar.device,
         )
         inputs[indices_random] = random_words[indices_random]
 
@@ -195,7 +208,7 @@ class LFormerModel(AbstractModel):
 
     @staticmethod
     def tokenize(list_of_text: List[str], tokenizer, args):
-        raise NotImplementedError 
+        raise NotImplementedError
 
     @staticmethod
     def add_args(parser) -> None:
@@ -280,12 +293,16 @@ class LFormerModel(AbstractModel):
             choices=["mean", "sum", "cls"],
             help="use cls token as hidden representation of sequence",
         )
+        parser.add_argument(
+            "--longformer_model_path",
+            type=str,
+            default=None,
+            help="path to saved model if loading from pretrained",
+        )
 
-              
 
 @register_object("reaction_mlm", "model")
 class ReactionMLM(LFormerModel):
-
     @staticmethod
     def init_tokenizer(args):
         return BertTokenizer(
@@ -307,9 +324,7 @@ class ReactionMLM(LFormerModel):
         x = [tokenize_smiles(r, return_as_str=True) for r in x]
         if args.use_cls_token:
             # add [CLS] and [EOS] tokens
-            x = [
-                f"{tokenizer.cls_token} {r} {tokenizer.eos_token}" for r in x
-            ]
+            x = [f"{tokenizer.cls_token} {r} {tokenizer.eos_token}" for r in x]
 
         # tokenize str characters into tensor of indices with corresponding masks
         tokenized_inputs = tokenizer(

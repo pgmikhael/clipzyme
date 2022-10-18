@@ -137,6 +137,12 @@ class Base(pl.LightningModule, Nox):
         """
         self.phase = "train"
         output = self.step(batch, batch_idx, optimizer_idx)
+
+        if self.args.compute_metrics_every_step:
+            metrics = self.compute_metric(output["preds_dict"])
+            metrics.update(output)
+            self.log_outputs(metrics, "train")
+
         return output
 
     def validation_step(self, batch, batch_idx, optimizer_idx=None):
@@ -145,6 +151,10 @@ class Base(pl.LightningModule, Nox):
         """
         self.phase = "val"
         output = self.step(batch, batch_idx, optimizer_idx)
+        if self.args.compute_metrics_every_step:
+            metrics = self.compute_metric(output["preds_dict"])
+            metrics.update(output)
+            self.log_outputs(metrics, "val")
         return output
 
     def test_step(self, batch, batch_idx):
@@ -164,6 +174,12 @@ class Base(pl.LightningModule, Nox):
         output["preds_dict"] = {
             k: v for k, v in output["preds_dict"].items() if k not in self.UNLOG_KEYS
         }
+
+        if self.args.compute_metrics_every_step:
+            metrics = self.compute_metric(output["preds_dict"])
+            metrics.update(output)
+            self.log_outputs(metrics, "test")
+
         return output
 
     def training_epoch_end(self, outputs):
@@ -207,9 +223,8 @@ class Base(pl.LightningModule, Nox):
         outputs = gather_step_outputs(outputs)
         if isinstance(outputs.get("loss", 0), torch.Tensor):
             outputs["loss"] = outputs["loss"].mean()
-        if "preds_dict" in outputs:
-            if not self.args.predict:
-                outputs.update(self.compute_metric(outputs["preds_dict"]))
+        if ("preds_dict" in outputs) and (not self.args.predict):
+            outputs.update(self.compute_metric(outputs["preds_dict"]))
         self.log_outputs(outputs, "test")
         return
 
@@ -286,7 +301,7 @@ class Base(pl.LightningModule, Nox):
         # log clocktime of methods for epoch
         if (self.args.profiler is not None) and (self.args.log_profiler):
             logging_dict.update(self.get_time_profile(key))
-        self.log_dict(logging_dict, batch_size = 1, prog_bar=True, logger=True)
+        self.log_dict(logging_dict, prog_bar=True, logger=True)
 
     def get_time_profile(self, key):
         """Obtain trainer method times
@@ -404,6 +419,12 @@ class Base(pl.LightningModule, Nox):
             action=set_nox_type("model"),
             default="classifier",
             help="Name of parent model",
+        )
+        parser.add_argument(
+            "--compute_metrics_every_step",
+            action="store_true",
+            default=False,
+            help="Whether to compute model metrics every step. Default is to compute at end of full epoch",
         )
 
 
