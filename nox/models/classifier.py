@@ -171,9 +171,3 @@ class GraphClassifier(Classifier):
             default=0,
             help="number of features",
         )
-        parser.add_argument(
-            "--rdkit_features_name",
-            type=str,
-            default="rdkit_fingerprint",
-            help="name of rdkit features to use",
-        )

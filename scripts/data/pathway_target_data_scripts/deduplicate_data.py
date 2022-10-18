@@ -35,8 +35,8 @@ def deduplicate_data(args: Args) -> None:
 
     # Print statistics
     print(f'Number of unique SMILES = {data[SMILES_COLUMN].nunique():,}')
-    print(f'Number of unique targets = {len(set(data[f"{TARGET_COLUMN}_x"].dropna().unique()) | set(data[f"{TARGET_COLUMN}_y"].dropna().unique())):,}')
-    print(f'Number of unique pathways = {data[PATHWAY_COLUMN].nunique()}')
+    # print(f'Number of unique targets = {len(set(data[f"{TARGET_COLUMN}_x"].dropna().unique()) | set(data[f"{TARGET_COLUMN}_y"].dropna().unique())):,}')
+    # print(f'Number of unique pathways = {data[PATHWAY_COLUMN].nunique()}')
 
     # Save data
     data.to_csv(args.save_path, index=False)

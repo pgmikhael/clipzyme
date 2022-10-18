@@ -1,5 +1,5 @@
 # Constants
-SMILES_COLUMN = 'SMILES'
+SMILES_COLUMN = 'smiles'
 PATHWAY_COLUMN = 'Pathway'
 TARGET_COLUMN = 'Target'
 OTHERS = 'Others'
