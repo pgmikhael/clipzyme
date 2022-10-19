@@ -1,14 +1,15 @@
 """
 Adapted from: https://github.com/itakigawa/pyg_chemprop/blob/main/pyg_chemprop.py
-""" 
+"""
 
 import torch
 import torch.nn as nn
 from torch_geometric.nn import global_mean_pool
 from torch_scatter import scatter_sum
-from tqdm import tqdm 
+from tqdm import tqdm
 from nox.utils.registry import register_object
 from nox.models.abstract import AbstractModel
+
 
 def get_reverse_edge_indices(edge_index):
     revedge_index = torch.zeros(edge_index.shape[1]).long()
@@ -17,16 +18,19 @@ def get_reverse_edge_indices(edge_index):
         edge_from_j = edge_index[0] == j
         revedge_index[k] = torch.where(edge_to_i & edge_from_j)[0]
     return revedge_index
-    
+
+
 def directed_mp(message, edge_index, revedge_index):
     m = scatter_sum(message, edge_index[1], dim=0)
     m_all = m[edge_index[0]]
     m_rev = message[revedge_index]
     return m_all - m_rev
 
+
 def aggregate_at_nodes(num_nodes, message, edge_index):
     m = scatter_sum(message, edge_index[1], dim=0, dim_size=num_nodes)
     return m[torch.arange(num_nodes)]
+
 
 @register_object("chemprop", "model")
 class DMPNNEncoder(AbstractModel):
@@ -117,6 +121,5 @@ class DMPNNEncoder(AbstractModel):
             type=str,
             choices=["none", "sum", "mul", "mean", "min", "max"],
             default="sum",
-            help="Type of pooling to do to obtain graph features"
+            help="Type of pooling to do to obtain graph features",
         )
-        

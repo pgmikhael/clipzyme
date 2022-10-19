@@ -17,7 +17,7 @@ def edge_match(edge_index, query_index):
     # given a tuple (h, r), we will search for all other existing edges starting from head h
     assert reduce(int.__mul__, base.tolist()) < torch.iinfo(torch.long).max
     scale = base.cumprod(0)
-    scale = torch.div(scale[-1], scale, rounding_mode='trunc')
+    scale = torch.div(scale[-1], scale, rounding_mode="trunc")
 
     # hash both the original edge index and the query index to unique integers
     edge_hash = (edge_index * scale.unsqueeze(-1)).sum(dim=0)
@@ -85,11 +85,11 @@ def all_negative(data, batch):
     r_index = pos_r_index.unsqueeze(-1).expand(-1, data.num_nodes)
     # generate all negative tails for this batch
     all_index = torch.arange(data.num_nodes, device=batch.device)
-    h_index, t_index = torch.meshgrid(pos_h_index, all_index, indexing = "ij")
+    h_index, t_index = torch.meshgrid(pos_h_index, all_index, indexing="ij")
     t_batch = torch.stack([h_index, t_index, r_index], dim=-1)
     # generate all negative heads for this batch
     all_index = torch.arange(data.num_nodes, device=batch.device)
-    t_index, h_index = torch.meshgrid(pos_t_index, all_index, indexing = "ij")
+    t_index, h_index = torch.meshgrid(pos_t_index, all_index, indexing="ij")
     h_batch = torch.stack([h_index, t_index, r_index], dim=-1)
 
     return t_batch, h_batch
