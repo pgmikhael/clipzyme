@@ -246,18 +246,18 @@ class MultiTask_Classification(BaseClassification):
         if "has_golds" in predictions_dict:
             metrics = defaultdict(list)
             for col in range(predictions_dict["golds"].shape[1]):
-                row = predictions_dict["has_golds"][:,col]
+                row = predictions_dict["has_golds"][:, col]
                 pr, rc = precision_recall(probs[row, col], golds[row, col])
                 metrics["precision"].append(pr)
                 metrics["recall"].append(rc)
-                metrics["f1"].append( f1(probs[row, col], golds[row, col] ))
-                metrics["roc_auc"].append( auroc(probs[row, col], golds[row, col] ) )
-            stats_dict = {k:torch.stack(v).mean() for k,v in metrics.items()}
+                metrics["f1"].append(f1(probs[row, col], golds[row, col]))
+                metrics["roc_auc"].append(auroc(probs[row, col], golds[row, col]))
+            stats_dict = {k: torch.stack(v).mean() for k, v in metrics.items()}
         else:
-            stats_dict["precision"], stats_dict["recall"] = precision_recall(probs, golds, multiclass=False)
+            stats_dict["precision"], stats_dict["recall"] = precision_recall(
+                probs, golds, multiclass=False
+            )
             stats_dict["f1"] = f1(probs, golds, multiclass=False, average="macro")
             stats_dict["roc_auc"] = auroc(probs, golds, multiclass=False, num_classes=2)
-            
+
         return stats_dict
-
-

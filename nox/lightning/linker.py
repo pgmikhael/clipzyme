@@ -33,7 +33,7 @@ class Linker(Base):
         batch["graph"] = self.trainer.train_dataloader.dataset.datasets.split_graph.to(
             self.device
         )
-        old_triplets = batch['triplet']
+        old_triplets = batch["triplet"]
 
         batch["triplet"] = nbf_utils.negative_sampling(
             batch["graph"],

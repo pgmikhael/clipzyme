@@ -9,7 +9,6 @@ module = sys.modules[__name__]
 
 
 class RSPMMAddMulFunction(autograd.Function):
-
     @staticmethod
     def forward(ctx, edge_index, edge_type, edge_weight, relation, input):
         node_in, node_out = edge_index
@@ -21,7 +20,9 @@ class RSPMMAddMulFunction(autograd.Function):
         else:
             forward = rspmm.rspmm_add_mul_forward_cpu
         output = forward(edge_index, edge_type, edge_weight, relation, input)
-        ctx.save_for_backward(edge_index, edge_type, edge_weight, relation, input, output)
+        ctx.save_for_backward(
+            edge_index, edge_type, edge_weight, relation, input, output
+        )
         return output
 
     @staticmethod
@@ -30,12 +31,13 @@ class RSPMMAddMulFunction(autograd.Function):
             backward = rspmm.rspmm_add_mul_backward_cuda
         else:
             backward = rspmm.rspmm_add_mul_backward_cpu
-        weight_grad, relation_grad, input_grad = backward(*ctx.saved_tensors, output_grad)
+        weight_grad, relation_grad, input_grad = backward(
+            *ctx.saved_tensors, output_grad
+        )
         return None, None, weight_grad, relation_grad, input_grad
 
 
 class RSPMMMinMulFunction(autograd.Function):
-
     @staticmethod
     def forward(ctx, edge_index, edge_type, edge_weight, relation, input):
         node_in, node_out = edge_index
@@ -47,7 +49,9 @@ class RSPMMMinMulFunction(autograd.Function):
         else:
             forward = rspmm.rspmm_min_mul_forward_cpu
         output = forward(edge_index, edge_type, edge_weight, relation, input)
-        ctx.save_for_backward(edge_index, edge_type, edge_weight, relation, input, output)
+        ctx.save_for_backward(
+            edge_index, edge_type, edge_weight, relation, input, output
+        )
         return output
 
     @staticmethod
@@ -56,12 +60,13 @@ class RSPMMMinMulFunction(autograd.Function):
             backward = rspmm.rspmm_min_mul_backward_cuda
         else:
             backward = rspmm.rspmm_min_mul_backward_cpu
-        weight_grad, relation_grad, input_grad = backward(*ctx.saved_tensors, output_grad)
+        weight_grad, relation_grad, input_grad = backward(
+            *ctx.saved_tensors, output_grad
+        )
         return None, None, weight_grad, relation_grad, input_grad
 
 
 class RSPMMMaxMulFunction(autograd.Function):
-
     @staticmethod
     def forward(ctx, edge_index, edge_type, edge_weight, relation, input):
         node_in, node_out = edge_index
@@ -73,7 +78,9 @@ class RSPMMMaxMulFunction(autograd.Function):
         else:
             forward = rspmm.rspmm_max_mul_forward_cpu
         output = forward(edge_index, edge_type, edge_weight, relation, input)
-        ctx.save_for_backward(edge_index, edge_type, edge_weight, relation, input, output)
+        ctx.save_for_backward(
+            edge_index, edge_type, edge_weight, relation, input, output
+        )
         return output
 
     @staticmethod
@@ -82,12 +89,13 @@ class RSPMMMaxMulFunction(autograd.Function):
             backward = rspmm.rspmm_max_mul_backward_cuda
         else:
             backward = rspmm.rspmm_max_mul_backward_cpu
-        weight_grad, relation_grad, input_grad = backward(*ctx.saved_tensors, output_grad)
+        weight_grad, relation_grad, input_grad = backward(
+            *ctx.saved_tensors, output_grad
+        )
         return None, None, weight_grad, relation_grad, input_grad
 
 
 class RSPMMAddAddFunction(autograd.Function):
-
     @staticmethod
     def forward(ctx, edge_index, edge_type, edge_weight, relation, input):
         node_in, node_out = edge_index
@@ -99,7 +107,9 @@ class RSPMMAddAddFunction(autograd.Function):
         else:
             forward = rspmm.rspmm_add_add_forward_cpu
         output = forward(edge_index, edge_type, edge_weight, relation, input)
-        ctx.save_for_backward(edge_index, edge_type, edge_weight, relation, input, output)
+        ctx.save_for_backward(
+            edge_index, edge_type, edge_weight, relation, input, output
+        )
         return output
 
     @staticmethod
@@ -108,12 +118,13 @@ class RSPMMAddAddFunction(autograd.Function):
             backward = rspmm.rspmm_add_add_backward_cuda
         else:
             backward = rspmm.rspmm_add_add_backward_cpu
-        weight_grad, relation_grad, input_grad = backward(*ctx.saved_tensors, output_grad)
+        weight_grad, relation_grad, input_grad = backward(
+            *ctx.saved_tensors, output_grad
+        )
         return None, None, weight_grad, relation_grad, input_grad
 
 
 class RSPMMMinAddFunction(autograd.Function):
-
     @staticmethod
     def forward(ctx, edge_index, edge_type, edge_weight, relation, input):
         node_in, node_out = edge_index
@@ -125,7 +136,9 @@ class RSPMMMinAddFunction(autograd.Function):
         else:
             forward = rspmm.rspmm_min_add_forward_cpu
         output = forward(edge_index, edge_type, edge_weight, relation, input)
-        ctx.save_for_backward(edge_index, edge_type, edge_weight, relation, input, output)
+        ctx.save_for_backward(
+            edge_index, edge_type, edge_weight, relation, input, output
+        )
         return output
 
     @staticmethod
@@ -134,12 +147,13 @@ class RSPMMMinAddFunction(autograd.Function):
             backward = rspmm.rspmm_min_add_backward_cuda
         else:
             backward = rspmm.rspmm_min_add_backward_cpu
-        weight_grad, relation_grad, input_grad = backward(*ctx.saved_tensors, output_grad)
+        weight_grad, relation_grad, input_grad = backward(
+            *ctx.saved_tensors, output_grad
+        )
         return None, None, weight_grad, relation_grad, input_grad
 
 
 class RSPMMMaxAddFunction(autograd.Function):
-
     @staticmethod
     def forward(ctx, edge_index, edge_type, edge_weight, relation, input):
         node_in, node_out = edge_index
@@ -151,7 +165,9 @@ class RSPMMMaxAddFunction(autograd.Function):
         else:
             forward = rspmm.rspmm_max_add_forward_cpu
         output = forward(edge_index, edge_type, edge_weight, relation, input)
-        ctx.save_for_backward(edge_index, edge_type, edge_weight, relation, input, output)
+        ctx.save_for_backward(
+            edge_index, edge_type, edge_weight, relation, input, output
+        )
         return output
 
     @staticmethod
@@ -160,22 +176,30 @@ class RSPMMMaxAddFunction(autograd.Function):
             backward = rspmm.rspmm_max_add_backward_cuda
         else:
             backward = rspmm.rspmm_max_add_backward_cpu
-        weight_grad, relation_grad, input_grad = backward(*ctx.saved_tensors, output_grad)
+        weight_grad, relation_grad, input_grad = backward(
+            *ctx.saved_tensors, output_grad
+        )
         return None, None, weight_grad, relation_grad, input_grad
 
 
-def generalized_rspmm(edge_index, edge_type, edge_weight, relation, input, sum="add", mul="mul"):
+def generalized_rspmm(
+    edge_index, edge_type, edge_weight, relation, input, sum="add", mul="mul"
+):
     name = "RSPMM%s%sFunction" % (sum.capitalize(), mul.capitalize())
     if not hasattr(module, name):
-        raise ValueError("No generalized rspmm implementation found for summation `%s` and multiplication `%s`"
-                         % (sum, mul))
+        raise ValueError(
+            "No generalized rspmm implementation found for summation `%s` and multiplication `%s`"
+            % (sum, mul)
+        )
     Function = getattr(module, name)
 
     node_in, node_out = edge_index
     key = node_in * (node_out.max() + 1) + node_out
     order = key.argsort()
 
-    return Function.apply(edge_index[:, order], edge_type[order], edge_weight[order], relation, input)
+    return Function.apply(
+        edge_index[:, order], edge_type[order], edge_weight[order], relation, input
+    )
 
 
 def load_extension(name, sources, extra_cflags=None, extra_cuda_cflags=None, **kwargs):
@@ -201,4 +225,6 @@ def load_extension(name, sources, extra_cflags=None, extra_cuda_cflags=None, **k
 
 print("Load rspmm extension. This may take a while...")
 path = os.path.join(os.path.dirname(__file__), "source")
-rspmm = load_extension("rspmm", [os.path.join(path, "rspmm.cpp"), os.path.join(path, "rspmm.cu")])
+rspmm = load_extension(
+    "rspmm", [os.path.join(path, "rspmm.cpp"), os.path.join(path, "rspmm.cu")]
+)

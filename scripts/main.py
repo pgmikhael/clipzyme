@@ -22,6 +22,7 @@ from nox.utils.callbacks import set_callbacks
 def train(args):
 
     # Remove callbacks from args for safe pickling later
+    args.find_unused_parameters = False
     trainer = pl.Trainer.from_argparse_args(args)
     args.callbacks = None
     args.num_nodes = trainer.num_nodes
