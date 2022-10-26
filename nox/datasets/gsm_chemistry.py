@@ -45,7 +45,6 @@ class GSMChemistryFCDataset(GSMDataset):
 
         args.num_pathways = len(self.pathway2node_indx)
         args.num_relations = self.num_relations
-        args.num_reactions = len(self.split_graph.node_features)
         args.num_proteins = len(self.split_graph.enzyme_features)
         args.num_metabolites = len(self.split_graph.metabolite_features)
 
