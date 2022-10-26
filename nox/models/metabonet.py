@@ -300,12 +300,6 @@ class MetaboNetPathways(AbstractModel):
             help="number of features",
         )
         parser.add_argument(
-            "--rdkit_features_name",
-            type=str,
-            default="rdkit_fingerprint",
-            help="name of rdkit features to use",
-        )
-        parser.add_argument(
             "--concat_drug",
             action="store_true",
             default=False,
