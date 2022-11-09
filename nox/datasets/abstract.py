@@ -9,6 +9,7 @@ from torch.utils import data
 from nox.utils.loading import get_sample_loader
 from nox.utils.classes import Nox, set_nox_type, classproperty
 from nox.utils.messages import METAFILE_NOTFOUND_ERR, LOAD_FAIL_MSG
+from rich import print
 
 
 class AbstractDataset(data.Dataset, Nox):
@@ -47,6 +48,8 @@ class AbstractDataset(data.Dataset, Nox):
         """
         self.input_loader = get_sample_loader(split_group, args)
         self.load_dataset(args)
+        if args.assign_splits:
+            self.assign_splits(self.metadata_json, args.split_probs, args.seed)
 
     def load_dataset(self, args: argparse.ArgumentParser) -> None:
         """Loads dataset file
@@ -137,7 +140,7 @@ class AbstractDataset(data.Dataset, Nox):
         """
         np.random.seed(seed)
         for idx in range(len(metadata_json)):
-            metadata_json[idx]["split"] = np.random.choice(
+            metadata_json[idx]["split"] = np.radom.choice(
                 ["train", "dev", "test"], p=split_probs
             )
 
