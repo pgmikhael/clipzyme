@@ -49,7 +49,7 @@ class AbstractDataset(data.Dataset, Nox):
         self.input_loader = get_sample_loader(split_group, args)
         self.load_dataset(args)
         if args.assign_splits:
-            self.assign_splits(self.metadata_json, args.split_probs, args.seed)
+            self.assign_splits(self.metadata_json, args.split_probs, args.split_seed)
 
     def load_dataset(self, args: argparse.ArgumentParser) -> None:
         """Loads dataset file
