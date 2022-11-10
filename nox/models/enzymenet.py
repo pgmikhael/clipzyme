@@ -15,6 +15,8 @@ class EznymeSubstrateScore(AbstractModel):
         self.protein_encoder = get_object(args.protein_encoder_name, "model")(args)
         self.substrate_encoder = get_object(args.subtrate_encoder_name, "model")(args)
         self.mlp = get_object(args.protein_substrate_aggregator, "model")(args)
+        if args.activation_name is not None:
+            self.activation = getattr(torch.nn.functional, args.activation_name)
 
     def forward(self, batch=None):
         output = {}
@@ -27,6 +29,8 @@ class EznymeSubstrateScore(AbstractModel):
             "substrate_hidden": substrate_dict["hidden"],
         }
         output.update(mlp_dict)
+        if self.args.activation_name is not None:
+            output['logit'] = self.activation(output['logit'])
         return output
 
     @staticmethod
@@ -56,4 +60,22 @@ class EznymeSubstrateScore(AbstractModel):
             action=set_nox_type("model"),
             default="chemprop",
             help="Name of encoder to use",
+        )
+        parser.add_argument(
+            "--use_rdkit_features",
+            action="store_true",
+            default=False,
+            help="whether using graph-level features from rdkit",
+        )
+        parser.add_argument(
+            "--rdkit_features_dim",
+            type=int,
+            default=0,
+            help="number of features",
+        )
+        parser.add_argument(
+            "--activation_name",
+            type=str,
+            default=None,
+            help="type of activation to be applied on logits",
         )

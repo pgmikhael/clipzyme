@@ -68,6 +68,7 @@ import nox.models.fair_esm
 import nox.models.linear
 import nox.models.metabonet
 import nox.models.longformer
+import nox.models.enzymenet
 
 # comet
 import nox.loggers.comet

@@ -14,8 +14,12 @@ class BrendaKCat(AbstractDataset):
     def create_dataset(
         self, split_group: Literal["train", "dev", "test"]
     ) -> List[dict]:
+        seq2id = {}
         dataset = []
         for kcat_dict in tqdm(self.metadata_json):
+            if kcat_dict['Sequence'] not in seq2id:
+                seq2id[kcat_dict['Sequence']] = len(seq2id)
+
             if self.skip_sample(kcat_dict, split_group):
                 continue
             mol_datapoint = from_smiles(kcat_dict["Smiles"])
@@ -30,9 +34,12 @@ class BrendaKCat(AbstractDataset):
                 "smiles": kcat_dict["Smiles"],
                 "sequence": kcat_dict["Sequence"],
                 "y": self.get_label(kcat_dict),
-                "sample_id": "{}_{}".format(
+                "sample_id": "{}_{}_{}_seq{}_sub{}".format(
+                    kcat_dict["Type"],
                     kcat_dict["ECNumber"],
-                    kcat_dict["organism"].replace(" ", "_").lower(),
+                    kcat_dict["Organism"].replace(" ", "_").lower(),
+                    seq2id[kcat_dict['Sequence']],
+                    kcat_dict["Substrate"],
                 ),
             }
 
@@ -161,7 +168,8 @@ class BrendaKCat(AbstractDataset):
     @staticmethod
     def set_args(args) -> None:
         args.dataset_file_path = "/Mounts/rbg-storage1/datasets/Brenda/DLKcat/DeeplearningApproach/Data/database/Kcat_combination_0918_wildtype_mutant.json"
-
+        args.num_classes = 1
+        
     @property
     def SUMMARY_STATEMENT(self) -> None:
         """

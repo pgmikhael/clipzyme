@@ -104,7 +104,7 @@ class AbstractDataset(data.Dataset, Nox):
         pass
 
     def print_summary_statement(self, dataset, split_group):
-        statement = "{} DATASET CREATED FOR {}.\n{}".format(
+        statement = "{} DATASET CREATED FOR {}.{}".format(
             split_group.upper(), self.args.dataset_name.upper(), self.SUMMARY_STATEMENT
         )
         print(statement)
@@ -140,7 +140,7 @@ class AbstractDataset(data.Dataset, Nox):
         """
         np.random.seed(seed)
         for idx in range(len(metadata_json)):
-            metadata_json[idx]["split"] = np.radom.choice(
+            metadata_json[idx]["split"] = np.random.choice(
                 ["train", "dev", "test"], p=split_probs
             )
 
