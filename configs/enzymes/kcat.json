@@ -4,12 +4,12 @@
       "batch_size": [24],
       "dataset_name": ["brenda_kcat"],
       "assign_splits": [true],
-      "split_type": ["sequence", "ec", "smiles_sequence", "smiles", "random"],
+      "split_type": ["sequence", "ec", "smiles", "random"],
       "split_probs": ["0.8 0.1 0.1"],
       "lightning_name": ["base"],
       "model_name": ["enzyme_substrate_model"],
-      "protein_encoder_name": ["fair_esm2"],
-      "freeze_esm": [true, false],
+      "protein_encoder_name": ["fair_esm"],
+      "freeze_esm": [true],
       "activation_name": ["relu"],
       "subtrate_encoder_name": ["chemprop"],
       "chemprop_num_layers": [3],
@@ -24,7 +24,7 @@
       "lr_decay": [0.1],
       "lr": [5e-4],
       "loss_names": ["mse"],
-      "mse_loss_lambda": [1e-2],
+      "mse_loss_lambda": [1.0],
       "metric_names": ["regression"],
       "checkpoint_save_last": [false],
       "monitor": ["val_spearman"],
@@ -45,6 +45,6 @@
       "project_name": ["metabolomics"],
       "logger_tags": ["kcat"]
     },
-    "available_gpus": ["2,3,4,5,6,7"]
+    "available_gpus": [2,3,4,5,6,7]
   }
   

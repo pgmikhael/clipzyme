@@ -48,14 +48,23 @@ class BrendaKCat(AbstractDataset):
         return dataset
 
     def get_label(self, sample):
-        return float(sample["Value"])
+        return np.log2(float(sample["Value"]))
 
     def skip_sample(self, sample, split_group) -> bool:
         """
         Return True if sample should be skipped and not included in data
+
+        Ref: https://github.com/SysBioChalmers/DLKcat/blob/master/DeeplearningApproach/Code/model/preprocess_all.py
         """
         if sample["split"] != split_group:
             return True
+        
+        if "." in sample["Smiles"]:
+            return True
+        
+        if float(sample["Value"]) <= 0:
+            return True
+
         return False
 
     def assign_splits(self, metadata_json, split_probs, seed=0) -> None:
