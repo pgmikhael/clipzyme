@@ -13,6 +13,12 @@ from torchmetrics.functional import (
     f1,
     precision_recall_curve,
     average_precision,
+    mean_squared_error,
+    mean_absolute_error,
+    r2_score,
+    cosine_similarity,
+    pearson_corrcoef,
+    spearman_corrcoef
 )
 import torch
 import copy
@@ -246,18 +252,56 @@ class MultiTask_Classification(BaseClassification):
         if "has_golds" in predictions_dict:
             metrics = defaultdict(list)
             for col in range(predictions_dict["golds"].shape[1]):
-                row = predictions_dict["has_golds"][:, col]
+                row = predictions_dict["has_golds"][:,col]
                 pr, rc = precision_recall(probs[row, col], golds[row, col])
                 metrics["precision"].append(pr)
                 metrics["recall"].append(rc)
-                metrics["f1"].append(f1(probs[row, col], golds[row, col]))
-                metrics["roc_auc"].append(auroc(probs[row, col], golds[row, col]))
-            stats_dict = {k: torch.stack(v).mean() for k, v in metrics.items()}
+                metrics["f1"].append( f1(probs[row, col], golds[row, col] ))
+                metrics["roc_auc"].append( auroc(probs[row, col], golds[row, col] ) )
+            stats_dict = {k:torch.stack(v).mean() for k,v in metrics.items()}
         else:
-            stats_dict["precision"], stats_dict["recall"] = precision_recall(
-                probs, golds, multiclass=False
-            )
+            stats_dict["precision"], stats_dict["recall"] = precision_recall(probs, golds, multiclass=False)
             stats_dict["f1"] = f1(probs, golds, multiclass=False, average="macro")
             stats_dict["roc_auc"] = auroc(probs, golds, multiclass=False, num_classes=2)
+            
+        return stats_dict
+
+
+@register_object("regression", 'metric')
+class BaseRegression(Nox):
+    def __init__(self, args) -> None:
+        super().__init__()
+
+    @property
+    def metric_keys(self):
+        return ['probs', 'golds']
+
+    def __call__(self, logging_dict, args) -> Dict:
+        '''
+        Computes standard regresssion loss
+        Args:
+            logging_dict: dictionary obtained from computing loss and model outputs
+                * should contain the keys ['probs', 'golds']
+            args: argparser Namespace
+
+        Returns:
+            stats_dict (dict): contains (where applicable) values for mse, mae, r2
+        '''
+        stats_dict = OrderedDict()
+
+        probs = logging_dict['probs']
+        golds = logging_dict['golds']
+
+        stats_dict['mse'] = mean_squared_error(probs, golds)
+        stats_dict['mae'] = mean_absolute_error(probs, golds)
+        stats_dict['pearson'] = pearson_corrcoef(probs.view(-1), golds.view(-1))
+        stats_dict['spearman'] = spearman_corrcoef(probs.view(-1), golds.view(-1))
+
+        r2 = r2_score(probs, golds, multioutput='raw_values')
+        if probs.shape[-1] > 1:
+            stats_dict['r2'] = torch.stack([r for r in r2 if not torch.isinf(r)] ).mean()
+            stats_dict['cosine_similarity'] = cosine_similarity(probs, golds, reduction = 'mean')
+        else:
+            stats_dict['r2'] = r2
 
         return stats_dict
