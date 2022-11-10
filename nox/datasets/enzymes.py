@@ -19,18 +19,24 @@ class BrendaKCat(AbstractDataset):
             if self.skip_sample(kcat_dict, split_group):
                 continue
             mol_datapoint = from_smiles(kcat_dict["Smiles"])
-            mol_datapoint.y = self.get_label(kcat_dict)
-            mol_datapoint.sample_id = "{}_{}".format(
-                kcat_dict["ECNumber"],
-                kcat_dict["organism"].replace(" ", "_").lower(),
-            )
-            mol_datapoint.sequence = kcat_dict["Sequence"]
             mol_datapoint.rdkit_features = torch.tensor(
                 get_rdkit_feature(
                     kcat_dict["Smiles"], method=self.args.rdkit_features_name
                 )
             )
-            dataset.append(mol_datapoint)
+
+            sample = {
+                "mol": mol_datapoint,
+                "smiles": kcat_dict["Smiles"],
+                "sequence": kcat_dict["Sequence"],
+                "y": self.get_label(kcat_dict),
+                "sample_id": "{}_{}".format(
+                    kcat_dict["ECNumber"],
+                    kcat_dict["organism"].replace(" ", "_").lower(),
+                ),
+            }
+
+            dataset.append(sample)
 
         return dataset
 
