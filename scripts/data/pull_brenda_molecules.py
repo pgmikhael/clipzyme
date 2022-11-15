@@ -28,12 +28,12 @@ parser.add_argument(
 )
 parser.add_argument(
     "--brenda_username",
-    default="pgmikhael@csail.mit.edu",
+    default=None,
     help="brenda username",
 )
 parser.add_argument(
     "--brenda_pw",
-    default="Runni3-syrfoc-xabzoj",
+    default=None,
     help="brenda password",
 )
 
