@@ -88,7 +88,7 @@ class BrendaKCat(AbstractDataset):
 
             #  split based on key
             samples = set([sample[key] for sample in metadata_json])
-            samples = list(samples)
+            samples = sorted(list(samples))
             np.random.shuffle(samples)
             split_indices = np.cumsum(np.array(split_probs) * len(samples)).astype(int)
             split_indices = np.concatenate([[0], split_indices])
@@ -106,7 +106,7 @@ class BrendaKCat(AbstractDataset):
             ):
                 #  split based on sequence
                 samples = set([sample["Sequence"] for sample in metadata_json])
-                samples = list(samples)
+                samples = sorted(list(samples))
                 np.random.shuffle(samples)
                 split_indices = np.cumsum(np.array(split_probs) * len(samples)).astype(
                     int
@@ -115,7 +115,7 @@ class BrendaKCat(AbstractDataset):
 
                 #  split based on smiles
                 samples = set([sample["Smiles"] for sample in metadata_json])
-                samples = list(samples)
+                samples = sorted(list(samples))
                 np.random.shuffle(samples)
                 split_indices = np.cumsum(np.array(split_probs) * len(samples)).astype(
                     int
