@@ -17,7 +17,7 @@ from nox.utils.parsing import parse_args
 from nox.utils.registry import get_object
 import nox.utils.loading as loaders
 from nox.utils.callbacks import set_callbacks
-
+from rich import print
 
 def train(args):
 
