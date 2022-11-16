@@ -72,13 +72,15 @@ class BrendaKCat(AbstractDataset):
         if self.args.split_type == "random":
             super().assign_splits(metadata_json, split_probs, seed)
 
-        elif self.args.split_type in ["smiles", "sequence", "ec"]:
+        elif self.args.split_type in ["smiles", "sequence", "ec", "organism"]:
             if self.args.split_type == "smiles":
                 key = "Smiles"
             elif self.args.split_type == "sequence":
                 key = "Sequence"
             elif self.args.split_type == "ec":
                 key = "ECNumber"
+            elif self.args.split_type == "organism":
+                key = "Organism"
 
             #  split based on key
             samples = set([sample[key] for sample in metadata_json])
@@ -147,6 +149,7 @@ class BrendaKCat(AbstractDataset):
                     sample["split"] = np.random.choice(
                         ["train", "dev"], p=[1 - dev_probs, dev_probs]
                     )
+        
         elif self.args.split_type == "mutation":
             #  split based on mutation
             assert len(split_probs) == 2, "Mutation split only supports 2 splits"
