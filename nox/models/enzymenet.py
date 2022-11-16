@@ -62,18 +62,6 @@ class EznymeSubstrateScore(AbstractModel):
             help="Name of encoder to use",
         )
         parser.add_argument(
-            "--use_rdkit_features",
-            action="store_true",
-            default=False,
-            help="whether using graph-level features from rdkit",
-        )
-        parser.add_argument(
-            "--rdkit_features_dim",
-            type=int,
-            default=0,
-            help="number of features",
-        )
-        parser.add_argument(
             "--activation_name",
             type=str,
             default=None,

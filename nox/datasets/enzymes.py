@@ -66,7 +66,7 @@ class BrendaKCat(AbstractDataset):
         # skip if sequence, smile pair has inconsistent values (across organisms, conditions)
         smi = sample["Smiles"]
         seq = sample["Sequence"]
-        if any(i != seq_smi_2_y[f"{smi}{seq}"][0] for i in seq_smi_2_y):
+        if any(i != seq_smi_2_y[f"{seq}{smi}"][0] for i in seq_smi_2_y[f"{seq}{smi}"]):
             return True 
 
         return False
