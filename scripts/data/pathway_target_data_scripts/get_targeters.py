@@ -45,10 +45,9 @@ with open(
 
 
 chembl_path = (
-        "/Mounts/rbg-storage1/datasets/ChEMBL/chembl_31/chembl_31_sqlite/chembl_31.db"
-    )
+    "/Mounts/rbg-storage1/datasets/ChEMBL/chembl_31/chembl_31_sqlite/chembl_31.db"
+)
 CHEMBL_DB = sqlite3.connect(chembl_path)
-
 
 
 def get_model_uniprots(metabolic_model):
@@ -85,13 +84,13 @@ def get_pubchem_assays_results(aid):
     columns = compound_pg["Table"]["Columns"]["Column"]
     results = []
     for row in compound_pg["Table"]["Row"]:
-        results.append({ colname:row["Cell"][i] for i, colname in enumerate(columns)})
-    
+        results.append({colname: row["Cell"][i] for i, colname in enumerate(columns)})
+
     # break up cid queries into 100 chunks
-    cid_index = columns.index('CID')
+    cid_index = columns.index("CID")
     cids = [row["Cell"][cid_index] for row in compound_pg["Table"]["Row"]]
-    cid_queries = [','.join(cids[i:(i+100)]) for i in range(0,len(cids), 100)]
-    
+    cid_queries = [",".join(cids[i : (i + 100)]) for i in range(0, len(cids), 100)]
+
     smiles_results = []
     for cid_query in cid_queries:
         smiles_data = requests.get(
@@ -152,30 +151,32 @@ def get_chembl_compounds(protein_id):
     cursor.execute(cmd)
     compounds = cursor.fetchall()
 
-
     if len(compounds) == 0:
-        return 
+        return
 
     results = []
     for hit in compounds:
         rdict = {
-            key: hit[i] for i, key in enumerate([
-                'compund_chembl_id',
-                'canonical_smiles',
-                'compound_key',
-                'assay_description',
-                'assay_standard_type',
-                'assay_standard_relation',
-                'assay_standard_value',
-                'assay_standard_units',
-                'assay_activity_comment',
-                'target_chembl_id'
-                'target_name',
-                'target_organism'])
+            key: hit[i]
+            for i, key in enumerate(
+                [
+                    "compund_chembl_id",
+                    "canonical_smiles",
+                    "compound_key",
+                    "assay_description",
+                    "assay_standard_type",
+                    "assay_standard_relation",
+                    "assay_standard_value",
+                    "assay_standard_units",
+                    "assay_activity_comment",
+                    "target_chembl_id" "target_name",
+                    "target_organism",
+                ]
+            )
         }
-        rdict['protein_id'] = protein_id
+        rdict["protein_id"] = protein_id
         results.append(rdict)
-        
+
     return results
 
 
@@ -184,22 +185,24 @@ if __name__ == "__main__":
     args = parser.parse_args()
     metabolic_model = json.load(open(args.dataset_path, "r"))
 
-    # list of protein ids 
+    # list of protein ids
     metabolic_proteins = get_model_uniprots(metabolic_model)
-    
+
     if args.from_chembl:
         # get chembl compounds
-        chembl_compounds = p_map(get_chembl_compounds, metabolic_proteins) # list of lists or None
+        chembl_compounds = p_map(
+            get_chembl_compounds, metabolic_proteins
+        )  # list of lists or None
 
-        chembl_targeters = {
-            p: c for p,c in zip(metabolic_proteins, chembl_compounds) 
-        }
+        chembl_targeters = {p: c for p, c in zip(metabolic_proteins, chembl_compounds)}
 
         json.dump(chembl_targeters, open(args.output_file, "w"))
 
     if args.from_pubchem:
         # pubchem
-        pubchem_aids = p_map(get_pubchem_assays, metabolic_proteins) # list of (protein_id, aids)
+        pubchem_aids = p_map(
+            get_pubchem_assays, metabolic_proteins
+        )  # list of (protein_id, aids)
 
         aids_union = []
         for r in pubchem_aids:
@@ -208,14 +211,18 @@ if __name__ == "__main__":
         aids_union = list(set(aids_union))
 
         aids_union = [str(a) for a in aids_union]
-        aid_queries = [','.join(aids_union[i:(i+100)]) for i in range(0,len(aids_union), 100)]
-        
-        pubchem_compounds = p_map(get_pubchem_assays_results, aid_queries) # list of lists
+        aid_queries = [
+            ",".join(aids_union[i : (i + 100)]) for i in range(0, len(aids_union), 100)
+        ]
+
+        pubchem_compounds = p_map(
+            get_pubchem_assays_results, aid_queries
+        )  # list of lists
 
         pubchem_compounds = list(set([item for ls in pubchem_compounds for item in ls]))
         pubchem_targeters = defaultdict(list)
         for rdict in pubchem_compounds:
-            pubchem_targeters[rdict['Target Accession']].append(rdict)
+            pubchem_targeters[rdict["Target Accession"]].append(rdict)
 
         assert all([i in metabolic_proteins for i in pubchem_targeters])
 
