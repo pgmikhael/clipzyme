@@ -11,6 +11,7 @@ class FairEsm(AbstractModel):
     """
     Refer to https://github.com/facebookresearch/esm#available-models
     """
+
     def __init__(self, args):
         super(FairEsm, self).__init__()
         self.args = args
@@ -22,8 +23,9 @@ class FairEsm(AbstractModel):
         self.register_buffer("devicevar", torch.zeros(1, dtype=torch.int8))
         if args.freeze_esm:
             self.model.eval()
-        
+
         self.repr_layer = args.esm_hidden_layer
+        self.use_cls_token = args.use_cls_token
 
     def forward(self, x):
         """
@@ -47,21 +49,24 @@ class FairEsm(AbstractModel):
         # Generate per-sequence representations via averaging
         hiddens = []
         for sample_num, sample in enumerate(x):
-            hiddens.append(
-                result["representations"][self.repr_layer][
-                    sample_num, 1 : len(sample) + 1
-                ].mean(0)
-            )
+            if self.use_cls_token:
+                h = result["representations"][self.repr_layer][sample_num][0]
+            else:
+                # remove cls and eos tokens
+                h = result["representations"][self.repr_layer][sample_num][1:-1].mean(0)
+
+            hiddens.append(h)
 
         output["hidden"] = torch.stack(hiddens)
 
         return output
-    
+
     def truncate_protein(self, x, max_length=1024):
         # max length allowed is 1024
         return [
-            (i, s[: 1024 - 2]) if not isinstance(x[0], list) else (i, s[0][: 1024 - 2]) for i, s in enumerate(x) 
-        ]  
+            (i, s[: 1024 - 2]) if not isinstance(x[0], list) else (i, s[0][: 1024 - 2])
+            for i, s in enumerate(x)
+        ]
 
     @staticmethod
     def add_args(parser) -> None:
@@ -94,14 +99,21 @@ class FairEsm(AbstractModel):
             default=12,
             help="do not update encoder weights",
         )
+        parser.add_argument(
+            "--use_cls_token",
+            action="store_true",
+            default=False,
+            help="use cls token as representation",
+        )
+
 
 @register_object("fair_esm2", "model")
 class FairEsm2(FairEsm):
     def truncate_protein(self, x, max_length=torch.inf):
         return [
-            (i, s) if not isinstance(x[0], list) else (i, s[0]) for i, s in enumerate(x) 
-        ]  
-    
+            (i, s) if not isinstance(x[0], list) else (i, s[0]) for i, s in enumerate(x)
+        ]
+
 
 @register_object("protein_encoder", "model")
 class ProteinEncoder(AbstractModel):
@@ -124,9 +136,7 @@ class ProteinEncoder(AbstractModel):
         else:
             output_esm = self.encoder(batch["x"])
         # output["protein_hidden"] = output_esm["hidden"]
-        output.update( 
-                self.mlp({"x": output_esm["hidden"]}) 
-                )
+        output.update(self.mlp({"x": output_esm["hidden"]}))
         return output
 
     @staticmethod
