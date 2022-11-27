@@ -75,10 +75,12 @@ if __name__ == "__main__":
 
                 url = LIGAND_URL.format(molid)
                 mol_page = requests.get(url)
-                soup = BeautifulSoup(mol_page.text, "html.parser")
+                # soup = BeautifulSoup(mol_page.text, "html.parser")
 
                 # get inchikey
-                title = re.findall("\(.*?\)", soup.title.text)
+                # title =  soup.title.text
+                title = re.findall("""(?<=<title>).*?(?=<\/title>)""", mol_page.text)[0]
+                title = re.findall("\(.*?\)", title)
                 for c in title:
                     if molid in c:
                         inchi = c.split()[-1].strip(")")
@@ -99,11 +101,28 @@ if __name__ == "__main__":
                 molinfo["name"] = name
 
                 # get link to structure db
-                for link in soup.find_all("a"):
-                    if "chebi" in link.get("href", ""):
-                        molinfo["chebi_link"] = link.get("href")
-                    if "pccompound" in link.get("href", ""):
-                        molinfo["pubchem_link"] = link.get("href")
+                # for link in soup.find_all("a"):
+                #     if "chebi" in link.get("href", ""):
+                #         molinfo["chebi_link"] = link.get("href")
+                #     if "pccompound" in link.get("href", ""):
+                #         molinfo["pubchem_link"] = link.get("href")
+
+                try:
+                    chebi_index = mol_page.text.index(
+                        "http://www.ebi.ac.uk/chebi/searchId.do?chebiId=CHEBI:"
+                    )
+                    chebi_link = mol_page.text[chebi_index : chebi_index + 100]
+                    molinfo["chebi_link"] = chebi_link.split(" ")[0].strip('"')
+                except:
+                    pass
+                try:
+                    pubchem_index = mol_page.text.index(
+                        "http://www.ncbi.nlm.nih.gov/sites/entrez"
+                    )
+                    pubchem_link = mol_page.text[pubchem_index : pubchem_index + 500]
+                    molinfo["pubchem_link"] = pubchem_link.split(" ")[0].strip("'")
+                except:
+                    pass
 
                 if molinfo.get("chebi_link", None):
                     molinfo["chebi_data"] = CHEBI_DB[
