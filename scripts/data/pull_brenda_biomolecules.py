@@ -54,7 +54,7 @@ if __name__ == "__main__":
 
     pattern = """(?<=<div class="cell">).*?(?=<\/div>)"""
 
-    brenda_dataset = json.load(open(args.input_file_path, "r"))
+    # brenda_dataset = json.load(open(args.input_file_path, "r"))
 
     if args.get_molecules:
 
@@ -150,7 +150,7 @@ if __name__ == "__main__":
 
         #     brenda_mol_ids.append(molinfo)
 
-        brenda_mol_ids = [{"brenda_id": i} for i in range(1, 260600, 1)]
+        brenda_mol_ids = [{"brenda_id": str(i)} for i in range(1, 260600, 1)]
 
         brenda_molecules = p_map(get_molecule_info, brenda_mol_ids)
 
