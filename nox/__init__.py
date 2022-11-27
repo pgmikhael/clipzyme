@@ -27,6 +27,7 @@ import nox.datasets.molecules
 import nox.datasets.gsm_chemistry
 import nox.datasets.reactions
 import nox.datasets.enzymes
+import nox.datasets.brenda
 
 # augmentation
 import nox.augmentations.rawinput

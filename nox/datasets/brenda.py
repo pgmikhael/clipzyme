@@ -242,19 +242,35 @@ class Brenda(AbstractDataset):
             "--ec_level",
             type=int,
             default=0,
-            choices=[0,1,2,3]
+            choices=[0,1,2,3],
             help="EC level to use (e.g., ec_level 1 of '1.2.3.1' -> '1.2')",
+        )
+        parser.add_argument(
+            "--mcsa_file_path",
+            type=str,
+            default="/Mounts/rbg-storage1/datasets/Enzymes/MCSA/entries.json",
+            help="M-CSA entries data"
+        )
+        parser.add_argument(
+            "--mcsa_homologs_file_path",
+            type=str,
+            default="/Mounts/rbg-storage1/datasets/Enzymes/MCSA/homologues_residues.json",
+            help="M-CSA homologues entries data"
+        )
+        parser.add_argument(
+            "--mcsa_biomolecules_path",
+            type=str,
+            default="/Mounts/rbg-storage1/datasets/Enzymes/MCSA/mcsa_biomolecules.json",
+            help="M-CSA biomolecules metadata"
         )
 
     @staticmethod
     def set_args(args) -> None:
+        super(Brenda, Brenda).set_args(args)
         args.dataset_file_path = (
             "/Mounts/rbg-storage1/datasets/Enzymes/Brenda/brenda_2022_2.json"
         )
 
-        args.mcsa_file_path = "/Mounts/rbg-storage1/datasets/Enzymes/MCSA/entries.json"
-        args.mcsa_homologs_file_path = "/Mounts/rbg-storage1/datasets/Enzymes/MCSA/homologues_residues.json"
-        args.mcsa_biomolecules_path =  "/Mounts/rbg-storage1/datasets/Enzymes/MCSA/mcsa_biomolecules.json"
 
 
 @register_object("brenda_constants", "dataset")
@@ -266,7 +282,7 @@ class BrendaConstants(Brenda):
         samples = []
         for ec, ec_dict in tqdm(self.metadata_json.items(), desc="Creating dataset"):
             proteinid2uniprot = {
-                k: v[0]["accessions"] for k, v in ec_dict["proteins"].items()
+                k: v[0]["accessions"][0] for k, v in ec_dict["proteins"].items() if len(v[0]["accessions"]) == 1
             }
             protein2organism = {k: v["value"] for k, v in ec_dict["organisms"].items()}
 
@@ -278,7 +294,7 @@ class BrendaConstants(Brenda):
                 for protein in proteins:
 
                     protein_id = proteinid2uniprot[protein]
-                    organism = protein2organism[protein]
+                    organism = protein2organism[protein].replace(" ", "_")
 
                     if "min_value" in entry and "max_value" in entry:
                         value = (
@@ -286,13 +302,13 @@ class BrendaConstants(Brenda):
                             entry["max_value"],
                         )
                     else:
-                        value = entry["value"]
+                        value = entry["num_value"]
 
                     sample = {
-                        "sequence": self.brenda_proteins[protein_id],
+                        "sequence": self.brenda_proteins[protein_id]['sequence'],
                         "protein_id": protein_id,
                         "y": self.get_label(value, self.args.enzyme_property),
-                        "sample_id": f"org{organism}_ec{ec}_prot{protein_id}",
+                        "sample_id": f"org{organism.lower()}_ec{ec}_prot{protein_id}",
                         "ec": ec,
                         "organism": organism,
                     }
@@ -302,7 +318,7 @@ class BrendaConstants(Brenda):
                             "sample_id"
                         ] = f"{sample['sample_id']}_substrate{substrate}"
                         sample["substrate"] = substrate
-                        smiles = self.brenda_smiles.get(substrate, None)
+                        smiles = self.get_smiles(substrate)
                         if smiles:
                             mol_datapoint = from_smiles(smiles)
                             mol_datapoint.rdkit_features = torch.tensor(
@@ -361,6 +377,14 @@ class BrendaConstants(Brenda):
             return True
 
         return False
+
+    def get_smiles(self, substrate):
+        substrate_data = self.brenda_smiles.get(substrate, None)
+        if substrate_data.get('chebi_link', False):
+            return substrate_data['chebi_link'].get('SMILES', None)
+        elif substrate_data.get('pubchem_link', False):
+            return substrate_data['pubchem_link'].get('canonical_smiles', None)
+        return 
 
     def get_label(self, value, property_name):
         if property_name == "turnover_number":
