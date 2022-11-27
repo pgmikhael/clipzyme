@@ -44,10 +44,11 @@ class Brenda(AbstractDataset):
                 # split based on uniprot_id
                 samples = []
                 for _, ec_dict in metadata_json.items():
-                    samples.extend(
-                        v[0]["accessions"] for k, v in ec_dict["proteins"].items()
-                    )
-
+                    if not ec_dict.get("proteins", False):
+                        continue
+                    for k, v in ec_dict["proteins"].items():
+                        samples.extend(v[0]["accessions"])
+                    
             elif self.args.split_type == "ec":
                 # split based on ec number
                 samples = list(metadata_json.keys())
@@ -448,7 +449,8 @@ class BrendaEC(Brenda):
             ec_task = '.'.join(ec.split('.')[: self.args.ec_level + 1])
 
             for k, v in ec_dict["proteins"].items():
-                uniprot2ec[v[0]["accessions"]].append(self.ec2class[ec_task])
+                for pid in v[0]["accessions"]:
+                    uniprot2ec[pid].append(self.ec2class[ec_task])
         
 
         # create dataset of (protein, multi-task label) pairs
@@ -456,7 +458,7 @@ class BrendaEC(Brenda):
         for protein_id, ec_list in tqdm(uniprot2ec.items(), desc="Creating dataset"):
 
             sample = {
-                "sequence": self.brenda_proteins[protein_id],
+                "sequence": self.brenda_proteins[protein_id]['sequence'],
                 "protein_id": protein_id,
                 "y": self.get_label(ec_list),
                 "sample_id": f"prot{protein_id}",
@@ -470,7 +472,7 @@ class BrendaEC(Brenda):
         return dataset
 
     def get_label(self, ec_list):
-        y = torch.zeros(len(self.args.num_classes))
+        y = torch.zeros(self.args.num_classes)
         for ec in ec_list:
             y[ec] = 1
         return y
@@ -482,10 +484,6 @@ class BrendaEC(Brenda):
 
         # if sequence is unknown
         if sample["sequence"] is None:
-            return True
-
-        # check if multiple sequences
-        if len(sample["sequence"]) > 1:
             return True
 
         return False
