@@ -41,7 +41,7 @@ if __name__ == "__main__":
             mcsa_mols.add(mol["chebi_id"])
 
     mcsa_molecules_dict = {}
-    for mol in mcsa_mols:
+    for mol in tqdm(mcsa_mols, desc='Getting Chebi data'):
         mcsa_molecules_dict[mol] = CHEBI_DB.get(f"CHEBI:{mol}", None)
 
     # get data
@@ -79,12 +79,15 @@ if __name__ == "__main__":
         Args:
             uniprot (str): uniprot
         """
+        if uniprot == "":
+            return {"uniprot": uniprot, "sequence": None}
         fasta = u.get_fasta(uniprot)
         if fasta is None:
             return {"uniprot": uniprot, "sequence": None}
         seq = parse_fasta(fasta)
         return {"uniprot": uniprot, "sequence": seq}
 
+    uniprots = list(uniprots)
     protein_info = p_map(get_protein_info, uniprots)
     protein_info = {d["uniprot"]: d for d in protein_info}
 
