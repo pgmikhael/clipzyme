@@ -52,24 +52,11 @@ parser.add_argument(
 if __name__ == "__main__":
     args = parser.parse_args()
 
+    pattern = """(?<=<div class="cell">).*?(?=<\/div>)"""
+
     brenda_dataset = json.load(open(args.input_file_path, "r"))
 
     if args.get_molecules:
-        # get molecules from brenda
-        brenda_mols = set()
-        for ecid, ecdict in tqdm(brenda_dataset["data"].items()):
-            for key in ["cofactor", "activating_compound", "inhibitor"]:
-                if key in ecdict:
-                    brenda_mols.update([d["value"] for d in ecdict[key]])
-
-            for key in ["natural_reaction", "reaction"]:
-                if key in ecdict:
-                    brenda_mols.update(
-                        [e for d in ecdict[key] for e in d.get("educts", [])]
-                    )
-                    brenda_mols.update(
-                        [e for d in ecdict[key] for e in d.get("products", [])]
-                    )
 
         def get_molecule_info(molinfo):
             """Get molecule id from BRENDA
@@ -97,6 +84,20 @@ if __name__ == "__main__":
                         inchi = c.split()[-1].strip(")")
                         molinfo["inchi"] = inchi
 
+                # find with pattern and window around divs
+                index = mol_page.text.index(
+                    '<div class="header"><a name="INCHIKEY"></a>InChIKey</div>'
+                )
+                cells = re.findall(pattern, mol_page.text[(index + 63) : (index + 500)])
+                assert len(cells) == 3
+                name = cells[1]
+                if molinfo.get("inchi", False):
+                    assert inchi == cells[2]
+
+                # second_col = soup.body.find(text="BRENDA Name")
+                # name = list(second_col.next_elements)[3].next.next.next
+                molinfo["name"] = name
+
                 # get link to structure db
                 for link in soup.find_all("a"):
                     if "chebi" in link.get("href", ""):
@@ -116,22 +117,40 @@ if __name__ == "__main__":
                 return molinfo
             return molinfo
 
-        brenda_mols = list(brenda_mols)
+        # get molecules from brenda
+        # brenda_mols = set()
+        # for ecid, ecdict in tqdm(brenda_dataset["data"].items()):
+        #     for key in ["cofactor", "activating_compound", "inhibitor"]:
+        #         if key in ecdict:
+        #             brenda_mols.update([d["value"] for d in ecdict[key]])
 
-        client = Client(WSDL)
-        password = hashlib.sha256(args.brenda_pw.encode("utf-8")).hexdigest()
-        parameters = [(args.brenda_username, password, mol) for mol in brenda_mols]
+        #     for key in ["natural_reaction", "reaction"]:
+        #         if key in ecdict:
+        #             brenda_mols.update(
+        #                 [e for d in ecdict[key] for e in d.get("educts", [])]
+        #             )
+        #             brenda_mols.update(
+        #                 [e for d in ecdict[key] for e in d.get("products", [])]
+        #             )
 
-        brenda_mol_ids = []
-        for param in tqdm(parameters):
-            molinfo = {"name": param[-1]}
-            try:
-                molid = client.service.getLigandStructureIdByCompoundName(*param)
-                molinfo["brenda_id"] = molid
-            except:
-                molinfo["brenda_id"] = None
+        # brenda_mols = list(brenda_mols)
 
-            brenda_mol_ids.append(molinfo)
+        # client = Client(WSDL)
+        # password = hashlib.sha256(args.brenda_pw.encode("utf-8")).hexdigest()
+        # parameters = [(args.brenda_username, password, mol) for mol in brenda_mols]
+
+        # brenda_mol_ids = []
+        # for param in tqdm(parameters):
+        #     molinfo = {"name": param[-1]}
+        #     try:
+        #         molid = client.service.getLigandStructureIdByCompoundName(*param)
+        #         molinfo["brenda_id"] = molid
+        #     except:
+        #         molinfo["brenda_id"] = None
+
+        #     brenda_mol_ids.append(molinfo)
+
+        brenda_mol_ids = [{"brenda_id": i} for i in range(1, 260600, 1)]
 
         brenda_molecules = p_map(get_molecule_info, brenda_mol_ids)
 
@@ -143,7 +162,7 @@ if __name__ == "__main__":
         u = UniProt(verbose=False)
 
         uniprots = []
-        for _, ec_dict in brenda_dataset['data'].items():
+        for _, ec_dict in brenda_dataset["data"].items():
             if "proteins" in ec_dict:
                 for k, v in ec_dict["proteins"].items():
                     uniprots.extend(v[0]["accessions"])
