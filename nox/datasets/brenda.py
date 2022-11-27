@@ -50,7 +50,7 @@ class Brenda(AbstractDataset):
 
             elif self.args.split_type == "ec":
                 # split based on ec number
-                samples = list(metadata_json.keys())[1:]
+                samples = list(metadata_json.keys())
 
             samples = sorted(list(set(samples)))
             np.random.shuffle(samples)
@@ -281,19 +281,22 @@ class BrendaConstants(Brenda):
 
         samples = []
         for ec, ec_dict in tqdm(self.metadata_json.items(), desc="Creating dataset"):
-            proteinid2uniprot = {
-                k: v[0]["accessions"][0] for k, v in ec_dict["proteins"].items() if len(v[0]["accessions"]) == 1
-            }
+            if not ec_dict.get("proteins", False):
+                continue
+
+            proteinid2uniprot = {k: v[0]["accessions"] for k, v in ec_dict["proteins"].items() }
             protein2organism = {k: v["value"] for k, v in ec_dict["organisms"].items()}
 
-            for entry in ec_dict[self.args.enzyme_property]:
+            for entry in ec_dict.get(self.args.enzyme_property, []):
                 proteins = entry.get("proteins", [])
 
                 substrate = entry.get("value", None)
 
                 for protein in proteins:
 
-                    protein_id = proteinid2uniprot[protein]
+                    protein_ids = proteinid2uniprot[protein]
+                    if isinstance(protein_ids, str):
+                        protein_ids = [protein_ids]
                     organism = protein2organism[protein].replace(" ", "_")
 
                     if "min_value" in entry and "max_value" in entry:
@@ -304,32 +307,33 @@ class BrendaConstants(Brenda):
                     else:
                         value = entry["num_value"]
 
-                    sample = {
-                        "sequence": self.brenda_proteins[protein_id]['sequence'],
-                        "protein_id": protein_id,
-                        "y": self.get_label(value, self.args.enzyme_property),
-                        "sample_id": f"org{organism.lower()}_ec{ec}_prot{protein_id}",
-                        "ec": ec,
-                        "organism": organism,
-                    }
+                    for protein_id in protein_ids:
+                        sample = {
+                            "sequence": self.brenda_proteins[protein_id]['sequence'],
+                            "protein_id": protein_id,
+                            "y": self.get_label(value, self.args.enzyme_property),
+                            "sample_id": f"org{organism.lower()}_ec{ec}_prot{protein_id}",
+                            "ec": ec,
+                            "organism": organism,
+                        }
 
-                    if substrate:
-                        sample[
-                            "sample_id"
-                        ] = f"{sample['sample_id']}_substrate{substrate}"
-                        sample["substrate"] = substrate
-                        smiles = self.get_smiles(substrate)
-                        if smiles:
-                            mol_datapoint = from_smiles(smiles)
-                            mol_datapoint.rdkit_features = torch.tensor(
-                                get_rdkit_feature(
-                                    smiles, method=self.args.rdkit_features_name
+                        if substrate:
+                            sample[
+                                "sample_id"
+                            ] = f"{sample['sample_id']}_substrate{substrate}"
+                            sample["substrate"] = substrate
+                            smiles = self.get_smiles(substrate)
+                            if smiles:
+                                mol_datapoint = from_smiles(smiles)
+                                mol_datapoint.rdkit_features = torch.tensor(
+                                    get_rdkit_feature(
+                                        smiles, method=self.args.rdkit_features_name
+                                    )
                                 )
-                            )
-                            sample["mol"] = mol_datapoint
-                        sample["smiles"] = smiles
+                                sample["mol"] = mol_datapoint
+                            sample["smiles"] = smiles
 
-                    samples.append(sample)
+                        samples.append(sample)
 
         # map (sequence, smile) pairs to list of labels
         seq_smi_2_y = defaultdict(list)
@@ -380,10 +384,12 @@ class BrendaConstants(Brenda):
 
     def get_smiles(self, substrate):
         substrate_data = self.brenda_smiles.get(substrate, None)
-        if substrate_data.get('chebi_link', False):
-            return substrate_data['chebi_link'].get('SMILES', None)
-        elif substrate_data.get('pubchem_link', False):
-            return substrate_data['pubchem_link'].get('canonical_smiles', None)
+        if substrate_data is None:
+            return
+        if substrate_data.get('chebi_data', False):
+            return substrate_data['chebi_data'].get('SMILES', None)
+        elif substrate_data.get('pubchem_data', False):
+            return substrate_data['pubchem_data'].get('canonical_smiles', None)
         return 
 
     def get_label(self, value, property_name):
@@ -436,6 +442,9 @@ class BrendaEC(Brenda):
         for ec, ec_dict in tqdm(
             self.metadata_json.items(), desc="Iterating over Brenda"
         ):
+            if not ec_dict.get("proteins", False):
+                continue
+            
             ec_task = '.'.join(ec.split('.')[: self.args.ec_level + 1])
 
             for k, v in ec_dict["proteins"].items():
