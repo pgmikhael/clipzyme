@@ -7,9 +7,9 @@ from tqdm import tqdm
 import random
 from rxn.chemutils.smiles_randomization import randomize_smiles_rotated
 
+
 @register_object("chemical_reactions", "dataset")
 class ChemRXN(AbstractDataset):
-
     def create_dataset(
         self, split_group: Literal["train", "dev", "test"]
     ) -> List[dict]:
@@ -43,24 +43,25 @@ class ChemRXN(AbstractDataset):
                 reaction = "{}>>{}".format(".".join(reactants), ".".join(products))
 
             if self.args.use_random_smiles_representation:
-                try: 
+                try:
                     reactants = [randomize_smiles_rotated(s) for s in reactants]
                     products = [randomize_smiles_rotated(s) for s in products]
                     reaction = "{}>>{}".format(".".join(reactants), ".".join(products))
                 except:
-                    pass 
-            
+                    pass
 
             item["x"] = reaction
+            item["reactants"] = ".".join(reactants)
+            item["products"] = ".".join(products)
 
-            return item 
+            return item
 
         except Exception:
             warnings.warn(f"Could not load sample: {item['sample_id']}")
 
     @staticmethod
     def add_args(parser) -> None:
-        super(ChemRXN,ChemRXN).add_args(parser)
+        super(ChemRXN, ChemRXN).add_args(parser)
         parser.add_argument(
             "--randomize_order_in_reaction",
             action="store_true",

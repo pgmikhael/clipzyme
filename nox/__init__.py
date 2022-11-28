@@ -50,10 +50,12 @@ import nox.learning.schedulers.basic
 # losses
 import nox.learning.losses.basic
 import nox.learning.losses.link_prediction
+import nox.learning.losses.contrastive
 
 # metrics
 import nox.learning.metrics.basic
 import nox.learning.metrics.link_prediction
+import nox.learning.metrics.representation
 
 # callbacks
 import nox.callbacks.basic
@@ -70,6 +72,8 @@ import nox.models.linear
 import nox.models.metabonet
 import nox.models.longformer
 import nox.models.enzymenet
+import nox.models.seq2seq
+import nox.models.contrastive
 
 # comet
 import nox.loggers.comet

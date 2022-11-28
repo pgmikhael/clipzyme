@@ -44,8 +44,8 @@ class LFormerModel(AbstractModel):
         )
         if args.longformer_model_path is not None:
             state_dict = torch.load(args.longformer_model_path)
-            self.model = LongformerForMaskedLM(state_dict['config'])
-            self.model.load_state_dict(state_dict['state_dict'])
+            self.model = LongformerForMaskedLM(state_dict["config"])
+            self.model.load_state_dict(state_dict["state_dict"])
         else:
             self.model = LongformerForMaskedLM(config)
 
