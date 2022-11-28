@@ -10,7 +10,7 @@
     "model_name": ["reaction_encoder"],
     "use_cls_token": [true],
     "num_hidden_layers": [6],
-    "num_classes": [581],
+    "num_classes": [582],
     "vocab_path": ["/Mounts/rbg-storage1/datasets/ChemicalReactions/vocab.txt"],
     "max_seq_len": [4096],
     "callback_names": ["lr_monitor"],

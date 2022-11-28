@@ -17,8 +17,8 @@ class ReactionEncoder(AbstractModel):
 
         self.tokenizer = self.init_tokenizer(args)
         
-        architecture_config = self.get_transformer_model(args)
-        config = EncoderDecoderConfig.from_encoder_decoder_configs(architecture_config, architecture_config)
+        econfig, dconfig = self.get_transformer_model(args)
+        config = EncoderDecoderConfig.from_encoder_decoder_configs(econfig, dconfig)
         self.model = EncoderDecoderModel(config=config)
         self.config = self.model.config
         self.args = args
@@ -26,7 +26,18 @@ class ReactionEncoder(AbstractModel):
 
     def get_transformer_model(self, args):
         if args.transformer_model == "bert":
-            config = BertConfig(
+            enc_config = BertConfig(
+                max_position_embeddings=args.max_seq_len,
+                vocab_size=self.tokenizer.vocab_size,
+                output_hidden_states=True,
+                output_attentions=True,
+                hidden_size=args.hidden_size,
+                intermediate_size=args.intermediate_size,
+                embedding_size=args.embedding_size,
+                num_attention_heads=args.num_heads,
+                num_hidden_layers=args.num_hidden_layers,
+            )
+            dec_config = BertConfig(
                 max_position_embeddings=args.max_seq_len,
                 vocab_size=self.tokenizer.vocab_size,
                 output_hidden_states=True,
@@ -39,7 +50,7 @@ class ReactionEncoder(AbstractModel):
             )
         else:
             raise NotImplementedError
-        return config
+        return enc_config, dec_config
 
     @staticmethod
     def init_tokenizer(args):
@@ -51,6 +62,7 @@ class ReactionEncoder(AbstractModel):
             padding=True,
             truncation=True,
             model_max_length=args.max_seq_len,
+            cls_token="[CLS]",
             eos_token="[EOS]",
         )
 
@@ -99,22 +111,12 @@ class ReactionEncoder(AbstractModel):
         for k, v in decoder_input_ids.items():
             decoder_input_ids[k] = v.to(self.devicevar.device)
 
-        # from https://github.com/huggingface/transformers/blob/main/src/transformers/data/data_collator.py#L607
-        # If special token mask has been preprocessed, pop it from the dict.
-        # special_tokens_mask = tokenized_inputs.pop("special_tokens_mask", None)
-
-        # output = self.model(
-        #     input_ids=encoder_input_ids,
-        #     decoder_input_ids=decoder_input_ids,
-        #     output_hidden_states=True,
-        #     return_dict=True,
-        # )
-
-        # return output
-
         return_dict = self.config.use_return_dict
 
-        encoder_outputs = self.model.encoder(input_ids=encoder_input_ids['input_ids'])
+        encoder_outputs = self.model.encoder(
+                input_ids=encoder_input_ids['input_ids'],
+                attention_mask=encoder_input_ids['attention_mask'],
+                )
 
         encoder_hidden_states = encoder_outputs[0]
 
@@ -129,19 +131,31 @@ class ReactionEncoder(AbstractModel):
         # Decode
         decoder_outputs = self.model.decoder(
             input_ids=decoder_input_ids['input_ids'],
+            attention_mask=decoder_input_ids['attention_mask'],
             encoder_hidden_states=encoder_hidden_states,
+            encoder_attention_mask=encoder_input_ids['attention_mask'],
             return_dict=return_dict,
         )
 
+        labels = decoder_input_ids['input_ids'].clone()
+        labels[~decoder_input_ids['attention_mask'].bool()] = -100 # remove pad tokens from loss
         logits = decoder_outputs.logits if return_dict else decoder_outputs[0]
+        # transformers/models/bert/modeling_bert.py:1233
+        # we are doing next-token prediction; shift prediction scores and input ids by one 
+        shifted_logits = logits[:, :-1, :].contiguous() 
+        labels = labels[:, 1:].contiguous()   
         loss = torch.nn.functional.cross_entropy(
-            logits.reshape(-1, self.model.decoder.config.vocab_size),
-            decoder_input_ids['input_ids'].view(-1),
+            shifted_logits.reshape(-1, self.model.decoder.config.vocab_size),
+            labels.view(-1),
         )
 
+        metric_labels = labels.view(-1)
+        metric_logits = shifted_logits.reshape(-1, self.model.decoder.config.vocab_size)[metric_labels!= -100]
+        metric_labels = metric_labels[ metric_labels!= -100]
         output = {
             "loss": loss,
-            "logits": decoder_outputs.logits,
+            "logit": metric_logits,
+            "y": metric_labels,
             "decoder_hidden_states": decoder_outputs.hidden_states,
             "past_key_values": decoder_outputs.past_key_values,
             "decoder_hidden_states": decoder_outputs.hidden_states,

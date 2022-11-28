@@ -6,7 +6,7 @@ import warnings
 from tqdm import tqdm
 import random
 from rxn.chemutils.smiles_randomization import randomize_smiles_rotated
-
+from nox.utils.smiles import standardize_reaction
 
 @register_object("chemical_reactions", "dataset")
 class ChemRXN(AbstractDataset):
@@ -53,6 +53,9 @@ class ChemRXN(AbstractDataset):
             item["x"] = reaction
             item["reactants"] = ".".join(reactants)
             item["products"] = ".".join(products)
+            
+            if standardize_reaction(reaction) == ">>":
+                return
 
             return item
 
