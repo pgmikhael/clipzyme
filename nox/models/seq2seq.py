@@ -6,7 +6,7 @@ from nox.utils.classes import set_nox_type
 from nox.models.abstract import AbstractModel
 from nox.utils.registry import register_object, get_object
 from nox.utils.smiles import standardize_reaction, tokenize_smiles
-from transformers import EncoderDecoderModel, LongformerConfig, BertTokenizer
+from transformers import EncoderDecoderModel, EncoderDecoderConfig, BertConfig, BertTokenizer
 from transformers.modeling_outputs import BaseModelOutput
 
 
@@ -15,18 +15,18 @@ class ReactionEncoder(AbstractModel):
     def __init__(self, args):
         super().__init__()
 
-        architecture_config = self.get_transformer_model(args)
-
         self.tokenizer = self.init_tokenizer(args)
-
-        self.model = EncoderDecoderModel.from_encoder_decoder_configs(
-            architecture_config, architecture_config
-        )
+        
+        architecture_config = self.get_transformer_model(args)
+        config = EncoderDecoderConfig.from_encoder_decoder_configs(architecture_config, architecture_config)
+        self.model = EncoderDecoderModel(config=config)
         self.config = self.model.config
+        self.args = args
+        self.register_buffer("devicevar", torch.zeros(1, dtype=torch.int8))
 
     def get_transformer_model(self, args):
-        if args.transformer_model == "longformer":
-            config = LongformerConfig(
+        if args.transformer_model == "bert":
+            config = BertConfig(
                 max_position_embeddings=args.max_seq_len,
                 vocab_size=self.tokenizer.vocab_size,
                 output_hidden_states=True,
@@ -47,7 +47,7 @@ class ReactionEncoder(AbstractModel):
             vocab_file=args.vocab_path,
             do_lower_case=False,
             do_basic_tokenize=False,
-            sep_token=".",
+            # sep_token=".",
             padding=True,
             truncation=True,
             model_max_length=args.max_seq_len,
@@ -57,7 +57,7 @@ class ReactionEncoder(AbstractModel):
     @staticmethod
     def tokenize(list_of_text: List[str], tokenizer, args):
         # standardize reaction
-        x = [standardize_reaction(r) for r in list_of_text]
+        x = [standardize_reaction(r + ">>")[:-2]  for r in list_of_text]
         x = [tokenize_smiles(r, return_as_str=True) for r in x]
         if args.use_cls_token:
             # add [CLS] and [EOS] tokens
@@ -112,15 +112,9 @@ class ReactionEncoder(AbstractModel):
 
         # return output
 
-        return_dict = (
-            return_dict if return_dict is not None else self.config.use_return_dict
-        )
+        return_dict = self.config.use_return_dict
 
-        if encoder_outputs is None:
-            encoder_outputs = self.model.encoder(input_ids=encoder_input_ids)
-
-        elif isinstance(encoder_outputs, tuple):
-            encoder_outputs = BaseModelOutput(*encoder_outputs)
+        encoder_outputs = self.model.encoder(input_ids=encoder_input_ids['input_ids'])
 
         encoder_hidden_states = encoder_outputs[0]
 
@@ -134,18 +128,19 @@ class ReactionEncoder(AbstractModel):
 
         # Decode
         decoder_outputs = self.model.decoder(
-            input_ids=decoder_input_ids,
+            input_ids=decoder_input_ids['input_ids'],
             encoder_hidden_states=encoder_hidden_states,
             return_dict=return_dict,
         )
 
         logits = decoder_outputs.logits if return_dict else decoder_outputs[0]
-        loss = torch.nn.functinal.cross_entropy_loss(
-            logits.reshape(-1, self.decoder.config.vocab_size),
-            decoder_input_ids.view(-1),
+        loss = torch.nn.functional.cross_entropy(
+            logits.reshape(-1, self.model.decoder.config.vocab_size),
+            decoder_input_ids['input_ids'].view(-1),
         )
 
         output = {
+            "loss": loss,
             "logits": decoder_outputs.logits,
             "decoder_hidden_states": decoder_outputs.hidden_states,
             "past_key_values": decoder_outputs.past_key_values,
@@ -160,6 +155,12 @@ class ReactionEncoder(AbstractModel):
 
     @staticmethod
     def add_args(parser) -> None:
+        parser.add_argument(
+            "--transformer_model",
+            type=str,
+            default="bert",
+            help="name of backbone model"
+        )
         parser.add_argument(
             "--vocab_path",
             type=str,
@@ -249,7 +250,7 @@ class ReactionEncoder(AbstractModel):
         )
 
 
-@register_object("reaction_encoder", "model")
+@register_object("enzymatic_reaction_encoder", "model")
 class EnzymaticReactionEncoder(ReactionEncoder):
     def __init__(self, args):
         super().__init__(args)
@@ -262,6 +263,16 @@ class EnzymaticReactionEncoder(ReactionEncoder):
 
         encoder_input_ids = self.tokenize(batch["reactants"], self.tokenizer, self.args)
         decoder_input_ids = self.tokenize(batch["products"], self.tokenizer, self.args)
+
+        # input for embedding
+        input_shape = encoder_input_ids.size()
+        batch_size, seq_length = input_shape
+        if hasattr(self.embeddings, "token_type_ids"):
+            buffered_token_type_ids = self.embeddings.token_type_ids[:, :seq_length]
+            buffered_token_type_ids_expanded = buffered_token_type_ids.expand(batch_size, seq_length)
+            token_type_ids = buffered_token_type_ids_expanded
+        else:
+            token_type_ids = torch.zeros(input_shape, dtype=torch.long, device=device)
 
         # move to device
         for k, v in encoder_input_ids.items():
@@ -276,11 +287,25 @@ class EnzymaticReactionEncoder(ReactionEncoder):
 
         if self.append_enzyme_to_hiddens:
             # append to embeddings of reactants
-            embeddings = self.model.encoder.embeddings(input_ids=encoder_input_ids)
+            embeddings = self.model.encoder.embeddings(
+                    input_ids=encoder_input_ids,
+                    token_type_ids=token_type_ids,
+                    past_key_values_length=0
+                    )
             embeddings_w_protein = torch.cat(
                 [protein_output["hidden"], embeddings], dim=1
             )
-            encoder_outputs = self.model.encoder.model(embeddings_w_protein)
+
+            head_mask = self.model.get_head_mask(head_mask, self.config.num_hidden_layers)
+
+            encoder_outputs = self.model.encoder.encoder(
+                    embeddings_w_protein,
+                    head_mask=head_mask,
+                    use_cache=False,
+                    output_attentions=self.config.output_attentions,
+                    output_hidden_states=self.config.output_hidden_states,
+                    return_dict=self.config.use_return_dict,
+                    )
         else:
             # get reactant embeddings
             encoder_outputs = self.model.encoder(input_ids=encoder_input_ids)
