@@ -1,5 +1,5 @@
 from collections import OrderedDict
-from nox.utils.classes import uspto
+from nox.utils.classes import Nox
 from nox.utils.registry import register_object
 import torch
 
@@ -16,7 +16,7 @@ def get_feature_similarity(h):
 
 
 @register_object("contrastive_stat", "metric")
-class ContrastiveStatistics(uspto):
+class ContrastiveStatistics(Nox):
     def __init__(self, args) -> None:
         super().__init__()
         keys_for_contrastive_views_as_tuples = []
@@ -46,7 +46,7 @@ class ContrastiveStatistics(uspto):
 
 
 @register_object("alignment_uniformity", "metric")
-class AlignmentUniformityLoss(object):
+class AlignmentUniformityLoss(Nox):
     def __init__(self, args) -> None:
         super().__init__()
         """
