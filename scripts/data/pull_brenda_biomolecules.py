@@ -8,7 +8,7 @@ from tqdm import tqdm
 from p_tqdm import p_map
 import pubchempy
 from bioservices import UniProt
-import pickle
+import pickle, os
 
 WSDL = "https://www.brenda-enzymes.org/soap/brenda_zeep.wsdl"
 LIGAND_URL = "https://www.brenda-enzymes.org/ligand.php?brenda_ligand_id={}"
@@ -34,6 +34,12 @@ parser.add_argument(
     help="Whether to get molecules from BRENDA",
 )
 parser.add_argument(
+    "--get_smiles",
+    action="store_true",
+    default=False,
+    help="Map molecules to smiles using pubchem or chebi",
+)
+parser.add_argument(
     "--get_proteins",
     action="store_true",
     default=False,
@@ -50,161 +56,154 @@ parser.add_argument(
     help="brenda password",
 )
 
+
+def get_brenda_ids(sect):
+    pattern = """(?<=<div class="cell">).*?(?=<\/div>)"""
+    l = len('<div class="cell">')
+    sects = []
+    for i in range(3):
+        i1 = sect.index('<div class="cell">')
+        sect = sect[i1:]
+        if i == 2:
+            i2 = sect[l:].index("</div>") + 6
+        else:
+            i2 = sect[l:].index('<div class="cell">')
+        parsed_sect = re.findall(pattern, sect[: i2 + l])[0]
+        sects.append(parsed_sect)
+        sect = sect[i2 + l :]
+    return sects
+
+
+def get_molecule_info(molinfo):
+    """Get molecule id from BRENDA
+
+    Args:
+        mol (str): molecule name
+        args (argparse): argparse object
+
+    Returns:
+        str: BRENDA molecule id
+    """
+    if molinfo["brenda_id"] is None:
+        return molinfo
+    try:
+        molid = molinfo["brenda_id"]
+
+        url = LIGAND_URL.format(molid)
+        mol_page = requests.get(url)
+
+        # get inchikey
+        title = re.findall("""(?<=<title>).*?(?=<\/title>)""", mol_page.text)[0]
+        title = re.findall("\(.*?\)", title)
+        for c in title:
+            if molid in c:
+                inchi = c.split()[-1].strip(")")
+                molinfo["inchi"] = inchi
+
+        # find name with pattern and window around divs
+        try:
+            index = mol_page.text.index(
+                '<div class="header"><a name="INCHIKEY"></a>InChIKey</div>'
+            )
+            cells = get_brenda_ids(mol_page.text[(index + 63) : (index + 500)])
+            name = cells[1]
+            if molinfo.get("inchi", False):
+                assert inchi == cells[2]
+
+            molinfo["name"] = name
+        except:
+            pass
+
+        # find synonyms
+        try:
+            synonym_index = mol_page.text.index("Synonyms:")
+            synonym_section = mol_page.text[
+                (synonym_index + 15) : (synonym_index + 10000)
+            ]
+            synonyms = re.findall("""(?<=<div>).*?(?=<\/div>)""", synonym_section)[
+                0
+            ].split(", ")
+            synonyms = [s.strip(" ") for s in synonyms]
+            molinfo["synonyms"] = synonyms
+        except:
+            pass
+
+        try:
+            chebi_index = mol_page.text.index(
+                "http://www.ebi.ac.uk/chebi/searchId.do?chebiId=CHEBI:"
+            )
+            chebi_link = mol_page.text[chebi_index : chebi_index + 100]
+            molinfo["chebi_link"] = chebi_link.split(" ")[0].strip('"')
+        except:
+            pass
+
+        try:
+            pubchem_index = mol_page.text.index(
+                "http://www.ncbi.nlm.nih.gov/sites/entrez"
+            )
+            pubchem_link = mol_page.text[pubchem_index : pubchem_index + 500]
+            molinfo["pubchem_link"] = pubchem_link.split(" ")[0].strip("'")
+        except:
+            pass
+
+    except Exception as e:
+        molinfo["error"] = e
+        print(e)
+        return molinfo
+
+    return molinfo
+
+
+def get_smiles(molinfo):
+    """Get smiles from BRENDA
+
+    Args:
+        molinfo (dict): molecule
+    """
+    if molinfo.get("chebi_link", None):
+        molinfo["chebi_data"] = CHEBI_DB[molinfo["chebi_link"].split("chebiId=")[-1]]
+    elif molinfo.get("pubchem_link", None):
+        molinfo["pubchem_data"] = pubchempy.get_compounds(
+            molinfo["pubchem_link"].split("term=")[-1], "inchikey"
+        )[0].to_dict()
+    return molinfo
+
+
 if __name__ == "__main__":
     args = parser.parse_args()
 
-    pattern = """(?<=<div class="cell">).*?(?=<\/div>)"""
-
-    # brenda_dataset = json.load(open(args.input_file_path, "r"))
-
     if args.get_molecules:
-        
-        def get_brenda_ids(sect):
-            pattern = """(?<=<div class="cell">).*?(?=<\/div>)"""
-            l = len('<div class="cell">')
-            sects = []
-            for i in range(3):
-                i1 = sect.index('<div class="cell">')
-                sect = sect[i1:]
-                if i == 2:
-                    i2 = sect[l:].index('</div>') + 6
-                else:
-                    i2 = sect[l:].index('<div class="cell">')
-                parsed_sect = re.findall(pattern, sect[:i2+l])[0]
-                sects.append(parsed_sect)
-                sect = sect[i2+l:]
-            return sects
 
+        if os.path.exists(args.output_file_path):
+            last_brenda_molecules = pickle.load(open(args.output_file_path, "rb"))
+            last_brenda_molecules_dict = {
+                j["brenda_id"]: j for j in last_brenda_molecules
+            }
 
-        def get_molecule_info(molinfo):
-            """Get molecule id from BRENDA
+        brenda_mol_ids = []
+        brenda_retrieved_molecules = []
+        for i in range(1, 260600, 1):
+            if last_brenda_molecules_dict.get(i, False) or last_brenda_molecules_dict[
+                str(i)
+            ].get("errors", False):
+                brenda_mol_ids.append({"brenda_id": str(i)})
+            else:
+                brenda_retrieved_molecules.append(last_brenda_molecules_dict[str(i)])
 
-            Args:
-                mol (str): molecule name
-                args (argparse): argparse object
+        brenda_molecules = p_map(get_molecule_info, brenda_mol_ids)
 
-            Returns:
-                str: BRENDA molecule id
-            """
-            if molinfo["brenda_id"] is None:
-                return molinfo
-            try:
-                molid = molinfo["brenda_id"]
-
-                url = LIGAND_URL.format(molid)
-                mol_page = requests.get(url)
-
-                # get inchikey
-                title = re.findall("""(?<=<title>).*?(?=<\/title>)""", mol_page.text)[0]
-                title = re.findall("\(.*?\)", title)
-                for c in title:
-                    if molid in c:
-                        inchi = c.split()[-1].strip(")")
-                        molinfo["inchi"] = inchi
-
-                # find name with pattern and window around divs
-                try:
-                    index = mol_page.text.index(
-                        '<div class="header"><a name="INCHIKEY"></a>InChIKey</div>'
-                    )
-                    cells = get_brenda_ids( mol_page.text[(index + 63) : (index + 500)] )
-                    name = cells[1]
-                    if molinfo.get("inchi", False):
-                        assert inchi == cells[2]
-
-                    molinfo["name"] = name
-                except:
-                    pass 
-
-                # find synonyms
-                try:
-                    synonym_index = mol_page.text.index('Synonyms:')
-                    synonym_section = mol_page.text[ (synonym_index + 15) : (synonym_index + 10000) ]
-                    synonyms = re.findall("""(?<=<div>).*?(?=<\/div>)""", synonym_section)[0].split(', ')
-                    synonyms = [s.strip(' ') for s in synonyms]
-                    molinfo["synonyms"] = synonyms
-                except:
-                    pass
-
-                try:
-                    chebi_index = mol_page.text.index(
-                        "http://www.ebi.ac.uk/chebi/searchId.do?chebiId=CHEBI:"
-                    )
-                    chebi_link = mol_page.text[chebi_index : chebi_index + 100]
-                    molinfo["chebi_link"] = chebi_link.split(" ")[0].strip('"')
-                except:
-                    pass
-                
-                try:
-                    pubchem_index = mol_page.text.index(
-                        "http://www.ncbi.nlm.nih.gov/sites/entrez"
-                    )
-                    pubchem_link = mol_page.text[pubchem_index : pubchem_index + 500]
-                    molinfo["pubchem_link"] = pubchem_link.split(" ")[0].strip("'")
-                except:
-                    pass
-                '''
-                if molinfo.get("chebi_link", None):
-                    molinfo["chebi_data"] = CHEBI_DB[
-                        molinfo["chebi_link"].split("chebiId=")[-1]
-                    ]
-                elif molinfo.get("pubchem_link", None):
-                    molinfo["pubchem_data"] = pubchempy.get_compounds(
-                        molinfo["pubchem_link"].split("term=")[-1], "inchikey"
-                    )[0].to_dict()
-                '''
-            except Exception as e:
-                molinfo['error'] = e
-                print(e)
-                return molinfo
-            
-            return molinfo
-
-        # get molecules from brenda
-        # brenda_mols = set()
-        # for ecid, ecdict in tqdm(brenda_dataset["data"].items()):
-        #     for key in ["cofactor", "activating_compound", "inhibitor"]:
-        #         if key in ecdict:
-        #             brenda_mols.update([d["value"] for d in ecdict[key]])
-
-        #     for key in ["natural_reaction", "reaction"]:
-        #         if key in ecdict:
-        #             brenda_mols.update(
-        #                 [e for d in ecdict[key] for e in d.get("educts", [])]
-        #             )
-        #             brenda_mols.update(
-        #                 [e for d in ecdict[key] for e in d.get("products", [])]
-        #             )
-
-        # brenda_mols = list(brenda_mols)
-
-        # client = Client(WSDL)
-        # password = hashlib.sha256(args.brenda_pw.encode("utf-8")).hexdigest()
-        # parameters = [(args.brenda_username, password, mol) for mol in brenda_mols]
-
-        # brenda_mol_ids = []
-        # for param in tqdm(parameters):
-        #     molinfo = {"name": param[-1]}
-        #     try:
-        #         molid = client.service.getLigandStructureIdByCompoundName(*param)
-        #         molinfo["brenda_id"] = molid
-        #     except:
-        #         molinfo["brenda_id"] = None
-
-        #     brenda_mol_ids.append(molinfo)
-
-        brenda_mol_ids = [{"brenda_id": str(i)} for i in range(1, 260600, 1)]
-        #brenda_molecules = []
-        #for m in tqdm(brenda_mol_ids, total=len(brenda_mol_ids), position=0):
-        #    brenda_molecules.append( get_molecule_info(m) )
-
-        # e = get_molecule_info({'brenda_id': '354'}) 
-
-        brenda_molecules = p_map(get_molecule_info, brenda_mol_ids, num_cpus=7)
+        brenda_molecules = brenda_molecules + brenda_retrieved_molecules
 
         pickle.dump(brenda_molecules, open(args.output_file_path, "wb"))
 
+    if args.get_smiles:
+        brenda_molecules = pickle.load(open(args.input_file_path, "rb"))
+        brenda_molecules = p_map(get_smiles, brenda_molecules)
+        pickle.dump(brenda_molecules, open(args.output_file_path, "wb"))
+
     if args.get_proteins:
+        brenda_dataset = json.load(open(args.input_file_path, "r"))
+
         u = UniProt(verbose=False)
 
         uniprots = []
