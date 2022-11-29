@@ -58,8 +58,6 @@ class Base(pl.LightningModule, Nox):
             "mae",
             "r2",
             "c_index",
-            "spearman",
-            "pearson",
             "hit",
         ]
 
