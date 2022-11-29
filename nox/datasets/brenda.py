@@ -24,9 +24,7 @@ class Brenda(AbstractDataset):
         self.metadata_json = self.metadata_json["data"]
         del self.metadata_json["spontaneous"]
         self.brenda_smiles = json.load(
-            open(
-                f"{os.path.dirname(args.dataset_file_path)}/brenda_substrates.json", "r"
-            )
+            open(f"{os.path.dirname(args.dataset_file_path)}/brenda_smiles.json", "r")
         )
         self.brenda_proteins = json.load(
             open(f"{os.path.dirname(args.dataset_file_path)}/brenda_proteins.json", "r")
