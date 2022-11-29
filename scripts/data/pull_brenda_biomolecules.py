@@ -182,15 +182,17 @@ if __name__ == "__main__":
 
         brenda_mol_ids = []
         brenda_retrieved_molecules = []
-        for i in range(1, 260600, 1):
-            if last_brenda_molecules_dict.get(i, False) or last_brenda_molecules_dict[
+        for i in tqdm(range(1, 260600, 1)):
+            if (not last_brenda_molecules_dict.get(str(i), False)) or last_brenda_molecules_dict[
                 str(i)
             ].get("errors", False):
+                brenda_mol_ids.append({"brenda_id": str(i)})
+            elif ('pubchem_link' not in last_brenda_molecules_dict[str(i)] ) and ('chebi_link' not in last_brenda_molecules_dict[str(i)]):
                 brenda_mol_ids.append({"brenda_id": str(i)})
             else:
                 brenda_retrieved_molecules.append(last_brenda_molecules_dict[str(i)])
 
-        brenda_molecules = p_map(get_molecule_info, brenda_mol_ids)
+        brenda_molecules = p_map(get_molecule_info, brenda_mol_ids, num_cpus=7)
 
         brenda_molecules = brenda_molecules + brenda_retrieved_molecules
 
