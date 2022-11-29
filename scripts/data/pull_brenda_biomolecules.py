@@ -10,7 +10,6 @@ from bioservices import UniProt
 import pickle, os
 
 WSDL = "https://www.brenda-enzymes.org/soap/brenda_zeep.wsdl"
-# LIGAND_URL = "https://www.brenda-enzymes.org/ligand.php?brenda_ligand_id={}"
 LIGAND_URL = "https://brenda-enzymes.org/ligand.php?brenda_group_id={}"
 CHEBI_DB = json.load(open("/Mounts/rbg-storage1/datasets/Metabo/chebi_db.json", "r"))
 
@@ -161,21 +160,24 @@ def get_smiles(molinfo):
     Args:
         molinfo (dict): molecule
     """
-    if molinfo.get("chebi_link", None):
-        molinfo["chebi_data"] = CHEBI_DB[molinfo["chebi_link"].split("chebiId=")[-1]]
-    elif molinfo.get("pubchem_link", None):
-        molinfo["pubchem_data"] = pubchempy.get_compounds(
-            molinfo["pubchem_link"].split("term=")[-1], "inchikey"
-        )[0].to_dict()
+    try:
+        if molinfo.get("chebi_link", None):
+            molinfo["chebi_data"] = CHEBI_DB[molinfo["chebi_link"].split("chebiId=")[-1]]
+        elif molinfo.get("pubchem_link", None):
+            molinfo["pubchem_data"] = pubchempy.get_compounds(
+                molinfo["pubchem_link"].split("term=")[-1], "inchikey"
+            )[0].to_dict()
+    except:
+        pass
     return molinfo
 
 
 if __name__ == "__main__":
     args = parser.parse_args()
 
-    brenda_dataset = json.load(open(args.input_file_path, "r"))
-
     if args.get_molecules:
+
+        brenda_dataset = json.load(open(args.input_file_path, "r"))
 
         # get molecule names in brenda
         brenda_mols = set()
