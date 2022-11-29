@@ -1,6 +1,5 @@
 from zeep import Client
 import hashlib
-from bs4 import BeautifulSoup
 import re, json
 import requests
 import argparse
@@ -11,7 +10,7 @@ from bioservices import UniProt
 import pickle, os
 
 WSDL = "https://www.brenda-enzymes.org/soap/brenda_zeep.wsdl"
-#LIGAND_URL = "https://www.brenda-enzymes.org/ligand.php?brenda_ligand_id={}"
+# LIGAND_URL = "https://www.brenda-enzymes.org/ligand.php?brenda_ligand_id={}"
 LIGAND_URL = "https://brenda-enzymes.org/ligand.php?brenda_group_id={}"
 CHEBI_DB = json.load(open("/Mounts/rbg-storage1/datasets/Metabo/chebi_db.json", "r"))
 
@@ -110,7 +109,7 @@ def get_molecule_info(molinfo):
             name = cells[1]
             if molinfo.get("inchi", False):
                 assert inchi == cells[2]
-            
+
             if not molinfo.get("name", False):
                 molinfo["name"] = name
         except:
@@ -174,40 +173,101 @@ def get_smiles(molinfo):
 if __name__ == "__main__":
     args = parser.parse_args()
 
+    brenda_dataset = json.load(open(args.input_file_path, "r"))
+
     if args.get_molecules:
 
-        brenda_group_ids = pickle.load(open("/Mounts/rbg-storage1/datasets/Enzymes/Brenda/brenda_group_ids.p", "rb"))
-        brenda_group_ids = [m for m in brenda_group_ids if m['brenda_id'] is not None]
+        # get molecule names in brenda
+        brenda_mols = set()
+        for ecid, ecdict in tqdm(brenda_dataset["data"].items()):
+            for key in ["cofactor", "activating_compound", "inhibitor"]:
+                if key in ecdict:
+                    brenda_mols.update([d["value"] for d in ecdict[key]])
 
+            for key in ["natural_reaction", "reaction"]:
+                if key in ecdict:
+                    brenda_mols.update(
+                        [e for d in ecdict[key] for e in d.get("educts", [])]
+                    )
+                    brenda_mols.update(
+                        [e for d in ecdict[key] for e in d.get("products", [])]
+                    )
+
+        brenda_mols = list(brenda_mols)
+
+        # get brenda ligand_group_id
+        client = Client(WSDL)
+        password = hashlib.sha256(args.brenda_pw.encode("utf-8")).hexdigest()
+        parameters = [(args.brenda_username, password, mol) for mol in brenda_mols]
+
+        brenda_mol_ids = []
+        for param in tqdm(parameters):
+            molinfo = {"name": param[-1]}
+            try:
+                molid = client.service.getLigandStructureIdByCompoundName(*param)
+                molinfo["brenda_id"] = molid
+            except:
+                molinfo["brenda_id"] = None
+
+            brenda_mol_ids.append(molinfo)
+
+        # separate those with None as id (not found in brenda)
+        brenda_nones = [m for m in brenda_mol_ids if m["brenda_id"] is None]
+        brenda_mol_ids = [m for m in brenda_mol_ids if m["brenda_id"] is not None]
+
+        # if file exists, resume
         if os.path.exists(args.output_file_path):
             last_brenda_molecules = pickle.load(open(args.output_file_path, "rb"))
             last_brenda_molecules_dict = {}
             for j in last_brenda_molecules:
-                if 'name' in j:
-                    last_brenda_molecules_dict[j['name']] = j 
+                if "name" in j:
+                    last_brenda_molecules_dict[j["name"]] = j
                 for synonym in j.get("synonyms", []):
-                    last_brenda_molecules_dict[synonym] = j 
+                    last_brenda_molecules_dict[synonym] = j
 
+        # separate those previously queried but not obtained for some reason (e.g., timeout)
         brenda_mol_ids = []
         brenda_retrieved_molecules = []
-        for g in tqdm(brenda_group_ids):
-            if (not last_brenda_molecules_dict.get(g['name'], False)) or last_brenda_molecules_dict[g['name']].get("errors", False):
+        for g in tqdm(brenda_mol_ids):
+            if (
+                not last_brenda_molecules_dict.get(g["name"], False)
+            ) or last_brenda_molecules_dict[g["name"]].get("errors", False):
                 brenda_mol_ids.append(g)
-            elif ('pubchem_link' not in last_brenda_molecules_dict[g['name']] ) and ('chebi_link' not in last_brenda_molecules_dict[g['name']]):
+            elif ("pubchem_link" not in last_brenda_molecules_dict[g["name"]]) and (
+                "chebi_link" not in last_brenda_molecules_dict[g["name"]]
+            ):
                 brenda_mol_ids.append(g)
             else:
-                brenda_retrieved_molecules.append(last_brenda_molecules_dict[g['name']])
+                brenda_retrieved_molecules.append(last_brenda_molecules_dict[g["name"]])
 
+        # retrieve links from brenda
         brenda_molecules = p_map(get_molecule_info, brenda_mol_ids, num_cpus=7)
 
-        brenda_molecules = brenda_molecules + brenda_retrieved_molecules
+        brenda_molecules = brenda_molecules + brenda_retrieved_molecules + brenda_nones
 
-        pickle.dump(brenda_molecules, open(args.output_file_path, "wb"))
+        brenda_molecules_dict = {}
+        for p in brenda_molecules:
+            brenda_molecules_dict[p["name"]] = p
+            for s in p.get("synonyms", []):
+                brenda_molecules_dict[s] = p
+
+        basename, ext = os.path.splitext(args.output_file_path)
+        pickle.dump(brenda_molecules, open(f"{basename}_list{ext}", "wb"))
+        pickle.dump(brenda_molecules_dict, open(args.output_file_path, "wb"))
 
     if args.get_smiles:
         brenda_molecules = pickle.load(open(args.input_file_path, "rb"))
         brenda_molecules = p_map(get_smiles, brenda_molecules)
-        pickle.dump(brenda_molecules, open(args.output_file_path, "wb"))
+
+        brenda_molecules_dict = {}
+        for p in brenda_molecules:
+            brenda_molecules_dict[p["name"]] = p
+            for s in p.get("synonyms", []):
+                brenda_molecules_dict[s] = p
+
+        basename, ext = os.path.splitext(args.output_file_path)
+        pickle.dump(brenda_molecules, open(f"{basename}_list{ext}", "wb"))
+        pickle.dump(brenda_molecules_dict, open(args.output_file_path, "wb"))
 
     if args.get_proteins:
         brenda_dataset = json.load(open(args.input_file_path, "r"))
