@@ -744,6 +744,7 @@ class BrendaReaction(Brenda):
             warnings.warn(f"Could not load sample: {item['sample_id']}")
 
 
+@register_object("mcsa", "dataset")
 class MCSA(BrendaReaction):
     def create_dataset(
         self, split_group: Literal["train", "dev", "test"]
