@@ -732,7 +732,7 @@ class BrendaReaction(Brenda):
                 "protein_id": sample["protein_id"],
                 "sample_id": sample["sample_id"],
                 "residues": sample["residues"],
-                "residue_positions": sample["residue_mask"],
+                "residue_mask": sample["residue_mask"],
                 "has_residues": sample["has_residues"],
             }
 
