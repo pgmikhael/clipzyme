@@ -11,7 +11,8 @@ from bioservices import UniProt
 import pickle, os
 
 WSDL = "https://www.brenda-enzymes.org/soap/brenda_zeep.wsdl"
-LIGAND_URL = "https://www.brenda-enzymes.org/ligand.php?brenda_ligand_id={}"
+#LIGAND_URL = "https://www.brenda-enzymes.org/ligand.php?brenda_ligand_id={}"
+LIGAND_URL = "https://brenda-enzymes.org/ligand.php?brenda_group_id={}"
 CHEBI_DB = json.load(open("/Mounts/rbg-storage1/datasets/Metabo/chebi_db.json", "r"))
 
 parser = argparse.ArgumentParser(description="Pulls substrate data from BRENDA")
@@ -105,12 +106,13 @@ def get_molecule_info(molinfo):
             index = mol_page.text.index(
                 '<div class="header"><a name="INCHIKEY"></a>InChIKey</div>'
             )
-            cells = get_brenda_ids(mol_page.text[(index + 63) : (index + 500)])
+            cells = get_brenda_ids(mol_page.text[(index + 63) : (index + 1000)])
             name = cells[1]
             if molinfo.get("inchi", False):
                 assert inchi == cells[2]
-
-            molinfo["name"] = name
+            
+            if not molinfo.get("name", False):
+                molinfo["name"] = name
         except:
             pass
 
@@ -174,23 +176,27 @@ if __name__ == "__main__":
 
     if args.get_molecules:
 
+        brenda_group_ids = pickle.load(open("/Mounts/rbg-storage1/datasets/Enzymes/Brenda/brenda_group_ids.p", "rb"))
+        brenda_group_ids = [m for m in brenda_group_ids if m['brenda_id'] is not None]
+
         if os.path.exists(args.output_file_path):
             last_brenda_molecules = pickle.load(open(args.output_file_path, "rb"))
-            last_brenda_molecules_dict = {
-                j["brenda_id"]: j for j in last_brenda_molecules
-            }
+            last_brenda_molecules_dict = {}
+            for j in last_brenda_molecules:
+                if 'name' in j:
+                    last_brenda_molecules_dict[j['name']] = j 
+                for synonym in j.get("synonyms", []):
+                    last_brenda_molecules_dict[synonym] = j 
 
         brenda_mol_ids = []
         brenda_retrieved_molecules = []
-        for i in tqdm(range(1, 260600, 1)):
-            if (not last_brenda_molecules_dict.get(str(i), False)) or last_brenda_molecules_dict[
-                str(i)
-            ].get("errors", False):
-                brenda_mol_ids.append({"brenda_id": str(i)})
-            elif ('pubchem_link' not in last_brenda_molecules_dict[str(i)] ) and ('chebi_link' not in last_brenda_molecules_dict[str(i)]):
-                brenda_mol_ids.append({"brenda_id": str(i)})
+        for g in tqdm(brenda_group_ids):
+            if (not last_brenda_molecules_dict.get(g['name'], False)) or last_brenda_molecules_dict[g['name']].get("errors", False):
+                brenda_mol_ids.append(g)
+            elif ('pubchem_link' not in last_brenda_molecules_dict[g['name']] ) and ('chebi_link' not in last_brenda_molecules_dict[g['name']]):
+                brenda_mol_ids.append(g)
             else:
-                brenda_retrieved_molecules.append(last_brenda_molecules_dict[str(i)])
+                brenda_retrieved_molecules.append(last_brenda_molecules_dict[g['name']])
 
         brenda_molecules = p_map(get_molecule_info, brenda_mol_ids, num_cpus=7)
 
