@@ -142,6 +142,7 @@ class Base(pl.LightningModule, Nox):
             metrics = self.compute_metric(output["preds_dict"])
             metrics.update(output)
             self.log_outputs(metrics, "train")
+            del output['preds_dict']
 
         return output
 
@@ -155,6 +156,7 @@ class Base(pl.LightningModule, Nox):
             metrics = self.compute_metric(output["preds_dict"])
             metrics.update(output)
             self.log_outputs(metrics, "val")
+            del output['preds_dict']
         return output
 
     def test_step(self, batch, batch_idx):
@@ -179,7 +181,7 @@ class Base(pl.LightningModule, Nox):
             metrics = self.compute_metric(output["preds_dict"])
             metrics.update(output)
             self.log_outputs(metrics, "test")
-
+            del output['preds_dict']
         return output
 
     def training_epoch_end(self, outputs):
@@ -301,7 +303,10 @@ class Base(pl.LightningModule, Nox):
         # log clocktime of methods for epoch
         if (self.args.profiler is not None) and (self.args.log_profiler):
             logging_dict.update(self.get_time_profile(key))
-        self.log_dict(logging_dict, prog_bar=True, logger=True)
+        if self.args.compute_metrics_every_step:
+            self.log_dict(logging_dict, prog_bar=True, logger=True, batch_size=1)
+        else:
+            self.log_dict(logging_dict, prog_bar=True, logger=True)
 
     def get_time_profile(self, key):
         """Obtain trainer method times
