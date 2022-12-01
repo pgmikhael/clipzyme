@@ -57,6 +57,7 @@ class FairEsm(AbstractModel):
 
             hiddens.append(h)
 
+        output["token_hiddens"] = result["representations"][self.repr_layer]
         output["hidden"] = torch.stack(hiddens)
 
         return output

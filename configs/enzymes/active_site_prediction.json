@@ -1,19 +1,19 @@
 {
     "script": "main",
+    "paired_hyperparams":{
+      "split_type": ["sequence", "ec", "ec", "ec", "ec"],
+      "ec_level": [0,0,1,2,3],
+    },
     "cartesian_hyperparams": {
       "batch_size": [24],
-      "dataset_name": ["brenda_ec"],
+      "dataset_name": ["mcsa"],
       "assign_splits": [true],
       "split_seed": [0],
-      "split_type": ["sequence"],
       "split_probs": ["0.8 0.1 0.1"],
-      "ec_level": [0,1,2,3],
       "lightning_name": ["base"],
-      "model_name": ["protein_encoder"],
+      "model_name": ["enzyme_active_site_predictor"],
       "protein_encoder_type": ["fair_esm"],
-      "use_cls_token": [false, true],
-      "freeze_encoder": [true],
-      "freeze_esm": [true],
+      "freeze_esm": [true, false],
       "mlp_input_dim": [480],
       "mlp_layer_configuration": ["300 300"],
       "callback_names": ["lr_monitor"],
@@ -22,7 +22,7 @@
       "lr": [3e-4, 1e-3],
       "loss_names": ["binary_cross_entropy_logits"],
       "ce_loss_lambda": [1.0],
-      "metric_names": ["multitask_classification"],
+      "metric_names": ["seq2seq_classification"],
       "checkpoint_save_last": [false],
       "monitor": ["val_roc_auc"],
       "num_workers": [3],
@@ -40,7 +40,7 @@
       "logger_name": ["wandb"],
       "workspace": ["peteranditamar"],
       "project_name": ["enzymes"],
-      "logger_tags": ["ec"]
+      "logger_tags": ["active-site"]
     },
     "available_gpus": [2,3,4,5,6,7]
   }

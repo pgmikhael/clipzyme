@@ -305,3 +305,40 @@ class BaseRegression(Nox):
             stats_dict['r2'] = r2
 
         return stats_dict
+
+
+@register_object("seq2seq_classification", "metric")
+class Seq2SeqClassification(BaseClassification):
+    def __init__(self, args) -> None:
+        super().__init__(args)
+
+    @property
+    def metric_keys(self):
+        return ["probs", "preds", "golds"]
+
+    def __call__(self, predictions_dict, args) -> Dict:
+        stats_dict = defaultdict(list)
+
+        probs = predictions_dict["probs"]  # B, N, C (float)
+        preds = predictions_dict["preds"]  # B, N
+        golds = predictions_dict["golds"].int()  # B, N
+        
+        for sample_probs, sample_preds, sample_golds  in zip(probs, preds, golds):
+            sample_probs = sample_probs[sample_golds!=-100]
+            sample_preds = sample_preds[sample_golds!=-100]
+            sample_golds = sample_golds[sample_golds!=-100]
+            sample_stats = super().__call__(
+                {
+                    "probs": sample_probs, 
+                    "preds": sample_preds,
+                    "golds": sample_golds
+                }, args
+            )
+            for k,v in sample_stats.items():
+                if len(v.shape) < 2:
+                    stats_dict[k].append(v)
+        
+        for k,v in stats_dict.items():
+            stats_dict[k] = torch.stack(v).mean()
+
+        return stats_dict

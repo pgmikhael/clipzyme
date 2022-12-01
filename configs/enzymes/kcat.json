@@ -47,7 +47,7 @@
       "checkpoint_dir": ["/Mounts/rbg-storage1/snapshots/metabolomics"],
       "logger_name": ["wandb"],
       "workspace": ["peteranditamar"],
-      "project_name": ["metabolomics"],
+      "project_name": ["enzymes"],
       "logger_tags": ["kcat"]
     },
     "available_gpus": [2,3,4,5,6,7]

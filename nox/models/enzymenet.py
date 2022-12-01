@@ -30,7 +30,7 @@ class EznymeSubstrateScore(AbstractModel):
         }
         output.update(mlp_dict)
         if self.args.activation_name is not None:
-            output['logit'] = self.activation(output['logit'])
+            output["logit"] = self.activation(output["logit"])
         return output
 
     @staticmethod
@@ -66,4 +66,45 @@ class EznymeSubstrateScore(AbstractModel):
             type=str,
             default=None,
             help="type of activation to be applied on logits",
+        )
+
+
+@register_object("enzyme_active_site_predictor", "model")
+class EznymeActiveSiteModel(AbstractModel):
+    def __init__(self, args):
+        super(EznymeActiveSiteModel, self).__init__()
+
+        self.args = args
+        self.protein_encoder = get_object(args.protein_encoder_name, "model")(args)
+        self.mlp = get_object(args.protein_substrate_aggregator, "model")(args)
+        # TODO: add substrate encoder
+        # TODO: add reaction encoder
+
+    def forward(self, batch=None):
+        batch_size = len(batch["sequence"])
+        seq_len = [len(p) for p in batch["sequence"]]
+        sequence_dict = self.protein_encoder(batch["sequence"])
+        hidden = sequence_dict["token_hidden"][1:-1]  # B, seq_len, hidden_dim
+        output = self.mlp({"x": hidden})  # B, seq_len, num_classes
+
+        batch["y"] = torch.zeros_like(batch["residue_mask"]) + batch["residue_mask"]
+        # cross entropy will ignore the padded residues (ignore_index=-100)
+        for i in range(batch_size):
+            batch["y"][i, seq_len[i] :] = -100
+
+        return output
+
+    @staticmethod
+    def add_args(parser) -> None:
+        """Add class specific args
+
+        Args:
+            parser (argparse.ArgumentParser): argument parser
+        """
+        parser.add_argument(
+            "--protein_encoder_name",
+            type=str,
+            action=set_nox_type("model"),
+            default="fair_esm",
+            help="Name of encoder to use",
         )

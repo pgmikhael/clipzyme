@@ -15,11 +15,23 @@ class CrossEntropyLoss(Nox):
     def __call__(self, model_output, batch, model, args):
         logging_dict, predictions = OrderedDict(), OrderedDict()
         logit = model_output["logit"]
-        loss = F.cross_entropy(logit, batch["y"].view(-1).long()) * args.ce_loss_lambda
+        if args.precomputed_loss:
+            loss = model_output["loss"]
+        else:
+            loss = F.cross_entropy(logit, batch["y"].view(-1).long()) * args.ce_loss_lambda
         logging_dict["cross_entropy_loss"] = loss.detach()
         predictions["probs"] = F.softmax(logit, dim=-1).detach()
-        predictions["golds"] = batch["y"].view(-1)
-        predictions["preds"] = predictions["probs"].argmax(axis=-1).reshape(-1)
+        predictions["preds"] = predictions["probs"].argmax(axis=-1)
+        if "y" in batch:
+            predictions["golds"] = batch["y"]
+        elif "y" in model_output:
+            predictions["golds"] = model_output["y"]
+        else:
+            raise KeyError("predictions_dict ERROR: y not found")
+        
+        if not args.keep_preds_dim:
+             predictions["golds"] =  predictions["golds"].view(-1)
+             predictions["preds"] =  predictions["preds"].reshape(-1)
         return loss, logging_dict, predictions
 
     @staticmethod
@@ -34,6 +46,18 @@ class CrossEntropyLoss(Nox):
             type=float,
             default=1.0,
             help="Lambda to weigh the cross-entropy loss.",
+        )
+        parser.add_argument(
+                "--precomputed_loss",
+                action="store_true",
+                default=False,
+                help="whether loss is computed through model automatically, e.g., hugging face transformers",
+        )
+        parser.add_argument(
+                "--keep_preds_dim",
+                action="store_true",
+                default=False,
+                help="do not flatten preds and y",
         )
 
 @register_object("binary_cross_entropy_logits", "loss")
