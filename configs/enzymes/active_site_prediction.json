@@ -1,8 +1,8 @@
 {
     "script": "main",
-    "paired_hyperparams":{
+    "paired_hyperparams": {
       "split_type": ["sequence", "ec", "ec", "ec", "ec"],
-      "ec_level": [0,0,1,2,3],
+      "ec_level": [0,0,1,2,3]
     },
     "cartesian_hyperparams": {
       "batch_size": [24],
@@ -10,9 +10,10 @@
       "assign_splits": [true],
       "split_seed": [0],
       "split_probs": ["0.8 0.1 0.1"],
+      "mcsa_skip_unk_smiles": [true],
       "lightning_name": ["base"],
       "model_name": ["enzyme_active_site_predictor"],
-      "protein_encoder_type": ["fair_esm"],
+      "protein_encoder_name": ["fair_esm"],
       "freeze_esm": [true, false],
       "mlp_input_dim": [480],
       "mlp_layer_configuration": ["300 300"],
@@ -43,5 +44,5 @@
       "logger_tags": ["active-site"]
     },
     "available_gpus": [2,3,4,5,6,7]
-  }
+}
   

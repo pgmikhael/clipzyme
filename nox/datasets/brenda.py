@@ -14,9 +14,43 @@ import os
 from rxn.chemutils.smiles_randomization import randomize_smiles_rotated
 import warnings
 import hashlib
+from frozendict import frozendict
 
 CHEBI_DB = json.load(open("/Mounts/rbg-storage1/datasets/Metabo/chebi_db.json", "r"))
 
+def add_mcsa_data(protein2enzymatic_residues, mcsa_curated_proteins, sequence, uniprot, ec, reactants, products, amino_acid, resid, is_reference):
+    # add residue and sequence information 
+    if sequence not in protein2enzymatic_residues:
+        protein2enzymatic_residues[sequence] = {
+            ec: {
+                "residues": [],
+                "reactants": reactants,
+                "products": products,
+            },
+            "sequence": sequence,
+            "uniprot": uniprot 
+        }
+
+    if ec not in protein2enzymatic_residues[sequence]:
+        protein2enzymatic_residues[sequence][ec] = {
+            "residues": [],
+            "reactants": reactants,
+            "products": products,
+        }
+
+    sample = frozendict({
+            "residue": amino_acid,
+            "residue_id": resid - 1,
+            "ec": ec,
+            "is_reference": True,
+        })
+    
+    if sample not in protein2enzymatic_residues[sequence][ec]["residues"]:
+        protein2enzymatic_residues[sequence][ec]["residues"].append(sample)
+    
+    if is_reference and not (sequence in mcsa_curated_proteins):
+        mcsa_curated_proteins[sequence] = True # store as dict for faster lookup
+    return protein2enzymatic_residues, mcsa_curated_proteins
 
 class Brenda(AbstractDataset):
     def load_dataset(self, args: argparse.ArgumentParser) -> None:
@@ -47,6 +81,10 @@ class Brenda(AbstractDataset):
                         continue
                     for k, v in ec_dict["proteins"].items():
                         samples.extend(v[0]["accessions"])
+                
+                for protein in self.mcsa_biomolecules['proteins']:
+                    if protein['sequence'] is not None:
+                        samples.append(protein['uniprot'])
 
             elif self.args.split_type == "ec":
                 # split based on ec number
@@ -102,132 +140,142 @@ class Brenda(AbstractDataset):
             args (argparse.ArgumentParser): arguments
 
         Returns:
-            dict: MCSA data {uniprot_id: {ec: [ residues ]}}
+            dict: MCSA data {uniprot_id: {ec: [ residues ], sequence = ""}}
         """
-        # protein: { reaction: [{residue: "", residueids: 0}] }
+        
+        # load data
+        pdb2uniprot = json.load(open(args.mcsa_pdb_to_uniprots, "r"))
         mcsa_curated_data = json.load(open(args.mcsa_file_path, "r"))
         mcsa_homologs = json.load(open(args.mcsa_homologs_file_path, "r"))
         mcsa_molecules = self.mcsa_biomolecules["molecules"]
         mcsa_proteins = self.mcsa_biomolecules["proteins"]
-
+        
+        mcsa_curated_proteins = {} # to store reference proteins and not add them twice when processing homologs
         protein2enzymatic_residues = {}
-        for entry in mcsa_curated_data:
+        for entry in tqdm(mcsa_curated_data, desc="Processing M-CSA data"):
             # all_ecs has length of 1
             ec = entry["all_ecs"][0]
 
             # reaction
             reaction = entry["reaction"]["compounds"]
             reactants = [
-                mcsa_molecules[c["chebi"]].get("SMILES", None)
+                mcsa_molecules[c["chebi_id"]].get("SMILES", None)
                 for c in reaction
-                if c["type"] == "reactant"
+                if (mcsa_molecules[c["chebi_id"]]) and (c["type"] == "reactant")
             ]
             products = [
-                mcsa_molecules[c["chebi"]].get("SMILES", None)
+                mcsa_molecules[c["chebi_id"]].get("SMILES", None)
                 for c in reaction
-                if c["type"] == "product"
+                if (mcsa_molecules[c["chebi_id"]]) and (c["type"] == "product")
             ]
-
-            reference_uniprots = entry["reference_uniprot_id"].split(",")
-
-            # there is only one uniprot and it is not empty
-            unique_ref_uniprot_and_not_empty = (len(reference_uniprots) == 1) and (
-                reference_uniprots[0] != ""
-            )
-
-            residue_uniprots = [
-                residue["residue_sequences"][0]["uniprot_id"]
-                for residue in entry["residues"]
-            ]
-
-            # at least one of the resiude uniprots missing uniprot
-            empty_residue_uniprots = "" in residue_uniprots
-
-            if empty_residue_uniprots and not unique_ref_uniprot_and_not_empty:
-                continue  # skip entries with empty uniprot ids
 
             # get reference (curated) uniprot data
             for residue in entry["residues"]:
-                # residue['residue_chains']
-                # residue["residue_sequences"] has length of 1
-                uniprot = residue["residue_sequences"][0]["uniprot_id"]
+                
+                # loop over uniprot sequences
+                for seq in residue["residue_sequences"]:
+                    uniprot = seq["uniprot_id"]
+                    resid = seq["resid"]        # residue position
+                    amino_acid = seq["code"]    # residue 3-letter code
+                             
+                    if any(k in ["", None] for k in [uniprot, resid]):
+                        continue 
 
-                if empty_residue_uniprots:
-                    uniprot = reference_uniprots[0]
+                    if not mcsa_proteins.get(uniprot, False):
+                        continue
 
-                resid = residue["residue_sequences"][0]["resid"]
-                amino_acid = residue["residue_sequences"][0]["code"]
-                if uniprot not in protein2enzymatic_residues:
-                    protein2enzymatic_residues[uniprot] = {
-                        ec: {
-                            "residues": [],
-                            "reactants": reactants,
-                            "products": products,
-                        },
-                        "sequence": mcsa_proteins[uniprot],
-                    }
+                    if not mcsa_proteins[uniprot].get(uniprot, False):
+                        continue 
+                    
+                    sequence = mcsa_proteins[uniprot][uniprot]["sequence"]  # sequence
 
-                if ec not in protein2enzymatic_residues[uniprot]:
-                    protein2enzymatic_residues[uniprot][ec] = {
-                        "residues": [],
-                        "reactants": reactants,
-                        "products": products,
-                    }
+                    protein2enzymatic_residues, mcsa_curated_proteins = add_mcsa_data(protein2enzymatic_residues, mcsa_curated_proteins, sequence, uniprot, ec, reactants, products, amino_acid, resid, is_reference=True)
+                
+                # loop over pdb chains
+                for chain in residue["residue_chains"]:
+                    pdb = chain["pdb_id"]
+                    assembly = chain.get("assembly", None)
 
-                protein2enzymatic_residues[uniprot][ec]["residues"].append(
-                    {
-                        "residue": amino_acid,
-                        "residue_id": resid - 1,
-                        "ec": ec,
-                        "is_reference": True,
-                    }
-                )
+                    for uniprot_dict in pdb2uniprot.get(pdb, []):
+                        uniprot = uniprot_dict['uniprot']
+                        assembly_name = f"{uniprot}-{assembly}"
+                        if assembly is None:
+                            assembly_name = uniprot 
 
-            # homologs
+                        resid = chain["resid"]        # residue position
+                        amino_acid = chain["code"]    # residue 3-letter code
+
+                        if any(k in ["", None] for k in [uniprot, resid]):
+                            continue 
+
+                        if not mcsa_proteins.get(uniprot, False):
+                            continue
+
+                        if not mcsa_proteins[uniprot].get(assembly_name, False):
+                            continue 
+                        
+                        sequence = mcsa_proteins[uniprot][assembly_name]["sequence"]  # sequence
+
+                        protein2enzymatic_residues, mcsa_curated_proteins = add_mcsa_data(protein2enzymatic_residues, mcsa_curated_proteins, sequence, assembly_name, ec, reactants, products, amino_acid, resid, is_reference=True)
+
+            # process homologs in similar fashion
             homologs = [m for m in mcsa_homologs if m["mcsa_id"] == entry["mcsa_id"]]
-            reference_homolog = [m for m in homologs if m["is_reference"] == True][0][
-                "uniprot_id"
-            ]
-
-            # sanity check for homolog data
-            assert reference_homolog == reference_uniprots[0]
 
             # add homologs to dataset
             for homolog_residues in homologs:
+                
                 for homolog_entry in homolog_residues["residue_sequences"]:
                     uniprot = homolog_entry["uniprot_id"]
                     resid = homolog_entry["resid"]
                     amino_acid = homolog_entry["code"]
-                    is_reference = homolog_entry["is_reference"]
+                    
+                    if any(k in ["", None] for k in [uniprot, resid]):
+                        continue 
 
+                    if not mcsa_proteins.get(uniprot, False):
+                        continue
+
+                    if not mcsa_proteins[uniprot].get(uniprot, False):
+                        continue 
+
+                    sequence = mcsa_proteins[uniprot][uniprot]["sequence"]  # sequence
+                    
+                    is_reference = sequence in mcsa_curated_proteins 
                     if is_reference:
                         continue  # skip reference entry, already added above (would not need above if homologs contained all references)
 
-                    if uniprot not in protein2enzymatic_residues:
-                        protein2enzymatic_residues[uniprot] = {
-                            ec: {
-                                "residues": [],
-                                "reactants": reactants,
-                                "products": products,
-                            },
-                            "sequence": mcsa_proteins[uniprot],
-                        }
+                    protein2enzymatic_residues, mcsa_curated_proteins = add_mcsa_data(protein2enzymatic_residues, mcsa_curated_proteins, sequence, uniprot, ec, reactants, products, amino_acid, resid, is_reference=False)
 
-                    if ec not in protein2enzymatic_residues[uniprot]:
-                        protein2enzymatic_residues[uniprot][ec] = {
-                            "residues": [],
-                            "reactants": reactants,
-                            "products": products,
-                        }
+                for assembly_entry in  homolog_residues["residue_chains"]:
+                    assembly = assembly_entry["assembly"]
+                    pdb = chain["pdb_id"]
+                
+                    for uniprot_dict in pdb2uniprot.get(pdb, []):
+                        uniprot = uniprot_dict['uniprot']
+                        
+                        assembly_name = f"{uniprot}-{assembly}"
+                        if assembly is None:
+                            assembly_name = uniprot 
+                        
+                        resid = chain["resid"]        # residue position
+                        amino_acid = chain["code"]    # residue 3-letter code
+                        
+                        if any(k in ["", None] for k in [uniprot, resid]):
+                            continue 
 
-                    protein2enzymatic_residues[uniprot][ec]["residues"].append(
-                        {
-                            "residue": amino_acid,
-                            "residue_id": resid - 1,
-                            "ec": ec,
-                            "is_reference": is_reference,
-                        }
-                    )
+                        if not mcsa_proteins.get(uniprot, False):
+                            continue
+
+                        if not mcsa_proteins[uniprot].get(assembly_name, False):
+                            continue 
+                        
+                        sequence = mcsa_proteins[uniprot][assembly_name]["sequence"]  # sequence
+
+                        is_reference = sequence in mcsa_curated_proteins 
+                        if is_reference:
+                            continue  # skip reference entry, already added above (would not need above if homologs contained all references)
+
+                        protein2enzymatic_residues, mcsa_curated_proteins = add_mcsa_data(protein2enzymatic_residues, mcsa_curated_proteins, sequence, assembly_name, ec, reactants, products, amino_acid, resid, is_reference=False)
 
         return protein2enzymatic_residues
 
@@ -293,6 +341,12 @@ class Brenda(AbstractDataset):
             "--mcsa_biomolecules_path",
             type=str,
             default="/Mounts/rbg-storage1/datasets/Enzymes/MCSA/mcsa_biomolecules.json",
+            help="M-CSA biomolecules metadata",
+        )
+        parser.add_argument(
+            "--mcsa_pdb_to_uniprots",
+            type=str,
+            default="/Mounts/rbg-storage1/datasets/Enzymes/MCSA/pdb2uniprotlite.json",
             help="M-CSA biomolecules metadata",
         )
         parser.add_argument(
@@ -566,6 +620,7 @@ class BrendaReaction(Brenda):
                             for protein in entry.get("proteins", []):
                                 if proteinid2uniprot.get(protein, False):
                                     uniprotid = proteinid2uniprot[protein]
+                                    sequence = self.brenda_proteins[uniprotid]
                                     catalogued_reactions = [
                                         rxn["reaction_string"]
                                         for rxn in uniprot2reactions[uniprotid]
@@ -577,15 +632,13 @@ class BrendaReaction(Brenda):
                                         ).hexdigest()
 
                                         residues = self.get_uniprot_residues(
-                                            mcsa_data, uniprotid, ec
+                                            mcsa_data, sequence, ec
                                         )
 
                                         uniprot2reactions[uniprotid].append(
                                             {
                                                 "protein_id": uniprotid,
-                                                "sequence": self.brenda_proteins[
-                                                    uniprotid
-                                                ],
+                                                "sequence": sequence,
                                                 "reactants": rs,
                                                 "products": ps,
                                                 "ec": ec,
@@ -605,13 +658,17 @@ class BrendaReaction(Brenda):
                                         )
 
         # add M-CSA data not in brenda
-        for uniprotid, uniprot_dict in mcsa_data.items():
+        for sequence, uniprot_dict in mcsa_data.items():
+            uniprotid = uniprot_dict['uniprot']
             if uniprotid in uniprot2reactions:
                 continue
 
             for ec, ec_dict in uniprot_dict.items():
 
-                residues = self.get_uniprot_residues(mcsa_data, uniprotid, ec)
+                if ec == "sequence": 
+                    continue
+
+                residues = self.get_uniprot_residues(mcsa_data, sequence, ec)
                 rs = ec_dict["reactants"]
                 ps = ec_dict["products"]
                 reaction_string = ".".join(rs) + ">>" + ".".join(ps)
@@ -665,27 +722,29 @@ class BrendaReaction(Brenda):
 
         return False
 
-    def get_uniprot_residues(self, mcsa_data, uniprotid, ec):
+    def get_uniprot_residues(self, mcsa_data, sequence, ec):
         """Get residues from MCSA data
 
         Args:
             mcsa_data (dict): MCSA data
-            uniprotid (str): uniprot id
+            sequence (str): protein sequence
             ec (str): ec number
 
         Returns:
-            torhc.Tensor: residue mask
+            dict: {residue_mask: torch.Tensor, has_residues: torch.Tensor, residues: [smiles]}
         """
-        sequence = self.brenda_proteins[uniprotid]
-        y = torch.zeros(len(self.brenda_proteins[uniprotid]))
+
+        y = torch.zeros(len(sequence))
         has_y = 0
         residues = []
-        if mcsa_data.get(uniprotid, False):
-            if mcsa_data[uniprotid].get(ec, False):
-                for residue_dict in mcsa_data[uniprotid][ec]:
-                    y[residue_dict["residue_id"]] = 1
+        if mcsa_data.get(sequence, False):
+            if mcsa_data[sequence].get(ec, False):
+                for residue_dict in mcsa_data[sequence][ec]['residues']:
+                    if residue_dict['residue_id'] is None:
+                        continue
                     letter = sequence[residue_dict["residue_id"]]
-                    residues.append(AA_TO_SMILES[letter])
+                    y[residue_dict["residue_id"]] = 1
+                    residues.append(AA_TO_SMILES.get(letter, None))
                 has_y = 1
 
         return {"residue_mask": y, "has_residues": has_y, "residues": residues}
@@ -751,31 +810,29 @@ class MCSA(BrendaReaction):
         mcsa_data = self.load_mcsa_data(self.args)
 
         uniprot2reactions = defaultdict(list)
-        for uniprotid, uniprot_dict in mcsa_data.items():
+        for sequence, uniprot_dict in tqdm(mcsa_data.items(), desc="Making M-CSA dataset"):
+
+            uniprotid = uniprot_dict['uniprot']
 
             for ec, ec_dict in uniprot_dict.items():
 
-                residues = self.get_uniprot_residues(mcsa_data, uniprotid, ec)
+                if ec in ["sequence", "uniprot"]:
+                    continue 
+
+                residues = self.get_uniprot_residues(mcsa_data, sequence, ec)
                 rs = ec_dict["reactants"]
                 ps = ec_dict["products"]
-                reaction_string = ".".join(rs) + ">>" + ".".join(ps)
-
-                sample_id = hashlib.md5(
-                    f"{uniprotid}_{reaction_string}".encode()
-                ).hexdigest()
 
                 uniprot2reactions[uniprotid].append(
                     {
                         "protein_id": uniprotid,
-                        "sequence": uniprot_dict["sequence"],
+                        "sequence": sequence,
                         "reactants": rs,
                         "products": ps,
                         "ec": ec,
-                        "reaction_string": reaction_string,
-                        "sample_id": sample_id,
                         "residues": residues["residues"],
-                        "residue_positions": residues["residue_mask"],
-                        "has_residues": True,
+                        "residue_mask": residues["residue_mask"],
+                        "has_residues": residues["has_residues"],
                     }
                 )
         # make each reaction a sample
@@ -784,7 +841,12 @@ class MCSA(BrendaReaction):
             for reaction in reaction_list:
                 if self.skip_sample(reaction, split_group):
                     continue
-            dataset.append(reaction)
+                reaction_string = ".".join(reaction['reactants']) + ">>" + ".".join(reaction['products'])
+                reaction["reaction_string"] =  reaction_string
+                reaction["sample_id"] = hashlib.md5(
+                    f"{uniprotid}_{reaction_string}".encode()
+                ).hexdigest()
+                dataset.append(reaction)
 
         return super().create_dataset(split_group)
 
