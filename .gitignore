@@ -2,6 +2,7 @@
 notebooks/*.pkl
 notebooks/pickled_data/*
 scratch/
+notebooks/*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
