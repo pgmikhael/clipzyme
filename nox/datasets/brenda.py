@@ -90,7 +90,7 @@ class Brenda(AbstractDataset):
         if self.args.split_type in ["sequence", "ec"]:
 
             if self.args.split_type == "sequence":
-                # split based on uniprot_id # TODO: change to sequence
+                # split based on uniprot_id
                 samples = []
                 for _, ec_dict in metadata_json.items():
                     if not ec_dict.get("proteins", False):
