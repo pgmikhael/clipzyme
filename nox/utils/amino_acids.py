@@ -8,7 +8,7 @@ AA_TO_SMILES = {
     "E": "C(CC(=O)O)[C@@H](C(=O)O)N",  # Glutamic acid
     "Q": "C(CC(=O)N)[C@@H](C(=O)O)N",  # Glutamine
     "Z": "",  # Glutamate or Glutamine
-    "G": "C(C(=O)O)N",
+    "G": "C(C(=O)O)N", # Glycine
     "H": "C([C@@H](C(=O)O)N)C(=O)N",  # Histidine
     "I": "CC[C@H](C)[C@@H](C(=O)O)N",  # Isoleucine
     "L": "CC(C)C[C@@H](C(=O)O)N",  # Leucine
