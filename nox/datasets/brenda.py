@@ -933,7 +933,7 @@ class MCSA(BrendaReaction):
                 ).hexdigest()
                 dataset.append(reaction)
 
-        return super().create_dataset(split_group)
+        return dataset
 
     def skip_sample(self, sample, split_group) -> bool:
         # check right split
@@ -950,7 +950,7 @@ class MCSA(BrendaReaction):
             if "?" in (sample["products"] + sample["reactants"]):
                 return True
 
-            if any(s is None for s in sample["reactants"] + sample["products"]):
+            if any(s in [None, []] for s in sample["reactants"] + sample["products"]):
                 return True
 
         # if sequence is unknown
