@@ -561,7 +561,12 @@ class BrendaConstants(Brenda):
         if substrate_data.get("chebi_data", False):
             return substrate_data["chebi_data"].get("SMILES", None)
         elif substrate_data.get("pubchem_data", False):
-            return substrate_data["pubchem_data"].get("canonical_smiles", None)
+            if isinstance(substrate_data['pubchem_data'], dict):
+                return substrate_data["pubchem_data"].get("CanonicalSMILES", None)
+            elif isinstance(substrate_data['pubchem_data'], list):
+                return substrate_data["pubchem_data"][0].get("CanonicalSMILES", None)
+            else:
+                raise NotImplementedError
         return
 
     def get_label(self, value, property_name):
