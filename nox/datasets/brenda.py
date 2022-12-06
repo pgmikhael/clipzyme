@@ -533,23 +533,25 @@ class BrendaConstants(Brenda):
                 seq = sample["sequence"]
                 smi = sample["smiles"]
                 # keep track of samples added to avoid duplicates
-                samples_added.add(f"{seq}{smi}")
 
                 # either have multiple same samples with different labels
                 # each identical sample could either have a numpy array label or a float label
-                different_labels_bool = len(seq_smi_2_y[f"{seq}{smi}"]) > 1 and any(
+                different_labels_bool = any(
                     not np.array_equal(i, seq_smi_2_y[f"{seq}{smi}"][0])
                     if isinstance(i, np.ndarray)
                     else i != seq_smi_2_y[f"{seq}{smi}"][0]
                     for i in seq_smi_2_y[f"{seq}{smi}"]
                 )
                 # or I have a multi-label label (ie range)
-                multiple_labels_bool = not isinstance(sample["y"], float) and len(
-                    sample["y"] > 1
-                )
-                if f"{seq}{smi}" not in samples_added and (
-                    different_labels_bool or multiple_labels_bool
-                ):
+                multiple_labels_bool = (
+                    not isinstance(sample["y"], float) and len(sample["y"]) > 1
+                ) or (isinstance(sample["y"], np.ndarray) and len(sample["y"]) > 1)
+
+                # if I have already added this sample, skip it
+                if f"{seq}{smi}" in samples_added:
+                    continue
+
+                if different_labels_bool or multiple_labels_bool:
                     # in which case mean the labels
                     labels = []
                     for i in seq_smi_2_y[f"{seq}{smi}"]:
@@ -562,6 +564,8 @@ class BrendaConstants(Brenda):
                         else:
                             labels.append(i)  # label is just a float
                     sample["y"] = float(np.mean(labels))
+
+                samples_added.add(f"{seq}{smi}")
 
             dataset.append(sample)
 
