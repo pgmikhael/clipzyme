@@ -730,7 +730,7 @@ class BrendaConstants(Brenda):
         """
         Prints summary statement with dataset stats
         """
-        summary = f"Contructed {self.split_group} dataset for {self.args.enzyme_property} property with {len(self.dataset)} samples"
+        summary = f"\n{self.split_group} dataset for {self.args.enzyme_property} property contains {len(self.dataset)} samples"
         return summary
 
     @staticmethod
