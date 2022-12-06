@@ -609,9 +609,10 @@ class BrendaConstants(Brenda):
         elif self.args.enzyme_property == "ic50":
             raise NotImplementedError
         elif self.args.enzyme_property == "kcat_km":
-            if isinstance(sample["y"], np.ndarray) or isinstance(
-                sample["y"], tuple
+            if not self.args.use_mean_labels and (
+                isinstance(sample["y"], np.ndarray) or isinstance(sample["y"], tuple)
             ):  # for kcat_km, y is should have one value
+                print("Skipped sample because y is multi value")
                 return True
         elif self.args.enzyme_property == "ph_stability":
             raise NotImplementedError
