@@ -36,7 +36,7 @@
       "metric_names": ["regression"],
       "checkpoint_save_last": [false],
       "monitor": ["val_pearson"],
-      "num_workers": [0],
+      "num_workers": [5],
       "optimizer_name": ["adam"],
       "patience": [5],
       "train": [true],
@@ -54,6 +54,6 @@
       "logger_tags": ["constant"],
       "use_mean_labels": [true]
     },
-    "available_gpus": [1,2]
+    "available_gpus": [0,1,2,3]
   }
   
