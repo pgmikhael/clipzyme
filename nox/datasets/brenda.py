@@ -526,36 +526,42 @@ class BrendaConstants(Brenda):
         for sample in samples:
             if self.skip_sample(sample, seq_smi_2_y, split_group):
                 continue
-            # if multiple values then mean them
-            seq = sample["sequence"]
-            smi = sample["smiles"]
-            samples_added.add(f"{seq}{smi}")
-            # i want to mean labels, and I either have multiple same samples with different labels
-            # or I have a multi-label label (ie range)
-            # and I haven't already taken this sample
-            if (
-                self.args.use_mean_labels
-                and (
-                    (
-                        len(seq_smi_2_y[f"{seq}{smi}"]) > 1
-                        and any(
-                            not np.array_equal(i, seq_smi_2_y[f"{seq}{smi}"][0])
-                            if isinstance(i, np.ndarray)
-                            else i != seq_smi_2_y[f"{seq}{smi}"][0]
-                            for i in seq_smi_2_y[f"{seq}{smi}"]
-                        )
-                    )
-                    or len(sample["y"] > 1)
+
+            if self.args.use_mean_labels:
+                # TODO None of this code has been debugged because with SMILES changes
+                # it is was not necessary for kcat_km
+                seq = sample["sequence"]
+                smi = sample["smiles"]
+                # keep track of samples added to avoid duplicates
+                samples_added.add(f"{seq}{smi}")
+
+                # either have multiple same samples with different labels
+                # each identical sample could either have a numpy array label or a float label
+                different_labels_bool = len(seq_smi_2_y[f"{seq}{smi}"]) > 1 and any(
+                    not np.array_equal(i, seq_smi_2_y[f"{seq}{smi}"][0])
+                    if isinstance(i, np.ndarray)
+                    else i != seq_smi_2_y[f"{seq}{smi}"][0]
+                    for i in seq_smi_2_y[f"{seq}{smi}"]
                 )
-                and f"{seq}{smi}" not in samples_added
-            ):
-                labels = []
-                for i in seq_smi_2_y[f"{seq}{smi}"]:
-                    if isinstance(i, np.ndarray):
-                        labels.append(np.mean(i))
-                    elif len(i) > 1:  # probably a tuple
-                        labels.append(np.mean(i))
-                sample["y"] = np.mean(labels)
+                # or I have a multi-label label (ie range)
+                multiple_labels_bool = not isinstance(sample["y"], float) and len(
+                    sample["y"] > 1
+                )
+                if f"{seq}{smi}" not in samples_added and (
+                    different_labels_bool or multiple_labels_bool
+                ):
+                    # in which case mean the labels
+                    labels = []
+                    for i in seq_smi_2_y[f"{seq}{smi}"]:
+                        if isinstance(i, np.ndarray):
+                            labels.append(np.mean(i))
+                        elif (
+                            not isinstance(i, float) and len(i) > 1
+                        ):  # probably a tuple
+                            labels.append(np.mean(i))
+                        else:
+                            labels.append(i)  # label is just a float
+                    sample["y"] = np.mean(labels)
 
             dataset.append(sample)
 
@@ -676,9 +682,9 @@ class BrendaConstants(Brenda):
         if substrate_data.get("chebi_data", False):
             return substrate_data["chebi_data"].get("SMILES", None)
         elif substrate_data.get("pubchem_data", False):
-            if isinstance(substrate_data['pubchem_data'], dict):
+            if isinstance(substrate_data["pubchem_data"], dict):
                 return substrate_data["pubchem_data"].get("CanonicalSMILES", None)
-            elif isinstance(substrate_data['pubchem_data'], list):
+            elif isinstance(substrate_data["pubchem_data"], list):
                 return substrate_data["pubchem_data"][0].get("CanonicalSMILES", None)
             else:
                 raise NotImplementedError
