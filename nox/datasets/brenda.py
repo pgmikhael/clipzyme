@@ -476,6 +476,14 @@ class BrendaConstants(Brenda):
                             entry["min_value"],
                             entry["max_value"],
                         )
+                    elif not "num_value" in entry:
+                        if "min_value" in entry:
+                            value = entry["min_value"]
+                        elif "max_value" in entry:
+                            value = entry["max_value"]
+                        else:
+                            print("Skipped because no value found for entry ", entry)
+                            continue
                     else:
                         value = entry["num_value"]
 
@@ -514,9 +522,51 @@ class BrendaConstants(Brenda):
 
         # filter through dataset
         dataset = []
+        samples_added = set()
         for sample in samples:
             if self.skip_sample(sample, seq_smi_2_y, split_group):
                 continue
+
+            if self.args.use_mean_labels:
+                # TODO None of this code has been debugged because with SMILES changes
+                # it is was not necessary for kcat_km
+                seq = sample["sequence"]
+                smi = sample["smiles"]
+                # keep track of samples added to avoid duplicates
+
+                # either have multiple same samples with different labels
+                # each identical sample could either have a numpy array label or a float label
+                different_labels_bool = any(
+                    not np.array_equal(i, seq_smi_2_y[f"{seq}{smi}"][0])
+                    if isinstance(i, np.ndarray)
+                    else i != seq_smi_2_y[f"{seq}{smi}"][0]
+                    for i in seq_smi_2_y[f"{seq}{smi}"]
+                )
+                # or I have a multi-label label (ie range)
+                multiple_labels_bool = (
+                    not isinstance(sample["y"], float) and len(sample["y"]) > 1
+                ) or (isinstance(sample["y"], np.ndarray) and len(sample["y"]) > 1)
+
+                # if I have already added this sample, skip it
+                if f"{seq}{smi}" in samples_added:
+                    continue
+
+                if different_labels_bool or multiple_labels_bool:
+                    # in which case mean the labels
+                    labels = []
+                    for i in seq_smi_2_y[f"{seq}{smi}"]:
+                        if isinstance(i, np.ndarray):
+                            labels.append(np.mean(i))
+                        elif (
+                            not isinstance(i, float) and len(i) > 1
+                        ):  # probably a tuple
+                            labels.append(np.mean(i))
+                        else:
+                            labels.append(i)  # label is just a float
+                    sample["y"] = float(np.mean(labels))
+
+                samples_added.add(f"{seq}{smi}")
+
             dataset.append(sample)
 
         return dataset
@@ -533,26 +583,102 @@ class BrendaConstants(Brenda):
 
         # check if sample has mol
         if sample["smiles"] is None:
+            print("Skipped sample because SMILE is None")
             return True
 
         # if sequence is unknown
         if sample["sequence"] is None:
+            print("Skipped sample because Sequence is None")
             return True
 
         # check if multiple sequences
-        if len(sample["sequence"]) > 1:
-            return True
+        # if len(sample["sequence"]) > 1: # each sample is a single sequence
+        # return True
+
+        # check either all labels are multi value or single value
+        if self.args.enzyme_property == "turnover_number":
+            raise NotImplementedError
+        elif self.args.enzyme_property == "km_value":
+            raise NotImplementedError
+        elif self.args.enzyme_property == "ph_optimum":
+            raise NotImplementedError
+        elif self.args.enzyme_property == "specific_activity":
+            raise NotImplementedError
+        elif self.args.enzyme_property == "temperature_optimum":
+            raise NotImplementedError
+        elif self.args.enzyme_property == "isoelectric_point":
+            raise NotImplementedError
+        elif self.args.enzyme_property == "ki_value":
+            raise NotImplementedError
+        elif self.args.enzyme_property == "ic50":
+            raise NotImplementedError
+        elif self.args.enzyme_property == "kcat_km":
+            if not self.args.use_mean_labels and (
+                isinstance(sample["y"], np.ndarray) or isinstance(sample["y"], tuple)
+            ):  # for kcat_km, y is should have one value
+                print("Skipped sample because y is multi value")
+                return True
+        elif self.args.enzyme_property == "ph_stability":
+            raise NotImplementedError
+        elif self.args.enzyme_property == "temperature_stability":
+            raise NotImplementedError
+        elif self.args.enzyme_property == "ph_range":
+            raise NotImplementedError
+        elif self.args.enzyme_property == "temperature_range":
+            raise NotImplementedError
+        elif self.args.enzyme_property == "localization":
+            raise NotImplementedError
+        elif self.args.enzyme_property == "tissue":
+            raise NotImplementedError
 
         # check contradictory values TODO
-        smi = sample["smiles"]
-        seq = sample["sequence"]
-        if any(
-            i != sequence_smiles2y[f"{seq}{smi}"][0]
-            for i in sequence_smiles2y[f"{seq}{smi}"]
-        ):
-            return True
+        if not self.args.use_mean_labels:
+            smi = sample["smiles"]
+            seq = sample["sequence"]
+            if any(
+                not np.array_equal(i, sequence_smiles2y[f"{seq}{smi}"][0])
+                if isinstance(i, np.ndarray)
+                else i != sequence_smiles2y[f"{seq}{smi}"][0]
+                for i in sequence_smiles2y[f"{seq}{smi}"]
+            ):
+                print("Skipped sample because of contradictory values")
+                return True
 
         return False
+
+    @staticmethod
+    def set_args(args) -> None:
+        super(BrendaConstants, BrendaConstants).set_args(args)
+        if args.enzyme_property == "turnover_number":
+            raise NotImplementedError
+        elif args.enzyme_property == "km_value":
+            raise NotImplementedError
+        elif args.enzyme_property == "ph_optimum":
+            raise NotImplementedError
+        elif args.enzyme_property == "specific_activity":
+            raise NotImplementedError
+        elif args.enzyme_property == "temperature_optimum":
+            raise NotImplementedError
+        elif args.enzyme_property == "isoelectric_point":
+            raise NotImplementedError
+        elif args.enzyme_property == "ki_value":
+            raise NotImplementedError
+        elif args.enzyme_property == "ic50":
+            raise NotImplementedError
+        elif args.enzyme_property == "kcat_km":
+            args.num_classes = 1
+        elif args.enzyme_property == "ph_stability":
+            raise NotImplementedError
+        elif args.enzyme_property == "temperature_stability":
+            raise NotImplementedError
+        elif args.enzyme_property == "ph_range":
+            raise NotImplementedError
+        elif args.enzyme_property == "temperature_range":
+            raise NotImplementedError
+        elif args.enzyme_property == "localization":
+            raise NotImplementedError
+        elif args.enzyme_property == "tissue":
+            raise NotImplementedError
 
     def get_smiles(self, substrate):
         substrate_data = self.brenda_smiles.get(substrate, None)
@@ -561,15 +687,16 @@ class BrendaConstants(Brenda):
         if substrate_data.get("chebi_data", False):
             return substrate_data["chebi_data"].get("SMILES", None)
         elif substrate_data.get("pubchem_data", False):
-            if isinstance(substrate_data['pubchem_data'], dict):
+            if isinstance(substrate_data["pubchem_data"], dict):
                 return substrate_data["pubchem_data"].get("CanonicalSMILES", None)
-            elif isinstance(substrate_data['pubchem_data'], list):
+            elif isinstance(substrate_data["pubchem_data"], list):
                 return substrate_data["pubchem_data"][0].get("CanonicalSMILES", None)
             else:
                 raise NotImplementedError
         return
 
     def get_label(self, value, property_name):
+        # TODO - can values be 0?
         if property_name == "turnover_number":
             return np.log2(value)
         elif property_name == "km_value":
@@ -601,6 +728,29 @@ class BrendaConstants(Brenda):
         elif property_name == "tissue":
             raise NotImplementedError
         raise ValueError(f"Property {property_name} not supported")
+
+    @property
+    def SUMMARY_STATEMENT(self) -> None:
+        """
+        Prints summary statement with dataset stats
+        """
+        summary = f"\n{self.split_group} dataset for {self.args.enzyme_property} property contains {len(self.dataset)} samples"
+        return summary
+
+    @staticmethod
+    def add_args(parser) -> None:
+        """Add class specific args
+
+        Args:
+            parser (argparse.ArgumentParser): argument parser
+        """
+        super(BrendaConstants, BrendaConstants).add_args(parser)
+        parser.add_argument(
+            "--use_mean_labels",
+            action="store_true",
+            default=False,
+            help="If labels have more than one value, or multiple samples have different labels, use the mean",
+        )
 
 
 @register_object("brenda_ec", "dataset")

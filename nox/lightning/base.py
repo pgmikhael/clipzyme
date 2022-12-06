@@ -59,6 +59,9 @@ class Base(pl.LightningModule, Nox):
             "r2",
             "c_index",
             "hit",
+            "pearson",
+            "spearman",
+            "cosine_similarity",
         ]
 
     @property
@@ -142,7 +145,7 @@ class Base(pl.LightningModule, Nox):
             metrics = self.compute_metric(output["preds_dict"])
             metrics.update(output)
             self.log_outputs(metrics, "train")
-            del output['preds_dict']
+            del output["preds_dict"]
 
         return output
 
@@ -156,7 +159,7 @@ class Base(pl.LightningModule, Nox):
             metrics = self.compute_metric(output["preds_dict"])
             metrics.update(output)
             self.log_outputs(metrics, "val")
-            del output['preds_dict']
+            del output["preds_dict"]
         return output
 
     def test_step(self, batch, batch_idx):
@@ -181,7 +184,7 @@ class Base(pl.LightningModule, Nox):
             metrics = self.compute_metric(output["preds_dict"])
             metrics.update(output)
             self.log_outputs(metrics, "test")
-            del output['preds_dict']
+            del output["preds_dict"]
         return output
 
     def training_epoch_end(self, outputs):

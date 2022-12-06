@@ -7,9 +7,9 @@ from nox.models.abstract import AbstractModel
 
 
 @register_object("enzyme_substrate_model", "model")
-class EznymeSubstrateScore(AbstractModel):
+class EnzymeSubstrateScore(AbstractModel):
     def __init__(self, args):
-        super(EznymeSubstrateScore, self).__init__()
+        super(EnzymeSubstrateScore, self).__init__()
 
         self.args = args
         self.protein_encoder = get_object(args.protein_encoder_name, "model")(args)
@@ -70,9 +70,9 @@ class EznymeSubstrateScore(AbstractModel):
 
 
 @register_object("enzyme_active_site_predictor", "model")
-class EznymeActiveSiteModel(AbstractModel):
+class EnzymeActiveSiteModel(AbstractModel):
     def __init__(self, args):
-        super(EznymeActiveSiteModel, self).__init__()
+        super(EnzymeActiveSiteModel, self).__init__()
 
         self.args = args
         self.protein_encoder = get_object(args.protein_encoder_name, "model")(args)
