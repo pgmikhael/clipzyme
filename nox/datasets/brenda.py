@@ -561,7 +561,7 @@ class BrendaConstants(Brenda):
                             labels.append(np.mean(i))
                         else:
                             labels.append(i)  # label is just a float
-                    sample["y"] = np.mean(labels)
+                    sample["y"] = float(np.mean(labels))
 
             dataset.append(sample)
 
