@@ -194,8 +194,12 @@ if __name__ == "__main__":
                     brenda_mols.update(
                         [e for d in ecdict[key] for e in d.get("products", [])]
                     )
+            
+            for key in ["turnover_number", "km_value", "ki_value", "ic50", "kcat_km"]:
+                if key in ecdict:
+                    brenda_mols.update([d.get("value", None) for d in ecdict[key]])
 
-        brenda_mols = list(brenda_mols)
+        brenda_mols = [m for m in brenda_mols if m is not None]
 
         # get brenda ligand_group_id
         client = Client(WSDL)
