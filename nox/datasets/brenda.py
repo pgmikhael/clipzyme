@@ -415,9 +415,15 @@ class Brenda(AbstractDataset):
         parser.add_argument(
             "--ec_level",
             type=int,
-            default=0,
+            default=3,
             choices=[0, 1, 2, 3],
             help="EC level to use (e.g., ec_level 1 of '1.2.3.1' -> '1.2')",
+        )
+        parser.add_argument(
+            "--deduplicate_reactions",
+            action="store_true",
+            default=False,
+            help="Create reaction dataset of unique chemical reactions. Used to skip same reaction for different proteins",
         )
         parser.add_argument(
             "--mcsa_file_path",
@@ -818,6 +824,7 @@ class BrendaEC(Brenda):
 
 @register_object("brenda_reaction", "dataset")
 class BrendaReaction(Brenda):
+
     def create_dataset(
         self, split_group: Literal["train", "dev", "test"]
     ) -> List[dict]:
@@ -943,13 +950,21 @@ class BrendaReaction(Brenda):
                 uniprot2reactions[uniprotid].append(sample)
 
         # make each reaction a sample
+        all_reactions = set()
         dataset = []
         for uniprot, reaction_list in uniprot2reactions.items():
             for reaction in reaction_list:
+
                 if self.skip_sample(reaction, split_group):
                     continue
-                if reaction['sample_id'] == '47497b7c4b25e7b219fd5197c1bc2d15':
-                    z = 1/0
+
+                # in case using reactions alone without protein information in model
+                if self.args.deduplicate_reactions:
+                    rxn = "{}>>{}".format( '.'.join(reaction["reactants"]), '.'.join(reaction["products"] ))
+                    if rxn in all_reactions:
+                        continue 
+                    all_reactions.add(rxn)
+
                 dataset.append(reaction)
 
         return dataset
@@ -961,7 +976,8 @@ class BrendaReaction(Brenda):
                 return True
 
         if self.args.split_type == "ec":
-            if self.to_split[sample["ec"]] != split_group:
+            ec = ".".join(sample["ec"].split(".")[: self.args.ec_level + 1])
+            if self.to_split[ec] != split_group:
                 return True
 
         # check if sample has mol
@@ -998,7 +1014,7 @@ class BrendaReaction(Brenda):
         if mcsa_data.get(sequence, False):
             if mcsa_data[sequence].get(ec, False):
                 for residue_dict in mcsa_data[sequence][ec]["residues"]:
-                    if residue_dict["residue_id"] is None:
+                    if (residue_dict["residue_id"] is None) or (residue_dict["residue"] == ""):
                         continue
                     letter = sequence[residue_dict["residue_id"]]
                     y[residue_dict["residue_id"]] = 1
@@ -1060,6 +1076,17 @@ class BrendaReaction(Brenda):
         except Exception:
             warnings.warn(f"Could not load sample: {sample['sample_id']}")
 
+    @property
+    def SUMMARY_STATEMENT(self) -> None:
+        reactions = [ "{}>>{}".format(".".join(d['reactants']), ".".join(d['products'])) for d in self.dataset]
+        proteins = [d["protein_id"] for d in self.dataset]
+        ecs = [d["ec"] for d in self.dataset]
+        statement = f""" 
+        * Number of reactions: {len(set(reactions))}
+        * Number of proteins: {len(set(proteins))}
+        * Number of ECs: {len(set(ecs))}
+        """
+        return statement
 
 @register_object("mcsa", "dataset")
 class MCSA(BrendaReaction):
