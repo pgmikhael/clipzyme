@@ -232,7 +232,6 @@ if __name__ == "__main__":
                     last_brenda_molecules_dict[synonym] = j
 
         # separate those previously queried but not obtained for some reason (e.g., timeout)
-        brenda_mol_ids = []
         brenda_retrieved_molecules = []
         for g in tqdm(brenda_mol_ids):
             if (
