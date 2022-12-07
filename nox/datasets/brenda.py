@@ -881,12 +881,13 @@ class BrendaReaction(Brenda):
                                             + ".".join(ps),
                                             "sample_id": sample_id,
                                             "residues": residues["residues"],
-                                            "residue_positions": residues[
+                                            "residue_mask": residues[
                                                 "residue_mask"
                                             ],
                                             "has_residues": residues[
                                                 "has_residues"
                                             ],
+                                            "residue_positions": residues["residue_positions"],
                                         }
                                         
                                         if self.skip_sample(sample, split_group):
@@ -931,7 +932,8 @@ class BrendaReaction(Brenda):
                     "reaction_string": reaction_string,
                     "sample_id": sample_id,
                     "residues": residues["residues"],
-                    "residue_positions": residues["residue_mask"],
+                    "residue_mask": residues["residue_mask"],
+                    "residue_positions": residues["residue_positions"],
                     "has_residues": True,
                 }
 
@@ -946,6 +948,8 @@ class BrendaReaction(Brenda):
             for reaction in reaction_list:
                 if self.skip_sample(reaction, split_group):
                     continue
+                if reaction['sample_id'] == '47497b7c4b25e7b219fd5197c1bc2d15':
+                    z = 1/0
                 dataset.append(reaction)
 
         return dataset
@@ -962,6 +966,9 @@ class BrendaReaction(Brenda):
 
         # check if sample has mol
         if "?" in (sample["products"] + sample["reactants"]):
+            return True
+        
+        if any(s in [None, [], "?"] for s in (sample["products"] + sample["reactants"]) ):
             return True
 
         # if sequence is unknown
@@ -982,11 +989,12 @@ class BrendaReaction(Brenda):
             dict: {residue_mask: torch.Tensor, has_residues: torch.Tensor, residues: [smiles]}
         """
         if sequence is None:
-            return {"residue_mask": torch.zeros(1), "has_residues": 0, "residues": []}
+            return {"residue_mask": torch.zeros(1), "has_residues": 0, "residues": [], "residue_positions": []}
 
         y = torch.zeros(len(sequence))
         has_y = 0
         residues = []
+        residue_pos = []
         if mcsa_data.get(sequence, False):
             if mcsa_data[sequence].get(ec, False):
                 for residue_dict in mcsa_data[sequence][ec]["residues"]:
@@ -994,10 +1002,11 @@ class BrendaReaction(Brenda):
                         continue
                     letter = sequence[residue_dict["residue_id"]]
                     y[residue_dict["residue_id"]] = 1
+                    residue_pos.append(residue_dict["residue_id"])
                     residues.append(AA_TO_SMILES.get(letter, None))
                 has_y = 1
 
-        return {"residue_mask": y, "has_residues": has_y, "residues": residues}
+        return {"residue_mask": y, "has_residues": has_y, "residues": residues, "residue_positions": residue_pos}
 
     def __getitem__(self, index):
         try:
@@ -1037,18 +1046,19 @@ class BrendaReaction(Brenda):
                 "products": ".".join(products),
                 "sequence": sample["sequence"],
                 "ec": sample["ec"],
-                "organism": sample["organism"],
+                "organism": sample.get("organism", 'none'),
                 "protein_id": sample["protein_id"],
                 "sample_id": sample["sample_id"],
-                "residues": sample["residues"],
-                "residue_mask": sample["residue_mask"],
+                "residues": ".".join(sample["residues"]),
+                # "residue_mask": sample["residue_mask"],
                 "has_residues": sample["has_residues"],
+                "residue_positions": ".".join( [str(s) for s in sample["residue_positions"] ]),
             }
 
             return item
 
         except Exception:
-            warnings.warn(f"Could not load sample: {item['sample_id']}")
+            warnings.warn(f"Could not load sample: {sample['sample_id']}")
 
 
 @register_object("mcsa", "dataset")
