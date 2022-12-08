@@ -1017,9 +1017,10 @@ class BrendaReaction(Brenda):
                     if (residue_dict["residue_id"] is None) or (residue_dict["residue"] == ""):
                         continue
                     letter = sequence[residue_dict["residue_id"]]
+                    amino_acid = AA_TO_SMILES.get(letter, "") # X is mapped to "", consider skipping
                     y[residue_dict["residue_id"]] = 1
                     residue_pos.append(residue_dict["residue_id"])
-                    residues.append(AA_TO_SMILES.get(letter, None))
+                    residues.append(amino_acid) 
                 has_y = 1
 
         return {"residue_mask": y, "has_residues": has_y, "residues": residues, "residue_positions": residue_pos}
