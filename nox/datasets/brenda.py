@@ -15,6 +15,7 @@ from rxn.chemutils.smiles_randomization import randomize_smiles_rotated
 import warnings
 import hashlib
 from frozendict import frozendict
+import copy 
 
 CHEBI_DB = json.load(open("/Mounts/rbg-storage1/datasets/Metabo/chebi_db.json", "r"))
 
@@ -1026,15 +1027,11 @@ class BrendaReaction(Brenda):
         return {"residue_mask": y, "has_residues": has_y, "residues": residues, "residue_positions": residue_pos}
 
     def __getitem__(self, index):
-        try:
-            sample = self.dataset[index]
-            # augment: permute and/or randomize
-            if (
-                self.args.use_random_smiles_representation
-                or self.args.randomize_order_in_reaction
-            ):
+        sample = self.dataset[index]
 
-                reactants, products = sample["reactants"], sample["products"]
+        try:
+
+            reactants, products = copy.deepcopy(sample["reactants"]), copy.deepcopy(sample["products"])
 
             # incorporate sequence residues if known
             if self.args.use_residues_in_reaction:
