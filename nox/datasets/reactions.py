@@ -7,6 +7,7 @@ from tqdm import tqdm
 import random
 from rxn.chemutils.smiles_randomization import randomize_smiles_rotated
 from nox.utils.smiles import standardize_reaction
+import copy 
 
 @register_object("chemical_reactions", "dataset")
 class ChemRXN(AbstractDataset):
@@ -27,22 +28,20 @@ class ChemRXN(AbstractDataset):
 
     def __getitem__(self, index):
         try:
-            item = self.dataset[index]
-            # augment: permute and/or randomize
-            if (
-                self.args.use_random_smiles_representation
-                or self.args.randomize_order_in_reaction
-            ):
-                reaction = item["x"]
-                reactants, products = reaction.split(">>")
-                reactants, products = reactants.split("."), products.split(".")
+            sample = copy.deepcopy(self.dataset[index])
+            item = {}
 
-            if self.args.randomize_order_in_reaction:
+            reaction = sample["x"]
+            reactants, products = reaction.split(">>")
+            reactants, products = reactants.split("."), products.split(".")
+
+            # augment: permute and/or randomize
+            if self.args.randomize_order_in_reaction and not (self.split_group == 'test'):
                 random.shuffle(reactants)
                 random.shuffle(products)
                 reaction = "{}>>{}".format(".".join(reactants), ".".join(products))
 
-            if self.args.use_random_smiles_representation:
+            if self.args.use_random_smiles_representation and not (self.split_group == 'test'):
                 try:
                     reactants = [randomize_smiles_rotated(s) for s in reactants]
                     products = [randomize_smiles_rotated(s) for s in products]
