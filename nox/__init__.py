@@ -56,6 +56,7 @@ import nox.learning.losses.contrastive
 import nox.learning.metrics.basic
 import nox.learning.metrics.link_prediction
 import nox.learning.metrics.representation
+import nox.learning.metrics.reactions
 
 # callbacks
 import nox.callbacks.basic

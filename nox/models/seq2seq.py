@@ -28,7 +28,7 @@ class ReactionEncoder(AbstractModel):
         self.generation_config = self.make_generation_config(args)
     
     def make_generation_config(self, args):
-        generate_args = inspect.signature(self.model).parameters
+        generate_args = inspect.signature(self.model.generate).parameters
         args_dict = vars(args)
         gen_config = {}
         
@@ -116,6 +116,13 @@ class ReactionEncoder(AbstractModel):
 
     def forward(self, batch) -> Dict:
 
+        if self.args.predict:
+            predictions = self.generate(batch)
+            return {
+                "preds": predictions,
+                "golds": batch["products"],
+            }
+        
         encoder_input_ids = self.tokenize(batch["reactants"], self.tokenizer, self.args)
         decoder_input_ids = self.tokenize(batch["products"], self.tokenizer, self.args)
 
@@ -182,7 +189,7 @@ class ReactionEncoder(AbstractModel):
         }
         return output
 
-    def generate(self, batch, **kwargs):
+    def generate(self, batch):
         """Applies auto-regressive generation for reaction prediction
         Usage: https://huggingface.co/docs/transformers/main/en/main_classes/text_generation#transformers.GenerationMixin
 
@@ -197,8 +204,11 @@ class ReactionEncoder(AbstractModel):
         pad_id = self.tokenizer.pad_token_id
 
         encoder_input_ids = self.tokenize(batch["reactants"], self.tokenizer, self.args)
+        for k, v in encoder_input_ids.items():
+            encoder_input_ids[k] = v.to(self.devicevar.device)
+
         generated_ids = self.model.generate(
-            input_ids=encoder_input_ids,
+            input_ids=encoder_input_ids["input_ids"],
             decoder_start_token_id = bos_id,
             bos_token_id = bos_id,
             eos_token_id = eos_id,
@@ -206,15 +216,13 @@ class ReactionEncoder(AbstractModel):
             attention_mask = encoder_input_ids['attention_mask'],
             output_scores=True,
             return_dict_in_generate=True,
-            early_stopping=True,
-            **kwargs
+            **self.generation_config
         )
-        generated_samples = self.tokenizer.batch_decode(generated_ids)
-        processed_samples = []
-        for sample in generated_samples:
-            processed_samples.append( sample[:sample.index(tokenizer.eos_token)] )
-        
-        return processed_samples
+        generated_samples = self.tokenizer.batch_decode(generated_ids.sequences, skip_special_tokens = True)
+        generated_samples = [s.replace(' ', '') for s in generated_samples]
+        beam_search_n = self.generation_config["num_return_sequences"]
+        batch_samples = [ generated_samples[i:i + beam_search_n] for i in range(0, len(generated_samples), beam_search_n)]
+        return batch_samples
 
     @staticmethod
     def add_args(parser) -> None:

@@ -25,6 +25,7 @@ class Base(pl.LightningModule, Nox):
         self.model = get_object(args.model_name, "model")(args)
 
     def setup(self, stage):
+        # losses 
         self.loss_fns = {
             "train": [get_object(l, "loss")() for l in self.args.loss_names]
         }
@@ -34,11 +35,20 @@ class Base(pl.LightningModule, Nox):
             if self.args.loss_names_for_eval is None
             else [get_object(l, "loss")() for l in self.args.loss_names_for_eval]
         )
-        self.metrics = [
-            get_object(m, "metric")(self.args) for m in self.args.metric_names
-        ]
+
+        # metrics
+        self.metrics={
+            "train": [get_object(m, "metric")(self.args) for m in self.args.metric_names]
+        }
+        self.metrics["val"] = self.metrics["train"]
+        self.metrics["test"] = (
+            self.metrics["train"]
+            if self.args.metric_names_for_eval is None
+            else [get_object(l, "metric")(self.args) for l in self.args.metric_names_for_eval]
+        )
+            
         self.metric_keys = list(
-            set([key for metric in self.metrics for key in metric.metric_keys])
+            set([key for split, metrics in self.metrics.items() for metric in metrics for key in metric.metric_keys])
         )
 
     @property
@@ -62,6 +72,7 @@ class Base(pl.LightningModule, Nox):
             "pearson",
             "spearman",
             "cosine_similarity",
+            "top"
         ]
 
     @property
@@ -117,15 +128,18 @@ class Base(pl.LightningModule, Nox):
             batch: dict obtained from DataLoader. batch must contain they keys ['x', 'sample_id']
         """
         logged_output = OrderedDict()
+        predictions_dict =  {}
         model_output = self.model(batch)
         if not self.args.predict:
             loss, logging_dict, predictions_dict = self.compute_loss(
                 model_output, batch
             )
             predictions_dict = self.store_in_predictions(predictions_dict, batch)
+            logged_output["loss"] = loss
+            logged_output.update(logging_dict)
+
         predictions_dict = self.store_in_predictions(predictions_dict, model_output)
-        logged_output["loss"] = loss
-        logged_output.update(logging_dict)
+        
         logged_output["preds_dict"] = predictions_dict
         if self.args.save_hiddens:
             logged_output["preds_dict"].update(model_output)
@@ -228,7 +242,7 @@ class Base(pl.LightningModule, Nox):
         outputs = gather_step_outputs(outputs)
         if isinstance(outputs.get("loss", 0), torch.Tensor):
             outputs["loss"] = outputs["loss"].mean()
-        if ("preds_dict" in outputs) and (not self.args.predict):
+        if ("preds_dict" in outputs) and all([m in outputs['preds_dict'] for metric in self.metrics['test'] for m in metric.metric_keys]):
             outputs.update(self.compute_metric(outputs["preds_dict"]))
         self.log_outputs(outputs, "test")
         return
@@ -275,7 +289,7 @@ class Base(pl.LightningModule, Nox):
 
     def compute_metric(self, predictions):
         logging_dict = OrderedDict()
-        for metric_fn in self.metrics:
+        for metric_fn in self.metrics[self.phase]:
             l_dict = metric_fn(predictions, self.args)
             logging_dict.update(l_dict)
         return logging_dict
@@ -459,6 +473,8 @@ def gather_step_outputs(outputs):
             output_dict[k] = torch.stack([output[k] for output in outputs])
         elif isinstance(outputs[-1][k], torch.Tensor):
             output_dict[k] = torch.cat([output[k] for output in outputs], dim=0)
+        elif isinstance(outputs[-1][k], list):
+            output_dict[k] = [olist for output in outputs for olist in output[k]]
         else:
             output_dict[k] = [output[k] for output in outputs]
     return output_dict
