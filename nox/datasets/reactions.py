@@ -8,6 +8,7 @@ import random
 from rxn.chemutils.smiles_randomization import randomize_smiles_rotated
 from nox.utils.smiles import standardize_reaction
 import copy 
+import numpy as np 
 
 @register_object("chemical_reactions", "dataset")
 class ChemRXN(AbstractDataset):
@@ -52,6 +53,7 @@ class ChemRXN(AbstractDataset):
             item["x"] = reaction
             item["reactants"] = ".".join(reactants)
             item["products"] = ".".join(products)
+            item["sample_id"] = sample["sample_id"]
             
             if standardize_reaction(reaction) == ">>":
                 return
@@ -76,3 +78,21 @@ class ChemRXN(AbstractDataset):
             default=False,
             help="Use non-canonical representation of smiles as augmentation",
         )
+
+    @property
+    def SUMMARY_STATEMENT(self) -> str:
+        """
+        Prints summary statement with dataset stats
+        """
+        
+        reactions = [d["x"].split(">>") for d in self.dataset]
+        num_reactions = len(reactions)
+        median_src = np.median([len(v[0]) for v in reactions])
+        median_tgt = np.median([len(v[1]) for v in reactions])
+
+        summary = f"""
+        * Number of reactions: {num_reactions}
+        * Median source length: {median_src}
+        * Medin target length: {median_tgt}
+        """
+        return summary
