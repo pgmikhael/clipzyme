@@ -46,6 +46,7 @@ import nox.learning.optimizers.basic
 
 # scheduler
 import nox.learning.schedulers.basic
+import nox.learning.schedulers.noam
 
 # losses
 import nox.learning.losses.basic

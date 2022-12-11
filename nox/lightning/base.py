@@ -262,7 +262,7 @@ class Base(pl.LightningModule, Nox):
         scheduler = {
             "scheduler": schedule,
             "monitor": self.args.monitor,
-            "interval": "epoch",
+            "interval": self.args.scheduler_interval,
             "frequency": 1,
         }
         return [optimizer], [scheduler]
@@ -447,6 +447,13 @@ class Base(pl.LightningModule, Nox):
             action="store_true",
             default=False,
             help="Whether to compute model metrics every step. Default is to compute at end of full epoch",
+        )
+        parser.add_argument(
+            "--scheduler_interval",
+            type=str,
+            default="epoch",
+            choices=["epoch", "step"],
+            help="how often to apply scheduling on model parameters.",
         )
 
 

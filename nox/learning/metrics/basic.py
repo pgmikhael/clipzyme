@@ -323,6 +323,7 @@ class Seq2SeqClassification(BaseClassification):
         preds = predictions_dict["preds"]  # B, N
         golds = predictions_dict["golds"].int()  # B, N
         
+        top1_correct = 0
         for sample_probs, sample_preds, sample_golds  in zip(probs, preds, golds):
             sample_probs = sample_probs[sample_golds!=-100]
             sample_preds = sample_preds[sample_golds!=-100]
@@ -334,11 +335,15 @@ class Seq2SeqClassification(BaseClassification):
                     "golds": sample_golds
                 }, args
             )
+            top1_correct += torch.all(sample_preds == sample_golds).int()
             for k,v in sample_stats.items():
                 if len(v.shape) < 2:
                     stats_dict[k].append(v)
         
         for k,v in stats_dict.items():
             stats_dict[k] = torch.stack(v).mean()
+        
+        stats_dict["top_1"] = torch.tensor(top1_correct / len(golds))
 
         return stats_dict
+    
