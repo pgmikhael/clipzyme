@@ -13,7 +13,7 @@
       "protein_encoder_name": ["fair_esm"],
       "use_cls_token": [false],
       "freeze_esm": [true],
-      "subtrate_encoder_name": ["graph_classifier"],
+      "substrate_encoder_name": ["graph_classifier"],
       "encoder_hidden_key": ["hidden"],
       "model_name_for_encoder": ["chemprop"],
       "chemprop_num_layers": [3],
