@@ -1,0 +1,17 @@
+{
+  "script": "main",
+  "train_config": "configs/reaction_models/forward_synthesis_noam.json",
+  "log_dir": "/Mounts/rbg-storage1/logs/metabo/",
+  "available_gpus": ["0"],
+  "eval_args": {
+    "generation_renormalize_logits": [true],
+    "generation_num_return_sequences": [5],
+    "generation_num_beams": [5],
+    "generation_max_new_tokens": [1000],
+    "compute_metrics_every_step": [false],
+    "test": [true],
+    "predict": [true],
+    "metric_names_for_eval": ["topk_classification"],
+    "topk_values": ["1 5 10"]
+  }
+}
