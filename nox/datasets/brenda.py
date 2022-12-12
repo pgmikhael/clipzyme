@@ -126,6 +126,26 @@ class Brenda(AbstractDataset):
                         for sample in samples[split_indices[i] : split_indices[i + 1]]
                     }
                 )
+        elif self.args.split_type == "random":
+            np.random.seed(seed)
+
+            print("Generating datasets in order to assign splits...")
+            dataset = self.create_dataset(
+                "train"
+            )  # must not skip samples by using split in dataset
+
+            self.to_split = {}
+
+            for sample in dataset:
+                seq = sample["sequence"]
+                smi = sample["smiles"]
+                self.to_split.update(
+                    {
+                        f"{seq}{smi}": np.random.choice(
+                            ["train", "dev", "test"], p=split_probs
+                        )
+                    }
+                )
         else:
             raise ValueError("Split type not supported")
 
@@ -472,10 +492,18 @@ class BrendaConstants(Brenda):
                     organism = protein2organism[protein].replace(" ", "_")
 
                     if "min_value" in entry and "max_value" in entry:
-                        value = (
-                            entry["min_value"],
-                            entry["max_value"],
-                        )
+                        if not self.args.use_mean_labels:
+                            value = (
+                                entry["min_value"],
+                                entry["max_value"],
+                            )
+                        else:
+                            value = np.mean(
+                                [
+                                    entry["min_value"],
+                                    entry["max_value"],
+                                ]
+                            )
                     elif not "num_value" in entry:
                         if "min_value" in entry:
                             value = entry["min_value"]
@@ -504,13 +532,19 @@ class BrendaConstants(Brenda):
                             sample["substrate"] = substrate
                             smiles = self.get_smiles(substrate)
                             if smiles:
-                                mol_datapoint = from_smiles(smiles)
-                                mol_datapoint.rdkit_features = torch.tensor(
-                                    get_rdkit_feature(
-                                        smiles, method=self.args.rdkit_features_name
+                                try:
+                                    mol_datapoint = from_smiles(smiles)
+                                    mol_datapoint.rdkit_features = torch.tensor(
+                                        get_rdkit_feature(
+                                            smiles, method=self.args.rdkit_features_name
+                                        )
                                     )
-                                )
-                                sample["mol"] = mol_datapoint
+                                    sample["mol"] = mol_datapoint
+                                except:
+                                    print(
+                                        "Skipped sample because could not convert smiles to RDKit Mol"
+                                    )
+                                    continue
                             sample["smiles"] = smiles
 
                         samples.append(sample)
@@ -581,9 +615,15 @@ class BrendaConstants(Brenda):
             if self.to_split[sample["ec"]] != split_group:
                 return True
 
+        if self.args.split_type == "random" and hasattr(self, "to_split"):
+            seq = sample["sequence"]
+            smi = sample["smiles"]
+            if self.to_split[f"{seq}{smi}"] != split_group:
+                return True
+
         # check if sample has mol
         if sample["smiles"] is None:
-            print("Skipped sample because SMILE is None")
+            # print("Skipped sample because SMILE is None")
             return True
 
         # if sequence is unknown
@@ -597,7 +637,11 @@ class BrendaConstants(Brenda):
 
         # check either all labels are multi value or single value
         if self.args.enzyme_property == "turnover_number":
-            raise NotImplementedError
+            if not self.args.use_mean_labels and (
+                isinstance(sample["y"], np.ndarray) or isinstance(sample["y"], tuple)
+            ):  # for kcat_km, y is should have one value
+                print("Skipped sample because y is multi value")
+                return True
         elif self.args.enzyme_property == "km_value":
             raise NotImplementedError
         elif self.args.enzyme_property == "ph_optimum":
@@ -650,7 +694,7 @@ class BrendaConstants(Brenda):
     def set_args(args) -> None:
         super(BrendaConstants, BrendaConstants).set_args(args)
         if args.enzyme_property == "turnover_number":
-            raise NotImplementedError
+            args.num_classes = 1
         elif args.enzyme_property == "km_value":
             raise NotImplementedError
         elif args.enzyme_property == "ph_optimum":
