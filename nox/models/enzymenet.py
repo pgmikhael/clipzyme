@@ -13,7 +13,7 @@ class EnzymeSubstrateScore(AbstractModel):
 
         self.args = args
         self.protein_encoder = get_object(args.protein_encoder_name, "model")(args)
-        self.substrate_encoder = get_object(args.subtrate_encoder_name, "model")(args)
+        self.substrate_encoder = get_object(args.substrate_encoder_name, "model")(args)
         self.mlp = get_object(args.protein_substrate_aggregator, "model")(args)
         if args.activation_name is not None:
             self.activation = getattr(torch.nn.functional, args.activation_name)
@@ -48,7 +48,7 @@ class EnzymeSubstrateScore(AbstractModel):
             help="Name of encoder to use",
         )
         parser.add_argument(
-            "--subtrate_encoder_name",
+            "--substrate_encoder_name",
             type=str,
             action=set_nox_type("model"),
             default="chemprop",
