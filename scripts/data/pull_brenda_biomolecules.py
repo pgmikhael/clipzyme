@@ -194,8 +194,12 @@ if __name__ == "__main__":
                     brenda_mols.update(
                         [e for d in ecdict[key] for e in d.get("products", [])]
                     )
+            
+            for key in ["turnover_number", "km_value", "ki_value", "ic50", "kcat_km"]:
+                if key in ecdict:
+                    brenda_mols.update([d.get("value", None) for d in ecdict[key]])
 
-        brenda_mols = list(brenda_mols)
+        brenda_mols = [m for m in brenda_mols if m is not None]
 
         # get brenda ligand_group_id
         client = Client(WSDL)
@@ -228,7 +232,6 @@ if __name__ == "__main__":
                     last_brenda_molecules_dict[synonym] = j
 
         # separate those previously queried but not obtained for some reason (e.g., timeout)
-        brenda_mol_ids = []
         brenda_retrieved_molecules = []
         for g in tqdm(brenda_mol_ids):
             if (

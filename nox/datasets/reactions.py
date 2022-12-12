@@ -7,6 +7,8 @@ from tqdm import tqdm
 import random
 from rxn.chemutils.smiles_randomization import randomize_smiles_rotated
 from nox.utils.smiles import standardize_reaction
+import copy 
+import numpy as np 
 
 @register_object("chemical_reactions", "dataset")
 class ChemRXN(AbstractDataset):
@@ -27,22 +29,20 @@ class ChemRXN(AbstractDataset):
 
     def __getitem__(self, index):
         try:
-            item = self.dataset[index]
-            # augment: permute and/or randomize
-            if (
-                self.args.use_random_smiles_representation
-                or self.args.randomize_order_in_reaction
-            ):
-                reaction = item["x"]
-                reactants, products = reaction.split(">>")
-                reactants, products = reactants.split("."), products.split(".")
+            sample = copy.deepcopy(self.dataset[index])
+            item = {}
 
-            if self.args.randomize_order_in_reaction:
+            reaction = sample["x"]
+            reactants, products = reaction.split(">>")
+            reactants, products = reactants.split("."), products.split(".")
+
+            # augment: permute and/or randomize
+            if self.args.randomize_order_in_reaction and not (self.split_group == 'test'):
                 random.shuffle(reactants)
                 random.shuffle(products)
                 reaction = "{}>>{}".format(".".join(reactants), ".".join(products))
 
-            if self.args.use_random_smiles_representation:
+            if self.args.use_random_smiles_representation and not (self.split_group == 'test'):
                 try:
                     reactants = [randomize_smiles_rotated(s) for s in reactants]
                     products = [randomize_smiles_rotated(s) for s in products]
@@ -53,6 +53,7 @@ class ChemRXN(AbstractDataset):
             item["x"] = reaction
             item["reactants"] = ".".join(reactants)
             item["products"] = ".".join(products)
+            item["sample_id"] = sample["sample_id"]
             
             if standardize_reaction(reaction) == ">>":
                 return
@@ -77,3 +78,21 @@ class ChemRXN(AbstractDataset):
             default=False,
             help="Use non-canonical representation of smiles as augmentation",
         )
+
+    @property
+    def SUMMARY_STATEMENT(self) -> str:
+        """
+        Prints summary statement with dataset stats
+        """
+        
+        reactions = [d["x"].split(">>") for d in self.dataset]
+        num_reactions = len(reactions)
+        median_src = np.median([len(v[0]) for v in reactions])
+        median_tgt = np.median([len(v[1]) for v in reactions])
+
+        summary = f"""
+        * Number of reactions: {num_reactions}
+        * Median source length: {median_src}
+        * Medin target length: {median_tgt}
+        """
+        return summary

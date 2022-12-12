@@ -15,6 +15,7 @@ from rxn.chemutils.smiles_randomization import randomize_smiles_rotated
 import warnings
 import hashlib
 from frozendict import frozendict
+import copy 
 
 CHEBI_DB = json.load(open("/Mounts/rbg-storage1/datasets/Metabo/chebi_db.json", "r"))
 
@@ -378,6 +379,21 @@ class Brenda(AbstractDataset):
 
         return protein2enzymatic_residues
 
+    def get_smiles(self, substrate):
+        substrate_data = self.brenda_smiles.get(substrate, None)
+        if substrate_data is None:
+            return
+        if substrate_data.get("chebi_data", False):
+            return substrate_data["chebi_data"].get("SMILES", None)
+        elif substrate_data.get("pubchem_data", False):
+            if isinstance(substrate_data["pubchem_data"], dict):
+                return substrate_data["pubchem_data"].get("CanonicalSMILES", None)
+            elif isinstance(substrate_data["pubchem_data"], list):
+                return substrate_data["pubchem_data"][0].get("CanonicalSMILES", None)
+            else:
+                raise NotImplementedError
+        return
+
     @staticmethod
     def add_args(parser) -> None:
         """Add class specific args
@@ -420,9 +436,15 @@ class Brenda(AbstractDataset):
         parser.add_argument(
             "--ec_level",
             type=int,
-            default=0,
+            default=3,
             choices=[0, 1, 2, 3],
             help="EC level to use (e.g., ec_level 1 of '1.2.3.1' -> '1.2')",
+        )
+        parser.add_argument(
+            "--deduplicate_reactions",
+            action="store_true",
+            default=False,
+            help="Create reaction dataset of unique chemical reactions. Used to skip same reaction for different proteins",
         )
         parser.add_argument(
             "--mcsa_file_path",
@@ -562,7 +584,6 @@ class BrendaConstants(Brenda):
                 continue
 
             if self.args.use_mean_labels:
-                # TODO None of this code has been debugged because with SMILES changes
                 # it is was not necessary for kcat_km
                 seq = sample["sequence"]
                 smi = sample["smiles"]
@@ -724,21 +745,6 @@ class BrendaConstants(Brenda):
         elif args.enzyme_property == "tissue":
             raise NotImplementedError
 
-    def get_smiles(self, substrate):
-        substrate_data = self.brenda_smiles.get(substrate, None)
-        if substrate_data is None:
-            return
-        if substrate_data.get("chebi_data", False):
-            return substrate_data["chebi_data"].get("SMILES", None)
-        elif substrate_data.get("pubchem_data", False):
-            if isinstance(substrate_data["pubchem_data"], dict):
-                return substrate_data["pubchem_data"].get("CanonicalSMILES", None)
-            elif isinstance(substrate_data["pubchem_data"], list):
-                return substrate_data["pubchem_data"][0].get("CanonicalSMILES", None)
-            else:
-                raise NotImplementedError
-        return
-
     def get_label(self, value, property_name):
         # TODO - can values be 0?
         if property_name == "turnover_number":
@@ -863,6 +869,7 @@ class BrendaEC(Brenda):
 
 @register_object("brenda_reaction", "dataset")
 class BrendaReaction(Brenda):
+
     def create_dataset(
         self, split_group: Literal["train", "dev", "test"]
     ) -> List[dict]:
@@ -871,6 +878,7 @@ class BrendaReaction(Brenda):
 
         uniprot2reactions = defaultdict(list)
 
+        # add brenda reactions
         for ec, ec_dict in tqdm(self.metadata_json.items(), desc="Creating dataset"):
             if "proteins" not in ec_dict:
                 continue
@@ -898,7 +906,7 @@ class BrendaReaction(Brenda):
                             for protein in entry.get("proteins", []):
                                 if proteinid2uniprot.get(protein, False):
                                     uniprotid = proteinid2uniprot[protein]
-                                    sequence = self.brenda_proteins[uniprotid]
+                                    sequence = self.brenda_proteins[uniprotid]["sequence"]
                                     catalogued_reactions = [
                                         rxn["reaction_string"]
                                         for rxn in uniprot2reactions[uniprotid]
@@ -913,70 +921,96 @@ class BrendaReaction(Brenda):
                                             mcsa_data, sequence, ec
                                         )
 
-                                        uniprot2reactions[uniprotid].append(
-                                            {
-                                                "protein_id": uniprotid,
-                                                "sequence": sequence,
-                                                "reactants": rs,
-                                                "products": ps,
-                                                "ec": ec,
-                                                "organism": protein2organism[protein],
-                                                "reaction_string": ".".join(rs)
-                                                + ">>"
-                                                + ".".join(ps),
-                                                "sample_id": sample_id,
-                                                "residues": residues["residues"],
-                                                "residue_positions": residues[
-                                                    "residue_mask"
-                                                ],
-                                                "has_residues": residues[
-                                                    "has_residues"
-                                                ],
-                                            }
-                                        )
+                                        sample = {
+                                            "protein_id": uniprotid,
+                                            "sequence": sequence,
+                                            "reactants": rs,
+                                            "products": ps,
+                                            "ec": ec,
+                                            "organism": protein2organism[protein],
+                                            "reaction_string": ".".join(rs)
+                                            + ">>"
+                                            + ".".join(ps),
+                                            "sample_id": sample_id,
+                                            "residues": residues["residues"],
+                                            "residue_mask": residues[
+                                                "residue_mask"
+                                            ],
+                                            "has_residues": residues[
+                                                "has_residues"
+                                            ],
+                                            "residue_positions": residues["residue_positions"],
+                                        }
+                                        
+                                        if self.skip_sample(sample, split_group):
+                                            continue
+
+                                        sample["reactants"] = [self.get_smiles(m) for m in sample["reactants"]]
+                                        sample["products"] = [self.get_smiles(m) for m in sample["products"]]
+
+                                        uniprot2reactions[uniprotid].append(sample)
 
         # add M-CSA data not in brenda
-        for sequence, uniprot_dict in mcsa_data.items():
+        for sequence, uniprot_dict in tqdm(mcsa_data.items(), desc="Adding M-CSA reactions"):
             uniprotid = uniprot_dict["uniprot"]
             if uniprotid in uniprot2reactions:
                 continue
 
             for ec, ec_dict in uniprot_dict.items():
 
-                if ec == "sequence":
+                if ec in ["sequence", "uniprot"]:
                     continue
 
+                if any(s in [None, []] for s in ec_dict["reactants"] + ec_dict["products"]):
+                    continue
+                
                 residues = self.get_uniprot_residues(mcsa_data, sequence, ec)
-                rs = ec_dict["reactants"]
-                ps = ec_dict["products"]
+
+                rs = sorted(ec_dict["reactants"])
+                ps = sorted(ec_dict["products"])
+
                 reaction_string = ".".join(rs) + ">>" + ".".join(ps)
 
                 sample_id = hashlib.md5(
                     f"{uniprotid}_{reaction_string}".encode()
                 ).hexdigest()
 
-                uniprot2reactions[uniprotid].append(
-                    {
-                        "protein_id": uniprotid,
-                        "sequence": uniprot_dict["sequence"],
-                        "reactants": rs,
-                        "products": ps,
-                        "ec": ec,
-                        "reaction_string": reaction_string,
-                        "sample_id": sample_id,
-                        "residues": residues["residues"],
-                        "residue_positions": residues["residue_mask"],
-                        "has_residues": True,
-                    }
-                )
+                sample = {
+                    "protein_id": uniprotid,
+                    "sequence": uniprot_dict["sequence"],
+                    "reactants": rs,
+                    "products": ps,
+                    "ec": ec,
+                    "reaction_string": reaction_string,
+                    "sample_id": sample_id,
+                    "residues": residues["residues"],
+                    "residue_mask": residues["residue_mask"],
+                    "residue_positions": residues["residue_positions"],
+                    "has_residues": True,
+                }
+
+                if self.skip_sample(sample, split_group):
+                    continue
+
+                uniprot2reactions[uniprotid].append(sample)
 
         # make each reaction a sample
+        all_reactions = set()
         dataset = []
         for uniprot, reaction_list in uniprot2reactions.items():
             for reaction in reaction_list:
+
                 if self.skip_sample(reaction, split_group):
                     continue
-            dataset.append(reaction)
+
+                # in case using reactions alone without protein information in model
+                if self.args.deduplicate_reactions:
+                    rxn = "{}>>{}".format( '.'.join(reaction["reactants"]), '.'.join(reaction["products"] ))
+                    if rxn in all_reactions:
+                        continue 
+                    all_reactions.add(rxn)
+
+                dataset.append(reaction)
 
         return dataset
 
@@ -987,11 +1021,15 @@ class BrendaReaction(Brenda):
                 return True
 
         if self.args.split_type == "ec":
-            if self.to_split[sample["ec"]] != split_group:
+            ec = ".".join(sample["ec"].split(".")[: self.args.ec_level + 1])
+            if self.to_split[ec] != split_group:
                 return True
 
         # check if sample has mol
         if "?" in (sample["products"] + sample["reactants"]):
+            return True
+        
+        if any(s in [None, [], "?"] for s in (sample["products"] + sample["reactants"]) ):
             return True
 
         # if sequence is unknown
@@ -1011,32 +1049,33 @@ class BrendaReaction(Brenda):
         Returns:
             dict: {residue_mask: torch.Tensor, has_residues: torch.Tensor, residues: [smiles]}
         """
+        if sequence is None:
+            return {"residue_mask": torch.zeros(1), "has_residues": 0, "residues": [], "residue_positions": []}
 
         y = torch.zeros(len(sequence))
         has_y = 0
         residues = []
+        residue_pos = []
         if mcsa_data.get(sequence, False):
             if mcsa_data[sequence].get(ec, False):
                 for residue_dict in mcsa_data[sequence][ec]["residues"]:
-                    if residue_dict["residue_id"] is None:
+                    if (residue_dict["residue_id"] is None) or (residue_dict["residue"] == ""):
                         continue
                     letter = sequence[residue_dict["residue_id"]]
+                    amino_acid = AA_TO_SMILES.get(letter, None) # consider skipping
                     y[residue_dict["residue_id"]] = 1
-                    residues.append(AA_TO_SMILES.get(letter, None))
+                    residue_pos.append(residue_dict["residue_id"])
+                    residues.append(amino_acid) 
                 has_y = 1
 
-        return {"residue_mask": y, "has_residues": has_y, "residues": residues}
+        return {"residue_mask": y, "has_residues": has_y, "residues": residues, "residue_positions": residue_pos}
 
     def __getitem__(self, index):
-        try:
-            sample = self.dataset[index]
-            # augment: permute and/or randomize
-            if (
-                self.args.use_random_smiles_representation
-                or self.args.randomize_order_in_reaction
-            ):
+        sample = self.dataset[index]
 
-                reactants, products = sample["reactants"], sample["products"]
+        try:
+
+            reactants, products = copy.deepcopy(sample["reactants"]), copy.deepcopy(sample["products"])
 
             # incorporate sequence residues if known
             if self.args.use_residues_in_reaction:
@@ -1065,19 +1104,31 @@ class BrendaReaction(Brenda):
                 "products": ".".join(products),
                 "sequence": sample["sequence"],
                 "ec": sample["ec"],
-                "organism": sample["organism"],
+                "organism": sample.get("organism", 'none'),
                 "protein_id": sample["protein_id"],
                 "sample_id": sample["sample_id"],
-                "residues": sample["residues"],
-                "residue_mask": sample["residue_mask"],
+                "residues": ".".join(sample["residues"]),
+                # "residue_mask": sample["residue_mask"],
                 "has_residues": sample["has_residues"],
+                "residue_positions": ".".join( [str(s) for s in sample["residue_positions"] ]),
             }
 
             return item
 
         except Exception:
-            warnings.warn(f"Could not load sample: {item['sample_id']}")
+            warnings.warn(f"Could not load sample: {sample['sample_id']}")
 
+    @property
+    def SUMMARY_STATEMENT(self) -> None:
+        reactions = [ "{}>>{}".format(".".join(d['reactants']), ".".join(d['products'])) for d in self.dataset]
+        proteins = [d["protein_id"] for d in self.dataset]
+        ecs = [d["ec"] for d in self.dataset]
+        statement = f""" 
+        * Number of reactions: {len(set(reactions))}
+        * Number of proteins: {len(set(proteins))}
+        * Number of ECs: {len(set(ecs))}
+        """
+        return statement
 
 @register_object("mcsa", "dataset")
 class MCSA(BrendaReaction):

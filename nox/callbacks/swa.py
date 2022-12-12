@@ -33,7 +33,6 @@ class SWA(StochasticWeightAveraging, Nox):
             default="0.8",
             help="when to start swa",
         )
-
         parser.add_argument(
             "--swa_lr",
             type=float,

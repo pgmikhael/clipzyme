@@ -3,11 +3,11 @@ AA_TO_SMILES = {
     "R": "C(C[C@@H](C(=O)O)N)CN=C(N)N",  # Arginine
     "N": "C([C@@H](C(=O)O)N)C(=O)N",  # Asparagine
     "D": "C([C@@H](C(=O)O)N)C(=O)O",  # Aspartic acid
-    "B": "",  # Aspartate or Asparagine
+    "B": "X",  # Aspartate or Asparagine
     "C": "C([C@@H](C(=O)O)N)S",  # Cysteine
     "E": "C(CC(=O)O)[C@@H](C(=O)O)N",  # Glutamic acid
     "Q": "C(CC(=O)N)[C@@H](C(=O)O)N",  # Glutamine
-    "Z": "",  # Glutamate or Glutamine
+    "Z": "X",  # Glutamate or Glutamine
     "G": "C(C(=O)O)N", # Glycine
     "H": "C([C@@H](C(=O)O)N)C(=O)N",  # Histidine
     "I": "CC[C@H](C)[C@@H](C(=O)O)N",  # Isoleucine
@@ -21,4 +21,6 @@ AA_TO_SMILES = {
     "W": "C1=CC=C2C(=C1)C(=CN2)C[C@@H](C(=O)O)N",  # Tryptophan
     "Y": "C1=CC(=CC=C1C[C@@H](C(=O)O)N)O",  # Tyrosine
     "V": "CC(C)[C@@H](C(=O)O)N",  # Valine
+    "X": "X",
+    "U": "C([C@@H](C(=O)O)N)[SeH]" # Selenocysteine
 }

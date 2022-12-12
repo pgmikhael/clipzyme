@@ -46,6 +46,7 @@ import nox.learning.optimizers.basic
 
 # scheduler
 import nox.learning.schedulers.basic
+import nox.learning.schedulers.noam
 
 # losses
 import nox.learning.losses.basic
@@ -56,6 +57,7 @@ import nox.learning.losses.contrastive
 import nox.learning.metrics.basic
 import nox.learning.metrics.link_prediction
 import nox.learning.metrics.representation
+import nox.learning.metrics.reactions
 
 # callbacks
 import nox.callbacks.basic

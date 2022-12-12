@@ -359,6 +359,14 @@ def get_parser():
         default=[],
         help="Name of performance metric",
     )
+    parser.add_argument(
+        "--metric_names_for_eval",
+        type=str,
+        action=set_nox_type("metric"),
+        nargs="*",
+        default=None,
+        help="Name of metric",
+    )
 
     # -------------------------------------
     # Training Module
@@ -416,7 +424,7 @@ def get_parser():
         default=0,
         help="L2 Regularization penaty [default: 0]",
     )
-
+    
     # tune
     parser.add_argument(
         "--tune_hyperopt",
