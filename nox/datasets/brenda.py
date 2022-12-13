@@ -16,6 +16,7 @@ import warnings
 import hashlib
 from frozendict import frozendict
 import copy 
+from rich import print as rprint
 
 CHEBI_DB = json.load(open("/Mounts/rbg-storage1/datasets/Metabo/chebi_db.json", "r"))
 
@@ -56,7 +57,7 @@ def add_mcsa_data(
             "residue": amino_acid,
             "residue_id": resid - 1,
             "ec": ec,
-            "is_reference": True,
+            "is_reference": is_reference,
         }
     )
 
@@ -81,6 +82,9 @@ class Brenda(AbstractDataset):
         )
         self.mcsa_biomolecules = json.load(open(args.mcsa_biomolecules_path, "r"))
         self.mcsa_curated_data = json.load(open(args.mcsa_file_path, "r"))
+        if not args.assign_splits:
+            self.to_split = None
+            rprint("[magenta]WARNING: `assign_splits` = False[/magenta]")
 
     def assign_splits(self, metadata_json, split_probs, seed=0) -> None:
         """
@@ -1016,14 +1020,15 @@ class BrendaReaction(Brenda):
 
     def skip_sample(self, sample, split_group) -> bool:
         # check right split
-        if self.args.split_type == "sequence":
-            if self.to_split[sample["protein_id"]] != split_group:
-                return True
+        if self.to_split is not None:
+            if self.args.split_type == "sequence":
+                if self.to_split[sample["protein_id"]] != split_group:
+                    return True
 
-        if self.args.split_type == "ec":
-            ec = ".".join(sample["ec"].split(".")[: self.args.ec_level + 1])
-            if self.to_split[ec] != split_group:
-                return True
+            if self.args.split_type == "ec":
+                ec = ".".join(sample["ec"].split(".")[: self.args.ec_level + 1])
+                if self.to_split[ec] != split_group:
+                    return True
 
         # check if sample has mol
         if "?" in (sample["products"] + sample["reactants"]):
@@ -1187,13 +1192,14 @@ class MCSA(BrendaReaction):
 
     def skip_sample(self, sample, split_group) -> bool:
         # check right split
-        if self.args.split_type == "sequence":
-            if self.to_split[sample["protein_id"]] != split_group:
-                return True
+        if self.to_split is not None:
+            if self.args.split_type == "sequence":
+                if self.to_split[sample["protein_id"]] != split_group:
+                    return True
 
-        if self.args.split_type == "ec":
-            if self.to_split[sample["ec"]] != split_group:
-                return True
+            if self.args.split_type == "ec":
+                if self.to_split[sample["ec"]] != split_group:
+                    return True
 
         # check if sample has mol
         if self.args.mcsa_skip_unk_smiles:
@@ -1208,3 +1214,4 @@ class MCSA(BrendaReaction):
             return True
 
         return False
+
