@@ -16,6 +16,7 @@ import warnings
 import hashlib
 from frozendict import frozendict
 import copy
+from rich import print as rprint
 
 CHEBI_DB = json.load(open("/Mounts/rbg-storage1/datasets/Metabo/chebi_db.json", "r"))
 
@@ -56,7 +57,7 @@ def add_mcsa_data(
             "residue": amino_acid,
             "residue_id": resid - 1,
             "ec": ec,
-            "is_reference": True,
+            "is_reference": is_reference,
         }
     )
 
@@ -81,6 +82,8 @@ class Brenda(AbstractDataset):
         )
         self.mcsa_biomolecules = json.load(open(args.mcsa_biomolecules_path, "r"))
         self.mcsa_curated_data = json.load(open(args.mcsa_file_path, "r"))
+        if not args.assign_splits:
+            rprint("[magenta]WARNING: `assign_splits` = False[/magenta]")
 
     def assign_splits(self, metadata_json, split_probs, seed=0) -> None:
         """
@@ -632,19 +635,20 @@ class BrendaConstants(Brenda):
 
     def skip_sample(self, sample, sequence_smiles2y, split_group) -> bool:
         # check right split
-        if self.args.split_type == "sequence":
-            if self.to_split[sample["protein_id"]] != split_group:
-                return True
+        if hasattr(self, "to_split"):
+            if self.args.split_type == "sequence":
+                if self.to_split[sample["protein_id"]] != split_group:
+                    return True
 
-        if self.args.split_type == "ec":
-            if self.to_split[sample["ec"]] != split_group:
-                return True
+            if self.args.split_type == "ec":
+                if self.to_split[sample["ec"]] != split_group:
+                    return True
 
-        if self.args.split_type == "random" and hasattr(self, "to_split"):
-            seq = sample["sequence"]
-            smi = sample["smiles"]
-            if self.to_split[f"{seq}{smi}"] != split_group:
-                return True
+            if self.args.split_type == "random":
+                seq = sample["sequence"]
+                smi = sample["smiles"]
+                if self.to_split[f"{seq}{smi}"] != split_group:
+                    return True
 
         # check if sample has mol
         if sample["smiles"] is None:
@@ -861,8 +865,9 @@ class BrendaEC(Brenda):
 
     def skip_sample(self, sample, split_group) -> bool:
         # check right split
-        if self.to_split[sample["protein_id"]] != split_group:
-            return True
+        if hasattr(self, "to_split"):
+            if self.to_split[sample["protein_id"]] != split_group:
+                return True
 
         # if sequence is unknown
         if sample["sequence"] is None:
@@ -1031,14 +1036,15 @@ class BrendaReaction(Brenda):
 
     def skip_sample(self, sample, split_group) -> bool:
         # check right split
-        if self.args.split_type == "sequence":
-            if self.to_split[sample["protein_id"]] != split_group:
-                return True
+        if hasattr(self, "to_split"):
+            if self.args.split_type == "sequence":
+                if self.to_split[sample["protein_id"]] != split_group:
+                    return True
 
-        if self.args.split_type == "ec":
-            ec = ".".join(sample["ec"].split(".")[: self.args.ec_level + 1])
-            if self.to_split[ec] != split_group:
-                return True
+            if self.args.split_type == "ec":
+                ec = ".".join(sample["ec"].split(".")[: self.args.ec_level + 1])
+                if self.to_split[ec] != split_group:
+                    return True
 
         # check if sample has mol
         if "?" in (sample["products"] + sample["reactants"]):
@@ -1224,13 +1230,14 @@ class MCSA(BrendaReaction):
 
     def skip_sample(self, sample, split_group) -> bool:
         # check right split
-        if self.args.split_type == "sequence":
-            if self.to_split[sample["protein_id"]] != split_group:
-                return True
+        if hasattr(self, "to_split"):
+            if self.args.split_type == "sequence":
+                if self.to_split[sample["protein_id"]] != split_group:
+                    return True
 
-        if self.args.split_type == "ec":
-            if self.to_split[sample["ec"]] != split_group:
-                return True
+            if self.args.split_type == "ec":
+                if self.to_split[sample["ec"]] != split_group:
+                    return True
 
         # check if sample has mol
         if self.args.mcsa_skip_unk_smiles:
@@ -1245,73 +1252,3 @@ class MCSA(BrendaReaction):
             return True
 
         return False
-
-
-@register_object("ecreact", "dataset")
-class ECReact(Brenda):
-    def create_dataset(
-        self, split_group: Literal["train", "dev", "test"]
-    ) -> List[dict]:
-
-        dataset = []
-
-        mcsa_data = self.load_mcsa_data(self.args)
-        for reaction in tqdm(self.metadata_json):
-            # match ec to brenda
-            ec = reaction["ec"]
-            if ec in self.brenda_dataset:
-                key = ec
-            elif ec[:3] in self.brenda_dataset:
-                key = ec[:3]
-            elif ec[:2] in self.brenda_dataset:
-                key = ec[:2]
-            elif ec[:1] in self.brenda_dataset:
-                key = ec[:1]
-
-            for ec_num, ec_dict in self.brenda_dataset.items():
-                if key in ec_num:
-                    protein2organism = {
-                        k: v["value"] for k, v in ec_dict["organisms"].items()
-                    }
-                    for _, p in ec_dict.get("proteins", {}).items():
-                        proteins = [a["accessions"][0] for a in p]
-                        for uniprotid in proteins:
-                            if uniprotid in self.brenda_proteins:
-                                sequence = self.brenda_proteins[uniprotid]["sequence"]
-                                residues = self.get_uniprot_residues(
-                                    mcsa_data, sequence, ec
-                                )
-
-                                sample = {
-                                    "protein_id": uniprotid,
-                                    "sequence": sequence,
-                                    "reactants": rs,
-                                    "products": ps,
-                                    "ec": ec,
-                                    "organism": protein2organism[protein],
-                                    "reaction_string": ".".join(rs)
-                                    + ">>"
-                                    + ".".join(ps),
-                                    "sample_id": sample_id,
-                                    "residues": residues["residues"],
-                                    "residue_mask": residues["residue_mask"],
-                                    "has_residues": residues["has_residues"],
-                                    "residue_positions": residues["residue_positions"],
-                                }
-                                dataset.append(sample)
-
-        return dataset
-
-
-@register_object("ecreact+orgos", "dataset")
-class ECReact(Brenda):
-    def create_dataset(
-        self, split_group: Literal["train", "dev", "test"]
-    ) -> List[dict]:
-
-        mcsa_data = self.load_mcsa_data(self.args)
-        for reaction in tqdm(self.metadata_json):
-            # get EC
-            # map to brenda
-            pass
-        return
