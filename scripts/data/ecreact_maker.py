@@ -2,12 +2,12 @@ import json
 import argparse
 from tqdm import tqdm
 from p_tqdm import p_map
-from bioservices import UniProt
 import requests
 import pandas as pd
 
 
-UNIPROT_URL = "https://rest.uniprot.org/uniprotkb/search?query=reviewed:true+AND+ec:{}&format=json&fields=id,sequence,cc_alternative_products&size=500"
+UNIPROT_QUERY_URL = "https://rest.uniprot.org/uniprotkb/search?query=reviewed:true+AND+ec:{}&format=json&fields=id,sequence,cc_alternative_products&size=500"
+UNIPROT_ENTRY_URL = "https://rest.uniprot.org/uniprotkb/{}.fasta"
 
 parser = argparse.ArgumentParser(
     description="Make EC React Dataset (https://github.com/rxn4chemistry/biocatalysis-model)"
@@ -50,23 +50,23 @@ def get_protein_fasta(uniprot):
         uniprot (str): uniprot
     """
 
-    fasta = u.get_fasta(uniprot)
+    fasta = requests.get(UNIPROT_ENTRY_URL.format(uniprot))
 
-    if fasta == 404:  # Not Found
-        return
+    if fasta.status_code == 200: # Success
+        sequence = parse_fasta(fasta.text)
+        return sequence 
 
-    sequence = parse_fasta(fasta)
-    return sequence
+    return 
 
 
 if __name__ == "__main__":
     args = parser.parse_args()
 
-    u = UniProt(verbose=False)
-
-    dataset = []
     react_dataset = pd.read_csv(args.react_csv_path)
-    for i, row in tqdm(react_dataset.iterrows(), total=len(react_dataset)):
+    # for i, row in tqdm(react_dataset.iterrows(), total=len(react_dataset)):
+    def parse_react_row(row):
+        dataset = []
+        iso_dataset = []
         rxn_smiles = row["rxn_smiles"]
         ec = row["ec"]
         db_source = row["source"]
@@ -78,7 +78,7 @@ if __name__ == "__main__":
         # get the proteins sequences; while loop
         num_uniprot_results = 500
         while num_uniprot_results >= 500:
-            uniprot_results = requests.get(UNIPROT_URL.format(ec))
+            uniprot_results = requests.get(UNIPROT_QUERY_URL.format(ec))
             if uniprot_results.status_code == 200:
                 uniprot_results = uniprot_results.json()["results"]
                 num_uniprot_results = len(uniprot_results)
@@ -92,31 +92,49 @@ if __name__ == "__main__":
                             "sequence": sequence,
                             "ec": ec,
                             "uniprot_id": uniprot_id,
-                            "db_source": db_source,
+                            "db_source": db_source
                         }
                     )
                     for comment in uniprot_result["comments"]:
                         for isoform in comment.get("isoforms", []):
                             isoform_uniprots = isoform["isoformIds"]
-                            isoform_sequences = p_map(
-                                get_protein_fasta, isoform_uniprots
-                            )
-                            for isoform_u, sequence in zip(
-                                isoform_uniprots, isoform_sequences
-                            ):
-                                if sequence is not None:
-                                    dataset.append(
-                                        {
-                                            "reactants": reactants,
-                                            "products": products,
-                                            "sequence": sequence,
-                                            "ec": ec,
-                                            "uniprot_id": uniprot_id,
-                                            "db_source": db_source,
-                                        }
-                                    )
+                            for isoform_u in isoform_uniprots:
+                                iso_dataset.append(
+                                    {
+                                        "reactants": reactants,
+                                        "products": products,
+                                        "ec": ec,
+                                        "uniprot_id": isoform_u,
+                                        "db_source": db_source
+                                    }
+                                )
 
             else:
+                dataset.append(
+                        {
+                            "reactants": reactants,
+                            "products": products,
+                            "ec": ec,
+                            "uniprot_id": uniprot_id,
+                            "db_source": db_source
+                        }
+                    )
                 num_uniprot_results = 0
+            return (dataset, iso_dataset)
+
+    # match ec to uniprots, sequences, and isoforms
+    react_dataset_rows = react_dataset.to_dict('records')
+    reference_dataset = p_map(parse_react_row, react_dataset_rows)
+    dataset, iso_dataset = [], []
+    for d in reference_dataset:
+        dataset.extend(d[0])
+        iso_dataset.extend(d[1])
+    
+    # pass through isoforms
+    isoform_uniprots = [d['uniprot_id'] for d in iso_dataset]
+    isform_sequences = p_map(get_protein_fasta, isoform_uniprots)
+    for i, sample in enumerate(iso_dataset):
+        sample["sequence"] = isform_sequences[i]
+        dataset.append(sample)
 
     json.dump(dataset, open(args.output_file_path, "w"))
