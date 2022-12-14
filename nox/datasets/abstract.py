@@ -50,6 +50,8 @@ class AbstractDataset(data.Dataset, Nox):
         self.load_dataset(args)
         if args.assign_splits:
             self.assign_splits(self.metadata_json, args.split_probs, args.split_seed)
+        else:
+            rprint("[magenta]WARNING: `assign_splits` = False[/magenta]")
 
     def load_dataset(self, args: argparse.ArgumentParser) -> None:
         """Loads dataset file
