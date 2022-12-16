@@ -25,7 +25,7 @@ class FairEsm(AbstractModel):
             self.model.eval()
 
         self.repr_layer = args.esm_hidden_layer
-        self.use_cls_token = args.use_cls_token
+        self.use_cls_token = args.use_esm_cls_token
 
     def forward(self, x):
         """
@@ -53,12 +53,13 @@ class FairEsm(AbstractModel):
                 h = result["representations"][self.repr_layer][sample_num][0]
             else:
                 # remove cls and eos tokens
-                h = result["representations"][self.repr_layer][sample_num][1:-1].mean(0)
+                h = result["representations"][self.repr_layer][sample_num][1:len(sample)-1].mean(0)
 
             hiddens.append(h)
 
         output["token_hiddens"] = result["representations"][self.repr_layer]
         output["hidden"] = torch.stack(hiddens)
+        output["tokens"] = batch_tokens
 
         return output
 
@@ -101,7 +102,7 @@ class FairEsm(AbstractModel):
             help="do not update encoder weights",
         )
         parser.add_argument(
-            "--use_cls_token",
+            "--use_esm_cls_token",
             action="store_true",
             default=False,
             help="use cls token as representation",
