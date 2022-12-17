@@ -366,25 +366,24 @@ class ReactionEncoder(AbstractModel):
 class EnzymaticReactionEncoder(ReactionEncoder):
     def __init__(self, args):
         super().__init__(args)
-        self.protein_model = get_object(args, "model")(args)
+        self.protein_model = get_object(args.enzyme_model, "model")(args)
         self.append_enzyme_to_hiddens = args.append_enzyme_to_hiddens
+        self.protein_representation_key = args.protein_representation_key
 
     def forward(self, batch) -> Dict:
 
-        protein_output = self.protein_model(batch)
+        if self.args.predict:
+            predictions = self.generate(batch)
+            return {
+                "preds": predictions,
+                "golds": batch["products"],
+            }
+        
+        return_dict = self.config.use_return_dict
 
+        # get molecule tokens
         encoder_input_ids = self.tokenize(batch["reactants"], self.tokenizer, self.args)
         decoder_input_ids = self.tokenize(batch["products"], self.tokenizer, self.args)
-
-        # input for embedding
-        input_shape = encoder_input_ids.size()
-        batch_size, seq_length = input_shape
-        if hasattr(self.embeddings, "token_type_ids"):
-            buffered_token_type_ids = self.embeddings.token_type_ids[:, :seq_length]
-            buffered_token_type_ids_expanded = buffered_token_type_ids.expand(batch_size, seq_length)
-            token_type_ids = buffered_token_type_ids_expanded
-        else:
-            token_type_ids = torch.zeros(input_shape, dtype=torch.long, device=device)
 
         # move to device
         for k, v in encoder_input_ids.items():
@@ -393,25 +392,33 @@ class EnzymaticReactionEncoder(ReactionEncoder):
         for k, v in decoder_input_ids.items():
             decoder_input_ids[k] = v.to(self.devicevar.device)
 
-        return_dict = (
-            return_dict if return_dict is not None else self.config.use_return_dict
-        )
+        # pass sequences through protein model 
+        protein_output = self.protein_model(batch["sequence"])
+        protein_attention = torch.ne(protein_output["tokens"], self.protein_model.alphabet.padding_idx).long()
 
-        if self.append_enzyme_to_hiddens:
+        # combine protein - reactants attention mask
+        if self.protein_representation_key == "token_hiddens":
+            protein_reactants_attention_mask = torch.cat([protein_attention, encoder_input_ids['attention_mask']], dim = -1) 
+        elif self.protein_representation_key == "hidden":
+            protein_reactants_attention_mask = torch.cat([protein_attention[:,1], encoder_input_ids['attention_mask']], dim = -1) 
+
+        if not self.append_enzyme_to_hiddens:
             # append to embeddings of reactants
             embeddings = self.model.encoder.embeddings(
-                    input_ids=encoder_input_ids,
+                    input_ids=encoder_input_ids["input_ids"],
                     token_type_ids=token_type_ids,
                     past_key_values_length=0
                     )
             embeddings_w_protein = torch.cat(
-                [protein_output["hidden"], embeddings], dim=1
+                [protein_output[self.protein_representation_key], embeddings], dim=1
             )
 
+            # attention mask with proteins
             head_mask = self.model.get_head_mask(head_mask, self.config.num_hidden_layers)
 
             encoder_outputs = self.model.encoder.encoder(
                     embeddings_w_protein,
+                    attention_mask=protein_reactants_attention_mask, 
                     head_mask=head_mask,
                     use_cache=False,
                     output_attentions=self.config.output_attentions,
@@ -419,14 +426,20 @@ class EnzymaticReactionEncoder(ReactionEncoder):
                     return_dict=self.config.use_return_dict,
                     )
         else:
+            encoder_attention_mask = encoder_input_ids['attention_mask'] 
             # get reactant embeddings
-            encoder_outputs = self.model.encoder(input_ids=encoder_input_ids)
+            encoder_outputs = self.model.encoder(
+                    input_ids=encoder_input_ids['input_ids'],
+                    attention_mask=encoder_input_ids['attention_mask'],
+                    )
 
         encoder_hidden_states = encoder_outputs[0]
 
         if self.append_enzyme_to_hiddens:
+            # attention mask with proteins
+            encoder_attention_mask = protein_reactants_attention_mask # ! TODO
             encoder_hidden_states = torch.cat(
-                [protein_output["hidden"], encoder_hidden_states], dim=1
+                [protein_output[self.protein_representation_key], encoder_hidden_states], dim=1
             )
 
         # optionally project encoder_hidden_states
@@ -439,28 +452,34 @@ class EnzymaticReactionEncoder(ReactionEncoder):
 
         # Decode
         decoder_outputs = self.model.decoder(
-            input_ids=decoder_input_ids,
+            input_ids=decoder_input_ids['input_ids'],
+            attention_mask=decoder_input_ids['attention_mask'],
             encoder_hidden_states=encoder_hidden_states,
+            encoder_attention_mask=encoder_attention_mask,
             return_dict=return_dict,
         )
 
+        labels = decoder_input_ids['input_ids'].clone()
+        labels[~decoder_input_ids['attention_mask'].bool()] = -100 # remove pad tokens from loss
         logits = decoder_outputs.logits if return_dict else decoder_outputs[0]
-        loss = torch.nn.functinal.cross_entropy_loss(
-            logits.reshape(-1, self.decoder.config.vocab_size),
-            decoder_input_ids.view(-1),
+        # transformers/models/bert/modeling_bert.py:1233
+        # we are doing next-token prediction; shift prediction scores and input ids by one 
+        shifted_logits = logits[:, :-1, :].contiguous() 
+        labels = labels[:, 1:].contiguous()   
+        loss = torch.nn.functional.cross_entropy(
+            shifted_logits.reshape(-1, self.model.decoder.config.vocab_size),
+            labels.view(-1),
         )
 
+        metric_labels = labels#.view(-1)
+        metric_logits = shifted_logits #.reshape(-1, self.model.decoder.config.vocab_size)[metric_labels!= -100]
+        metric_labels = metric_labels  #[ metric_labels!= -100]
         output = {
-            "logits": decoder_outputs.logits,
-            "decoder_hidden_states": decoder_outputs.hidden_states,
-            "past_key_values": decoder_outputs.past_key_values,
-            "decoder_hidden_states": decoder_outputs.hidden_states,
-            "decoder_attentions": decoder_outputs.attentions,
-            "cross_attentions": decoder_outputs.cross_attentions,
-            "encoder_last_hidden_state": encoder_outputs.last_hidden_state,
-            "encoder_hidden_states": encoder_outputs.hidden_states,
-            "encoder_attentions": encoder_outputs.attentions,
+            "loss": loss,
+            "logit": metric_logits,
+            "y": metric_labels,
         }
+
         return output
 
     @staticmethod
@@ -477,4 +496,11 @@ class EnzymaticReactionEncoder(ReactionEncoder):
             action="store_true",
             default=False,
             help="whether to append enzyme to hidden states. otherwise appended to inputs",
+        )
+        parser.add_argument(
+            "--protein_representation_key",
+            type=str,
+            default="hidden",
+            choices=["hidden", "token_hiddens"],
+            help="which protein encoder output to uses",
         )
