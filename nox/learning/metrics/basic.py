@@ -343,7 +343,7 @@ class Seq2SeqClassification(BaseClassification):
         for k,v in stats_dict.items():
             stats_dict[k] = torch.stack(v).mean()
         
-        stats_dict["top_1"] = torch.tensor(top1_correct / len(golds))
+        stats_dict["top_1"] = top1_correct / len(golds)
 
         return stats_dict
     

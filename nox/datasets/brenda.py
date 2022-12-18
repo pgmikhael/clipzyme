@@ -80,8 +80,6 @@ class Brenda(AbstractDataset):
         self.brenda_proteins = json.load(
             open(f"{os.path.dirname(args.dataset_file_path)}/brenda_proteins.json", "r")
         )
-        self.mcsa_biomolecules = json.load(open(args.mcsa_biomolecules_path, "r"))
-        self.mcsa_curated_data = json.load(open(args.mcsa_file_path, "r"))
 
     def assign_splits(self, metadata_json, split_probs, seed=0) -> None:
         """
@@ -186,17 +184,20 @@ class Brenda(AbstractDataset):
             dict: MCSA data {uniprot_id: {ec: [ residues ], sequence = ""}}
         """
 
+        mcsa_biomolecules = json.load(open(args.mcsa_biomolecules_path, "r"))
+        mcsa_curated_data = json.load(open(args.mcsa_file_path, "r"))
+
         # load data
         pdb2uniprot = json.load(open(args.mcsa_pdb_to_uniprots, "r"))
         mcsa_homologs = json.load(open(args.mcsa_homologs_file_path, "r"))
-        mcsa_molecules = self.mcsa_biomolecules["molecules"]
-        mcsa_proteins = self.mcsa_biomolecules["proteins"]
+        mcsa_molecules = mcsa_biomolecules["molecules"]
+        mcsa_proteins = mcsa_biomolecules["proteins"]
 
         mcsa_curated_proteins = (
             {}
         )  # to store reference proteins and not add them twice when processing homologs
         protein2enzymatic_residues = {}
-        for entry in tqdm(self.mcsa_curated_data, desc="Processing M-CSA data"):
+        for entry in tqdm(mcsa_curated_data, desc="Processing M-CSA data"):
             # all_ecs has length of 1
             ec = entry["all_ecs"][0]
 
@@ -993,7 +994,7 @@ class BrendaReaction(Brenda):
                     "reaction_string": reaction_string,
                     "sample_id": sample_id,
                     "residues": residues["residues"],
-                    "residue_mask": residues["residue_mask"],
+                    # "residue_mask": residues["residue_mask"],
                     "residue_positions": residues["residue_positions"],
                     "has_residues": True,
                 }
