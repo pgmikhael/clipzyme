@@ -400,7 +400,7 @@ class EnzymaticReactionEncoder(ReactionEncoder):
         if self.protein_representation_key == "token_hiddens":
             protein_reactants_attention_mask = torch.cat([protein_attention, encoder_input_ids['attention_mask']], dim = -1) 
         elif self.protein_representation_key == "hidden":
-            protein_reactants_attention_mask = torch.cat([protein_attention[:,1], encoder_input_ids['attention_mask']], dim = -1) 
+            protein_reactants_attention_mask = torch.cat([protein_attention[:,:1], encoder_input_ids['attention_mask']], dim = -1) 
 
         if not self.append_enzyme_to_hiddens:
             # append to embeddings of reactants
@@ -432,14 +432,19 @@ class EnzymaticReactionEncoder(ReactionEncoder):
                     input_ids=encoder_input_ids['input_ids'],
                     attention_mask=encoder_input_ids['attention_mask'],
                     )
+            encoder_attention_mask = protein_reactants_attention_mask
 
         encoder_hidden_states = encoder_outputs[0]
 
         if self.append_enzyme_to_hiddens:
             # attention mask with proteins
-            encoder_attention_mask = protein_reactants_attention_mask # ! TODO
+            encoder_attention_mask = protein_reactants_attention_mask 
+            protein_embeds = protein_output[self.protein_representation_key]
+            if len(protein_embeds.shape) == 2:
+                protein_embeds = protein_embeds.unsqueeze(-1).transpose(2,1).contiguous()
+
             encoder_hidden_states = torch.cat(
-                [protein_output[self.protein_representation_key], encoder_hidden_states], dim=1
+                [protein_embeds, encoder_hidden_states], dim=1
             )
 
         # optionally project encoder_hidden_states
