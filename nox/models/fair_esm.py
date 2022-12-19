@@ -32,6 +32,14 @@ class FairEsm(AbstractModel):
         x: list of str (protein sequences)
         """
         output = {}
+        if isinstance(x, list):
+            pass 
+        elif isinstance(x, dict):
+            try:
+                x = x["sequence"]
+            except:
+                raise ValueError("FairEsm forward received dict without 'sequence' key ")
+
         fair_x = self.truncate_protein(x)
         batch_labels, batch_strs, batch_tokens = self.batch_converter(fair_x)
         batch_tokens = batch_tokens.to(self.devicevar.device)
@@ -47,19 +55,20 @@ class FairEsm(AbstractModel):
             )
 
         # Generate per-sequence representations via averaging
-        hiddens = []
-        for sample_num, sample in enumerate(x):
-            if self.use_cls_token:
-                h = result["representations"][self.repr_layer][sample_num][0]
-            else:
-                # remove cls and eos tokens
-                h = result["representations"][self.repr_layer][sample_num][1:len(sample)-1].mean(0)
+        if self.use_cls_token:
+            output["hidden"] = result["representations"][self.repr_layer][0]
+        else:
+            # remove cls, eos, and padding embeddings
+            sequence_mask = torch.ne(batch_tokens, self.alphabet.cls_idx).long()
+            sequence_mask *= torch.ne(batch_tokens, self.alphabet.eos_idx).long()
+            sequence_mask *= torch.ne(batch_tokens, self.alphabet.padding_idx).long()
+            sequence_mask = sequence_mask.unsqueeze(-1)
+            # remove cls and eos tokens
+            output["hidden"] = (result["representations"][self.repr_layer]* sequence_mask).sum(1) / sequence_mask.sum(1)
 
-            hiddens.append(h)
-
-        output["token_hiddens"] = result["representations"][self.repr_layer]
-        output["hidden"] = torch.stack(hiddens)
         output["tokens"] = batch_tokens
+        output["token_hiddens"] = result["representations"][self.repr_layer]
+        output["mask_hiddens"] = sequence_mask
 
         return output
 
@@ -125,7 +134,7 @@ class ProteinEncoder(AbstractModel):
         self.encoder = get_object(args.protein_encoder_type, "model")(args)
         cargs = copy.deepcopy(args)
         cargs.mlp_input_dim = args.protein_hidden_dim
-        args.freeze = args.freeze_encoder
+        args.freeze_esm = args.freeze_encoder
         self.mlp = get_object(args.protein_classifer, "model")(cargs)
         if self.args.freeze_encoder:
             self.encoder.eval()
