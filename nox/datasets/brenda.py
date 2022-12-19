@@ -475,6 +475,18 @@ class Brenda(AbstractDataset):
             default=False,
             help="Skip entries with unknown smiles",
         )
+        parser.add_argument(
+            "--precomputed_esm_features_dir",
+            type=str,
+            default=None,
+            help="directory with precomputed esm features for computation efficiency",
+        )
+        parser.add_argument(
+            "--max_protein_length",
+            type=int,
+            default=None,
+            help="skip proteins longer than max_protein_length",
+        )
 
     @staticmethod
     def set_args(args) -> None:

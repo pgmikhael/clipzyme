@@ -1,6 +1,7 @@
 import json 
 from typing import List, Literal
 from nox.utils.registry import register_object, get_object
+from nox.datasets.abstract import AbstractDataset
 from nox.datasets.brenda import Brenda, BrendaReaction
 from nox.utils.messages import METAFILE_NOTFOUND_ERR
 from tqdm import tqdm
@@ -11,7 +12,7 @@ import pickle
 from rxn.chemutils.smiles_randomization import randomize_smiles_rotated
 import warnings
 from frozendict import frozendict
-import copy
+import copy, os
 
 @register_object("ecreact", "dataset")
 class ECReact(BrendaReaction):
@@ -39,7 +40,7 @@ class ECReact(BrendaReaction):
         dataset = []
 
         mcsa_data = self.load_mcsa_data(self.args)
-        for reaction in tqdm(self.metadata_json):
+        for reaction in tqdm(self.metadata_json[:1000]):
             
             ec = reaction["ec"]
             reactants = reaction["reactants"]
@@ -97,8 +98,11 @@ class ECReact(BrendaReaction):
                     return True
 
         # if sequence is unknown
-        if sample["sequence"] is None:
+        if (sample["sequence"] is None) or (len(sample["sequence"]) == 0):
             return True
+
+        if (self.args.max_protein_length is not None) and len(sample["sequence"]) > self.args.max_protein_length:
+            return True 
 
         return False
     
@@ -136,7 +140,7 @@ class ECReact(BrendaReaction):
                     reaction = "{}>>{}".format(".".join(reactants), ".".join(products))
                 except:
                     pass
-
+            
             item = {
                 "reaction": reaction,
                 "reactants": ".".join(reactants),
@@ -152,6 +156,20 @@ class ECReact(BrendaReaction):
                     [str(s) for s in sample["residue_positions"]]
                 ),
             }
+
+            if self.args.precomputed_esm_features_dir is not None:
+                esm_features = pickle.load(open(
+                    os.path.join(self.args.precomputed_esm_features_dir, f"sample_{sample['protein_id']}.predictions"), 'rb'
+                ))
+                
+                mask_hiddens = esm_features["mask_hiddens"] # sequence len, 1
+                protein_hidden = esm_features["hidden"] 
+                token_hiddens = esm_features["token_hiddens"][mask_hiddens.bool()]
+                item.update({
+                    "protein_token_hiddens": token_hiddens,
+                    "protein_mask": mask_hiddens,
+                    "protein_hidden": protein_hidden
+                })
 
             return item
 
@@ -171,3 +189,64 @@ class EC_Orgo_React(ECReact):
         dataset = super(EC_Orgo_React,EC_Orgo_React).create_dataset(split_group)
 
         return self.orgo_reactions.dataset + dataset 
+
+@register_object("ecreact_proteins", "dataset")
+class ECReactProteins(AbstractDataset):
+    def load_dataset(self, args: argparse.ArgumentParser) -> None:
+        """Loads dataset file
+
+        Args:
+            args (argparse.ArgumentParser)
+
+        Raises:
+            Exception: Unable to load
+        """
+        self.metadata_json = pickle.load(open(args.dataset_file_path, 'rb'))
+    
+    @staticmethod
+    def set_args(args) -> None:
+        super(ECReactProteins, ECReactProteins).set_args(args)
+        args.dataset_file_path =  "/Mounts/rbg-storage1/datasets/Enzymes/ECReact/ecreact_proteins.p"
+
+    def create_dataset(
+        self, split_group: Literal["train", "dev", "test"]
+    ) -> List[dict]:
+        dataset = []
+        for uniprot_id, sequence in tqdm(self.metadata_json.items()):
+            if self.skip_sample(sequence):
+                continue 
+            dataset.append(
+                {
+                    "sample_id": uniprot_id,
+                    "sequence": sequence
+                }
+            )
+    
+        return dataset
+
+    def __getitem__(self, index):
+        return self.dataset[index]
+    
+    def skip_sample(self, sequence):
+        if sequence is None:
+            return True
+        
+        if len(sequence) > self.args.max_protein_length:
+            return True
+        
+        return False 
+
+    @staticmethod
+    def add_args(parser) -> None:
+        """Add class specific args
+
+        Args:
+            parser (argparse.ArgumentParser): argument parser
+        """
+        super(ECReactProteins, ECReactProteins).add_args(parser)
+        parser.add_argument(
+            "--max_protein_length",
+            type=int,
+            default=None,
+            help="skip proteins longer than max_protein_length",
+        )
