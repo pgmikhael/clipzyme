@@ -77,7 +77,7 @@ class Base(pl.LightningModule, Nox):
 
     @property
     def UNLOG_KEYS(self):
-        default = ["activ", "hidden"]
+        default = ["activ", "hidden", "tokens", "token_hiddens", "mask_hiddens"]
         keys_to_unlog = []
         for k in default:
             if k not in self.metric_keys:
