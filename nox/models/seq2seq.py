@@ -402,7 +402,7 @@ class EnzymaticReactionEncoder(ReactionEncoder):
             protein_attention = torch.ne(protein_output["tokens"], self.protein_model.alphabet.padding_idx).long()
         else:
             protein_output = batch 
-            protein_attention = torch.zeros(*batch["token_hiddens"].shape[:-1]).to(self.devicevar.device)
+            protein_attention = torch.zeros( len(batch['sequence']), max(batch['protein_len']) ).to(self.devicevar.device)
             for i, length in enumerate(batch["protein_len"]):
                 protein_attention[i,:length] = 1
 
