@@ -366,7 +366,11 @@ class ReactionEncoder(AbstractModel):
 class EnzymaticReactionEncoder(ReactionEncoder):
     def __init__(self, args):
         super().__init__(args)
-        self.protein_model = get_object(args.enzyme_model, "model")(args)
+        if args.enzyme_model is not None:
+            self.protein_model = get_object(args.enzyme_model, "model")(args)
+        else:
+            assert args.precomputed_esm_features_dir is not None 
+
         self.append_enzyme_to_hiddens = args.append_enzyme_to_hiddens
         self.protein_representation_key = args.protein_representation_key
 
@@ -392,9 +396,15 @@ class EnzymaticReactionEncoder(ReactionEncoder):
         for k, v in decoder_input_ids.items():
             decoder_input_ids[k] = v.to(self.devicevar.device)
 
-        # pass sequences through protein model 
-        protein_output = self.protein_model(batch["sequence"])
-        protein_attention = torch.ne(protein_output["tokens"], self.protein_model.alphabet.padding_idx).long()
+        # pass sequences through protein model or use precomputed hiddens
+        if hasattr(self, "protein_model"):
+            protein_output = self.protein_model(batch)
+            protein_attention = torch.ne(protein_output["tokens"], self.protein_model.alphabet.padding_idx).long()
+        else:
+            protein_output = batch 
+            protein_attention = torch.zeros(*batch["token_hiddens"].shape[:-1]).to(self.devicevar.device)
+            for i, length in enumerate(batch["protein_len"]):
+                protein_attention[i,:length] = 1
 
         # combine protein - reactants attention mask
         if self.protein_representation_key == "token_hiddens":
@@ -493,7 +503,7 @@ class EnzymaticReactionEncoder(ReactionEncoder):
         parser.add_argument(
             "--enzyme_model",
             action=set_nox_type("model"),
-            default="fair_esm",
+            default=None,
             help="protein_model",
         )
         parser.add_argument(
