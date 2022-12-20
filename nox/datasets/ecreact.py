@@ -40,7 +40,7 @@ class ECReact(BrendaReaction):
         dataset = []
 
         mcsa_data = self.load_mcsa_data(self.args)
-        for reaction in tqdm(self.metadata_json[:1000]):
+        for reaction in tqdm(self.metadata_json):
             
             ec = reaction["ec"]
             reactants = reaction["reactants"]
@@ -164,11 +164,11 @@ class ECReact(BrendaReaction):
                 
                 mask_hiddens = esm_features["mask_hiddens"] # sequence len, 1
                 protein_hidden = esm_features["hidden"] 
-                token_hiddens = esm_features["token_hiddens"][mask_hiddens.bool()]
+                token_hiddens = esm_features["token_hiddens"][mask_hiddens[:,0].bool()]
                 item.update({
-                    "protein_token_hiddens": token_hiddens,
-                    "protein_mask": mask_hiddens,
-                    "protein_hidden": protein_hidden
+                    "token_hiddens": token_hiddens,
+                    "protein_len": mask_hiddens.sum(),
+                    "hidden": protein_hidden
                 })
 
             return item
