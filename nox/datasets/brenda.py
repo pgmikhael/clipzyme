@@ -1149,7 +1149,7 @@ class BrendaReaction(Brenda):
                 "protein_id": sample["protein_id"],
                 "sample_id": sample["sample_id"],
                 "residues": ".".join(sample["residues"]),
-                # "residue_mask": sample["residue_mask"],
+                "residue_mask": sample["residue_mask"],
                 "has_residues": sample["has_residues"],
                 "residue_positions": ".".join(
                     [str(s) for s in sample["residue_positions"]]
@@ -1211,6 +1211,7 @@ class MCSA(BrendaReaction):
                         "residues": residues["residues"],
                         "residue_mask": residues["residue_mask"],
                         "has_residues": residues["has_residues"],
+                        "residue_positions": residues["residue_positions"],
                     }
                 )
         # make each reaction a sample
@@ -1233,16 +1234,6 @@ class MCSA(BrendaReaction):
         return dataset
 
     def skip_sample(self, sample, split_group) -> bool:
-        # check right split
-        if hasattr(self, "to_split"):
-            if self.args.split_type == "sequence":
-                if self.to_split[sample["protein_id"]] != split_group:
-                    return True
-
-            if self.args.split_type == "ec":
-                if self.to_split[sample["ec"]] != split_group:
-                    return True
-
         # check if sample has mol
         if self.args.mcsa_skip_unk_smiles:
             if "?" in (sample["products"] + sample["reactants"]):
@@ -1254,5 +1245,16 @@ class MCSA(BrendaReaction):
         # if sequence is unknown
         if sample["sequence"] is None:
             return True
+        
+        # check right split
+        if hasattr(self, "to_split"):
+            if self.args.split_type == "sequence":
+                if self.to_split[sample["protein_id"]] != split_group:
+                    return True
+
+            if self.args.split_type == "ec":
+                if self.to_split[sample["ec"]] != split_group:
+                    return True
+
 
         return False
