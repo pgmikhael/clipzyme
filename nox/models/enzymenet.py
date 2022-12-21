@@ -76,21 +76,21 @@ class EnzymeActiveSiteModel(AbstractModel):
 
         self.args = args
         self.protein_encoder = get_object(args.protein_encoder_name, "model")(args)
-        self.mlp = get_object(args.protein_substrate_aggregator, "model")(args)
-        # TODO: add substrate encoder
-        # TODO: add reaction encoder
+        #self.reaction_encoder = get_object(args.reaction_encoder_name, "model")(args)
+        self.mlp = get_object(args.classifier_name, "model")(args)
 
     def forward(self, batch=None):
         batch_size = len(batch["sequence"])
         seq_len = [len(p) for p in batch["sequence"]]
         sequence_dict = self.protein_encoder(batch["sequence"])
-        hidden = sequence_dict["token_hidden"][1:-1]  # B, seq_len, hidden_dim
+        hidden = sequence_dict["token_hiddens"][:, 1:-1]  # B, seq_len, hidden_dim
         output = self.mlp({"x": hidden})  # B, seq_len, num_classes
-
-        batch["y"] = torch.zeros_like(batch["residue_mask"]) + batch["residue_mask"]
+ 
+        labels = batch["residue_mask"]
+        residue_mask = sequence_dict['mask_hiddens'][:, 1:-1]
         # cross entropy will ignore the padded residues (ignore_index=-100)
-        for i in range(batch_size):
-            batch["y"][i, seq_len[i] :] = -100
+        labels[~residue_mask.squeeze(-1).bool()] = -100
+        batch["y"] = labels 
 
         return output
 
@@ -106,5 +106,19 @@ class EnzymeActiveSiteModel(AbstractModel):
             type=str,
             action=set_nox_type("model"),
             default="fair_esm",
+            help="Name of encoder to use",
+        )
+        parser.add_argument(
+            "--reaction_encoder_name",
+            type=str,
+            action=set_nox_type("model"),
+            default="reaction_mlm",
+            help="Name of encoder to use",
+        )
+        parser.add_argument(
+            "--classifier_name",
+            type=str,
+            action=set_nox_type("model"),
+            default="mlp_classifier",
             help="Name of encoder to use",
         )
