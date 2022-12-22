@@ -38,6 +38,7 @@ def default_collate(batch):
             max_len = max(v.shape[0] for v in batch)
             batch = [ torch.concat([x,torch.zeros(max_len - x.shape[0], *x.shape[1:])]) for x in batch]
 
+        elem = batch[0]
         out = None
         if torch.utils.data.get_worker_info() is not None:
             # If we're in a background process, concatenate directly into a
