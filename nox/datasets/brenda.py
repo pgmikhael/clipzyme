@@ -1245,6 +1245,9 @@ class MCSA(BrendaReaction):
         # if sequence is unknown
         if sample["sequence"] is None:
             return True
+
+        if (self.args.max_protein_length is not None) and len(sample["sequence"]) > self.args.max_protein_length:
+            return True 
         
         # check right split
         if hasattr(self, "to_split"):
