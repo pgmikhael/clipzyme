@@ -16,6 +16,10 @@ import copy, os
 
 @register_object("ecreact", "dataset")
 class ECReact(BrendaReaction):
+    def __init__(self, args, split_group) -> None:
+        super(ECReact,ECReact).__init__(self, args, split_group)
+        self.metadata_json = None # overwrite for memory
+
     def load_dataset(self, args: argparse.ArgumentParser) -> None:
         """Loads dataset file
 
@@ -166,7 +170,7 @@ class ECReact(BrendaReaction):
                 protein_hidden = esm_features["hidden"] 
                 token_hiddens = esm_features["token_hiddens"][mask_hiddens[:,0].bool()]
                 item.update({
-                    "token_hiddens": token_hiddens,
+                    #"token_hiddens": token_hiddens,
                     "protein_len": mask_hiddens.sum(),
                     "hidden": protein_hidden
                 })
