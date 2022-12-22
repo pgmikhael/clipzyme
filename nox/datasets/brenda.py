@@ -638,22 +638,6 @@ class BrendaConstants(Brenda):
         return dataset
 
     def skip_sample(self, sample, sequence_smiles2y, split_group) -> bool:
-        # check right split
-        if hasattr(self, "to_split"):
-            if self.args.split_type == "sequence":
-                if self.to_split[sample["protein_id"]] != split_group:
-                    return True
-
-            if self.args.split_type == "ec":
-                if self.to_split[sample["ec"]] != split_group:
-                    return True
-
-            if self.args.split_type == "random":
-                seq = sample["sequence"]
-                smi = sample["smiles"]
-                if self.to_split[f"{seq}{smi}"] != split_group:
-                    return True
-
         # check if sample has mol
         if sample["smiles"] is None:
             # print("Skipped sample because SMILE is None")
@@ -720,6 +704,22 @@ class BrendaConstants(Brenda):
             ):
                 print("Skipped sample because of contradictory values")
                 return True
+
+        # check right split
+        if hasattr(self, "to_split"):
+            if self.args.split_type == "sequence":
+                if self.to_split[sample["protein_id"]] != split_group:
+                    return True
+
+            if self.args.split_type == "ec":
+                if self.to_split[sample["ec"]] != split_group:
+                    return True
+
+            if self.args.split_type == "random":
+                seq = sample["sequence"]
+                smi = sample["smiles"]
+                if self.to_split[f"{seq}{smi}"] != split_group:
+                    return True
 
         return False
 
@@ -868,14 +868,15 @@ class BrendaEC(Brenda):
         return y
 
     def skip_sample(self, sample, split_group) -> bool:
+        # if sequence is unknown
+        if sample["sequence"] is None:
+            return True
+
         # check right split
         if hasattr(self, "to_split"):
             if self.to_split[sample["protein_id"]] != split_group:
                 return True
 
-        # if sequence is unknown
-        if sample["sequence"] is None:
-            return True
 
         return False
 
@@ -1039,17 +1040,6 @@ class BrendaReaction(Brenda):
         return dataset
 
     def skip_sample(self, sample, split_group) -> bool:
-        # check right split
-        if hasattr(self, "to_split"):
-            if self.args.split_type == "sequence":
-                if self.to_split[sample["protein_id"]] != split_group:
-                    return True
-
-            if self.args.split_type == "ec":
-                ec = ".".join(sample["ec"].split(".")[: self.args.ec_level + 1])
-                if self.to_split[ec] != split_group:
-                    return True
-
         # check if sample has mol
         if "?" in (sample["products"] + sample["reactants"]):
             return True
@@ -1063,6 +1053,16 @@ class BrendaReaction(Brenda):
         if sample["sequence"] is None:
             return True
 
+        # check right split
+        if hasattr(self, "to_split"):
+            if self.args.split_type == "sequence":
+                if self.to_split[sample["protein_id"]] != split_group:
+                    return True
+
+            if self.args.split_type == "ec":
+                ec = ".".join(sample["ec"].split(".")[: self.args.ec_level + 1])
+                if self.to_split[ec] != split_group:
+                    return True
         return False
 
     def get_uniprot_residues(self, mcsa_data, sequence, ec):
@@ -1253,7 +1253,8 @@ class MCSA(BrendaReaction):
                     return True
 
             if self.args.split_type == "ec":
-                if self.to_split[sample["ec"]] != split_group:
+                ec = ".".join(sample["ec"].split(".")[: self.args.ec_level + 1])
+                if self.to_split[ec] != split_group:
                     return True
 
 
