@@ -122,8 +122,30 @@ if __name__ == "__main__":
                 num_uniprot_results = 0
             return (dataset, iso_dataset)
 
-    # match ec to uniprots, sequences, and isoforms
+    # transform csv to json
     react_dataset_rows = react_dataset.to_dict('records')
+    reactions_dataset = []
+    for row in react_dataset_rows:
+        rxn_smiles = row["rxn_smiles"]
+        ec = row["ec"]
+        db_source = row["source"]
+
+        full_reactants, products = rxn_smiles.split(">>")
+        products = products.split(".")
+        reactants_str, ec_str = full_reactants.split("|")
+        reactants = reactants_str.split(".")
+        reactions_dataset.append(
+                        {
+                            "reactants": reactants,
+                            "products": products,
+                            "ec": ec,
+                            "db_source": db_source
+                        }
+                    )
+    json.dump(reactions_dataset, open(args.react_csv_path.replace(".csv", ".json"), "w"))
+
+
+    # match ec to uniprots, sequences, and isoforms
     reference_dataset = p_map(parse_react_row, react_dataset_rows)
     dataset, iso_dataset = [], []
     for d in reference_dataset:
