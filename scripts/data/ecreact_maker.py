@@ -67,6 +67,7 @@ if __name__ == "__main__":
     def parse_react_row(row):
         dataset = []
         iso_dataset = []
+        uni2seq = {}
         rxn_smiles = row["rxn_smiles"]
         ec = row["ec"]
         db_source = row["source"]
@@ -85,42 +86,41 @@ if __name__ == "__main__":
                 for uniprot_result in uniprot_results:
                     uniprot_id = uniprot_result["primaryAccession"]
                     sequence = uniprot_result["sequence"]["value"]
-                    dataset.append(
-                        {
-                            "reactants": reactants,
-                            "products": products,
-                            "sequence": sequence,
-                            "ec": ec,
-                            "uniprot_id": uniprot_id,
-                            "db_source": db_source
-                        }
-                    )
+                    uni2seq[uniprot_id] = sequence
+                    
                     for comment in uniprot_result["comments"]:
                         for isoform in comment.get("isoforms", []):
                             isoform_uniprots = isoform["isoformIds"]
                             for isoform_u in isoform_uniprots:
-                                iso_dataset.append(
-                                    {
-                                        "reactants": reactants,
-                                        "products": products,
-                                        "ec": ec,
-                                        "uniprot_id": isoform_u,
-                                        "db_source": db_source
-                                    }
-                                )
-
+                                iso_dataset.append(isoform_u)
+                                   
             else:
-                dataset.append(
+                num_uniprot_results = 0
+
+        
+        for uni,seq in uni2seq.items():
+            dataset.append(
                         {
                             "reactants": reactants,
                             "products": products,
+                            "sequence": seq,
                             "ec": ec,
-                            "uniprot_id": uniprot_id,
+                            "uniprot_id": uni,
                             "db_source": db_source
                         }
                     )
-                num_uniprot_results = 0
-            return (dataset, iso_dataset)
+        
+        iso_dataset = list(set(iso_dataset))
+        iso_dataset = [u for u in iso_dataset if u not in uni2seq]
+        iso_dataset = [{
+                        "reactants": reactants,
+                        "products": products,
+                        "ec": ec,
+                        "uniprot_id": uni,
+                        "db_source": db_source
+        } for uni in iso_dataset]
+
+        return (dataset, iso_dataset)
 
     # transform csv to json
     react_dataset_rows = react_dataset.to_dict('records')
