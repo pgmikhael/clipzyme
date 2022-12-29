@@ -126,10 +126,10 @@ class ECReact(BrendaReaction):
         """
         super(ECReact, ECReact).add_args(parser)
         parser.add_argument(
-            "--sample_protein_sequences",
-            action="store_true",
-            default=False,
-            help="sample proteins during batch creations"
+            "--dataset_cache_dir",
+            type=str,
+            default=None,
+            help="cached_dataset"
         )
 
     def __getitem__(self, index):
@@ -356,11 +356,14 @@ class ECReact_RXNS(ECReact):
         self.ec2uniprot = pickle.load(open("/Mounts/rbg-storage1/datasets/Enzymes/ECReact/ecreact_ec2uniprot.p", "rb"))
         self.uniprot2sequence = pickle.load(open("/Mounts/rbg-storage1/datasets/Enzymes/ECReact/ecreact_proteins.p", "rb"))
         self.mcsa_data = self.load_mcsa_data(self.args)
-        self.map = Pool().map
 
     def create_dataset(
         self, split_group: Literal["train", "dev", "test"]
     ) -> List[dict]:
+
+        cached_path = os.path.join(str(self.args.dataset_cache_dir), f"{split_group}.json")
+        if os.path.exists(cached_path):
+            return json.load(open(cached_path, 'r'))
 
         dataset = []
         
@@ -371,6 +374,15 @@ class ECReact_RXNS(ECReact):
             products = reaction["products"]
             reaction_string = ".".join(reactants)+ ">>" + ".".join(products)
             
+            if self.args.split_type == "ec":
+                split_ec = ".".join(ec.split(".")[: self.args.ec_level + 1])
+                if self.to_split[split_ec] != split_group:
+                    continue
+        
+            if self.args.split_type == "product":
+                if any(self.to_split[p] != split_group for p in products):
+                    continue
+
             if not len(self.ec2uniprot.get(ec, [])):
                 continue 
 
@@ -393,21 +405,16 @@ class ECReact_RXNS(ECReact):
             # add reaction sample to dataset
             dataset.append(sample)
 
+        
+        if self.args.dataset_cache_dir is not None:
+            json.dump(dataset, open(cached_path, 'w'))
+
         return dataset
 
-    def skip_sample(self, ec, products, uniprot, sequence, split_group) -> bool:
+    def skip_sample(self, uniprot, sequence, split_group) -> bool:
         # check right split
         if self.args.split_type == "sequence":
             if self.to_split[uniprot] != split_group:
-                return True
-
-        if self.args.split_type == "ec":
-            ec = ".".join(ec.split(".")[: self.args.ec_level + 1])
-            if self.to_split[ec] != split_group:
-                return True
-        
-        if self.args.split_type == "product":
-            if any(self.to_split[p] != split_group for p in products):
                 return True
 
         # if sequence is unknown
