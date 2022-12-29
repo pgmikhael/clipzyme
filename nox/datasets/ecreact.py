@@ -116,21 +116,6 @@ class ECReact(BrendaReaction):
     def set_args(args) -> None:
         super(ECReact, ECReact).set_args(args)
         args.dataset_file_path = "/Mounts/rbg-storage1/datasets/Enzymes/ECReact/ecreact_dataset_lite_v2.json"
-    
-    @staticmethod
-    def add_args(parser) -> None:
-        """Add class specific args
-
-        Args:
-            parser (argparse.ArgumentParser): argument parser
-        """
-        super(ECReact, ECReact).add_args(parser)
-        parser.add_argument(
-            "--dataset_cache_dir",
-            type=str,
-            default=None,
-            help="cached_dataset"
-        )
 
     def __getitem__(self, index):
         sample = self.dataset[index]
@@ -275,6 +260,26 @@ class ECReactProteins(AbstractDataset):
 @register_object("ecreact_reactions", "dataset")
 class ECReact_RXNS(ECReact):
 
+    def init_class(self, args: argparse.ArgumentParser, split_group: str) -> None:
+        """Perform Class-Specific init methods
+           Default is to load JSON dataset
+
+        Args:
+            args (argparse.ArgumentParser)
+            split_group (str)
+        """
+        self.load_dataset(args)
+    
+        if args.assign_splits:
+            self.assign_splits(self.metadata_json, args.split_probs, args.split_seed)
+        elif not args.assign_splits:
+            rprint("[magenta]WARNING: `assign_splits` = False[/magenta]")
+        
+        self.ec2uniprot = pickle.load(open("/Mounts/rbg-storage1/datasets/Enzymes/ECReact/ecreact_ec2uniprot.p", "rb"))
+        self.valid_ec2uniprot = {}
+        self.uniprot2sequence = pickle.load(open("/Mounts/rbg-storage1/datasets/Enzymes/ECReact/ecreact_proteins.p", "rb"))
+        self.mcsa_data = self.load_mcsa_data(self.args)
+
     def assign_splits(self, metadata_json, split_probs, seed=0) -> None:
         """
         Assigns each sample to a split group based on split_probs
@@ -338,32 +343,9 @@ class ECReact_RXNS(ECReact):
         else:
             raise ValueError("Split type not supported")
 
-
-    def load_dataset(self, args: argparse.ArgumentParser) -> None:
-        """Loads dataset file
-
-        Args:
-            args (argparse.ArgumentParser)
-
-        Raises:
-            Exception: Unable to load
-        """
-        try:
-            self.metadata_json = json.load(open(args.dataset_file_path, "r"))
-        except Exception as e:
-            raise Exception(METAFILE_NOTFOUND_ERR.format(args.dataset_file_path, e))
-        
-        self.ec2uniprot = pickle.load(open("/Mounts/rbg-storage1/datasets/Enzymes/ECReact/ecreact_ec2uniprot.p", "rb"))
-        self.uniprot2sequence = pickle.load(open("/Mounts/rbg-storage1/datasets/Enzymes/ECReact/ecreact_proteins.p", "rb"))
-        self.mcsa_data = self.load_mcsa_data(self.args)
-
     def create_dataset(
         self, split_group: Literal["train", "dev", "test"]
     ) -> List[dict]:
-
-        cached_path = os.path.join(str(self.args.dataset_cache_dir), f"{self.args.dataset_name}_{split_group}.json")
-        if os.path.exists(cached_path):
-            return json.load(open(cached_path, 'r'))
 
         dataset = []
         
@@ -374,50 +356,61 @@ class ECReact_RXNS(ECReact):
             products = reaction["products"]
             reaction_string = ".".join(reactants)+ ">>" + ".".join(products)
             
-            if self.args.split_type == "ec":
-                split_ec = ".".join(ec.split(".")[: self.args.ec_level + 1])
-                if self.to_split[split_ec] != split_group:
-                    continue
-        
-            if self.args.split_type == "product":
-                if any(self.to_split[p] != split_group for p in products):
-                    continue
-
-            if not len(self.ec2uniprot.get(ec, [])):
-                continue 
-
-            uniprots = self.ec2uniprot[ec]
-            sequences = [self.uniprot2sequence[u] for u in uniprots]
-            valid_uniprots = [uni for uni,seq in zip(uniprots, sequences) if not self.skip_sample(ec, products, uni, seq, split_group)]
-
-            if len(valid_uniprots) == 0:
-                continue 
-
-            sample = {
-                    "uniprot_ids": valid_uniprots,
+            valid_uniprots = []
+            for uniprot in self.ec2uniprot.get(ec, []):
+                temp_sample = {
                     "reactants": reactants,
                     "products": products,
                     "ec": ec,
                     "reaction_string":reaction_string,
-                    "sample_id": ec,
-                }
+                    "protein_id": uniprot,
+                    "sequence": self.uniprot2sequence[uniprot]
 
+                }
+                if self.skip_sample(temp_sample, split_group):
+                    continue
+                
+                valid_uniprots.append(uniprot)
+            
+            if len(valid_uniprots) == 0:
+                continue 
+
+            if ec not in self.valid_ec2uniprot:
+                self.valid_ec2uniprot[ec] = valid_uniprots
+
+            sample = {
+                    "reactants": reactants,
+                    "products": products,
+                    "ec": ec,
+                    "reaction_string":reaction_string,
+                }
+            
             # add reaction sample to dataset
             dataset.append(sample)
-
         
-        if self.args.dataset_cache_dir is not None:
-            json.dump(dataset, open(cached_path, 'w'))
-
         return dataset
 
-    def skip_sample(self, uniprot, sequence, split_group) -> bool:
+    def skip_sample(self, sample, split_group) -> bool:
         # check right split
+
+        if self.args.split_type == "ec":
+            ec = sample['ec']
+            split_ec = ".".join(ec.split(".")[: self.args.ec_level + 1])
+            if self.to_split[split_ec] != split_group:
+                return True
+        
+        if self.args.split_type == "product":
+            products = sample['products']
+            if any(self.to_split[p] != split_group for p in products):
+                return True
+
         if self.args.split_type == "sequence":
+            uniprot = sample['protein_id']
             if self.to_split[uniprot] != split_group:
                 return True
 
         # if sequence is unknown
+        sequence = sample['sequence']
         if (sequence is None) or (len(sequence) == 0):
             return True
 
@@ -438,9 +431,11 @@ class ECReact_RXNS(ECReact):
                 sample["products"]
             )
 
-            uniprot_id = random.sample(sample["uniprot_ids"], 1)[0]
-            sequence = self.uniprot2sequence[uniprot_id]
             ec = sample["ec"]
+            valid_uniprots = self.valid_ec2uniprot[ec]
+            uniprot_id = random.sample(valid_uniprots, 1)[0]
+            sequence = self.uniprot2sequence[uniprot_id]
+            
 
             residue_dict = self.get_uniprot_residues(self.mcsa_data, sequence, ec)
             residues = residue_dict["residues"]
@@ -512,7 +507,7 @@ class ECReact_RXNS(ECReact):
             "{}>>{}".format(".".join(d["reactants"]), ".".join(d["products"]))
             for d in self.dataset
         ]
-        proteins = [u for  d in self.dataset for u in d["uniprot_ids"] ]
+        proteins = [u for  d in self.dataset for u in self.valid_ec2uniprot[d["ec"]] ]
         ecs = [d["ec"] for d in self.dataset]
         statement = f""" 
         * Number of reactions: {len(set(reactions))}
