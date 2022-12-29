@@ -361,7 +361,7 @@ class ECReact_RXNS(ECReact):
         self, split_group: Literal["train", "dev", "test"]
     ) -> List[dict]:
 
-        cached_path = os.path.join(str(self.args.dataset_cache_dir), f"{split_group}.json")
+        cached_path = os.path.join(str(self.args.dataset_cache_dir), f"{self.args.dataset_name}_{split_group}.json")
         if os.path.exists(cached_path):
             return json.load(open(cached_path, 'r'))
 
