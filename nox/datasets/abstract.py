@@ -9,7 +9,7 @@ from torch.utils import data
 from nox.utils.loading import get_sample_loader
 from nox.utils.classes import Nox, set_nox_type, classproperty
 from nox.utils.messages import METAFILE_NOTFOUND_ERR, LOAD_FAIL_MSG
-from rich import print
+from rich import print as rprint
 
 
 class AbstractDataset(data.Dataset, Nox):
@@ -50,6 +50,8 @@ class AbstractDataset(data.Dataset, Nox):
         self.load_dataset(args)
         if args.assign_splits:
             self.assign_splits(self.metadata_json, args.split_probs, args.split_seed)
+        else:
+            rprint("[magenta]WARNING: `assign_splits` = False[/magenta]")
 
     def load_dataset(self, args: argparse.ArgumentParser) -> None:
         """Loads dataset file

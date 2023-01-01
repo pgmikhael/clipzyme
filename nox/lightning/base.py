@@ -77,7 +77,7 @@ class Base(pl.LightningModule, Nox):
 
     @property
     def UNLOG_KEYS(self):
-        default = ["activ", "hidden"]
+        default = ["activ", "hidden", "tokens", "token_hiddens", "mask_hiddens"]
         keys_to_unlog = []
         for k in default:
             if k not in self.metric_keys:
@@ -134,11 +134,11 @@ class Base(pl.LightningModule, Nox):
             loss, logging_dict, predictions_dict = self.compute_loss(
                 model_output, batch
             )
-            predictions_dict = self.store_in_predictions(predictions_dict, batch)
             logged_output["loss"] = loss
             logged_output.update(logging_dict)
 
         predictions_dict = self.store_in_predictions(predictions_dict, model_output)
+        predictions_dict = self.store_in_predictions(predictions_dict, batch)
         
         logged_output["preds_dict"] = predictions_dict
         if self.args.save_hiddens:
@@ -359,11 +359,11 @@ class Base(pl.LightningModule, Nox):
             if (self.args.from_checkpoint and not self.args.train)
             else self.args.experiment_name
         )
-        for idx, sampleid in enumerate(outputs["exam"]):
+        for idx, sampleid in enumerate(outputs["sample_id"]):
             sampledict = {
                 k: v[idx]
                 for k, v in outputs.items()
-                if (len(v) == len(outputs["exam"]))
+                if (len(v) == len(outputs["sample_id"]))
             }
             for k, v in sampledict.items():
                 if isinstance(v, torch.Tensor) and v.is_cuda:
@@ -388,7 +388,7 @@ class Base(pl.LightningModule, Nox):
             if (self.args.from_checkpoint and not self.args.train)
             else self.args.experiment_name
         )
-        idx = outputs["exam"]
+        idx = outputs["sample_id"]
         # hiddens = nn.functional.normalize(outputs['hidden'], dim = 1)
         hiddens = [
             {
@@ -406,7 +406,7 @@ class Base(pl.LightningModule, Nox):
 
     def log_image(self, model_output, batch):
         # log one sample from each epoch
-        sid = batch["exam"][0]
+        sid = batch["sample_id"][0]
         for k, v in model_output.items():
             if "reconstruction" in k:
                 img = model_output[k][0].detach().cpu()

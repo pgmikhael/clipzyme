@@ -53,7 +53,7 @@ class LFormerModel(AbstractModel):
         self.register_buffer("devicevar", torch.zeros(1, dtype=torch.int8))
 
         # change to eval if freezing weights
-        self.freeze_encoder = args.freeze_encoder
+        self.freeze_encoder = args.freeze_longformer
         if self.freeze_encoder:
             self.model.eval()
 
@@ -90,6 +90,7 @@ class LFormerModel(AbstractModel):
         # from https://github.com/huggingface/transformers/blob/main/src/transformers/data/data_collator.py#L607
         # If special token mask has been preprocessed, pop it from the dict.
         special_tokens_mask = tokenized_inputs.pop("special_tokens_mask", None)
+        padding_token_mask = torch.ne(tokenized_inputs["input_ids"],self.tokenizer.pad_token_id).long().unsqueeze(-1)
 
         if self.mlm:
             # mask tokens according to probability
@@ -107,7 +108,7 @@ class LFormerModel(AbstractModel):
             tokenized_inputs["labels"] = labels
 
         # run through model
-        if self.args.freeze_encoder:
+        if self.freeze_encoder:
             with torch.no_grad():
                 result = self.model(**tokenized_inputs)
         else:
@@ -120,9 +121,9 @@ class LFormerModel(AbstractModel):
         # log outputs of interest
         hidden = result["hidden_states"]
         if self.hidden_aggregate_func == "mean":
-            hidden = result["hidden_states"][-1].mean(1)
+            hidden = (result["hidden_states"][-1] * padding_token_mask).sum(1) / padding_token_mask.sum(1)
         elif self.hidden_aggregate_func == "sum":
-            hidden = result["hidden_states"][-1].sum(1)
+            hidden = (result["hidden_states"][-1] * padding_token_mask).sum(1)
         elif self.hidden_aggregate_func == "cls":
             hidden = result["hidden_states"][-1, 0]
 
@@ -141,7 +142,7 @@ class LFormerModel(AbstractModel):
             output = {
                 "loss": result.get("loss", None),
                 "logit": result["logits"].view(-1, self.tokenizer.vocab_size),
-                # "hidden": hidden,
+                "hidden": hidden,
                 "y": tokenized_inputs["labels"].view(-1),
             }
 
@@ -226,7 +227,7 @@ class LFormerModel(AbstractModel):
             help="path to merges file required for RoBerta tokenizer",
         )
         parser.add_argument(
-            "--freeze_encoder",
+            "--freeze_longformer",
             action="store_true",
             default=False,
             help="whether use model as pre-trained encoder and not update weights",

@@ -18,7 +18,7 @@ class CrossEntropyLoss(Nox):
         if args.precomputed_loss:
             loss = model_output["loss"]
         else:
-            loss = F.cross_entropy(logit, batch["y"].view(-1).long()) * args.ce_loss_lambda
+            loss = F.cross_entropy(logit.view(-1, args.num_classes), batch["y"].view(-1).long()) * args.ce_loss_lambda
         logging_dict["cross_entropy_loss"] = loss.detach()
         predictions["probs"] = F.softmax(logit, dim=-1).detach()
         predictions["preds"] = predictions["probs"].argmax(axis=-1)

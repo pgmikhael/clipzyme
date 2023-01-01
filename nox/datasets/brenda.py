@@ -16,6 +16,7 @@ import warnings
 import hashlib
 from frozendict import frozendict
 import copy
+from rich import print as rprint
 
 CHEBI_DB = json.load(open("/Mounts/rbg-storage1/datasets/Metabo/chebi_db.json", "r"))
 
@@ -79,47 +80,51 @@ class Brenda(AbstractDataset):
         self.brenda_proteins = json.load(
             open(f"{os.path.dirname(args.dataset_file_path)}/brenda_proteins.json", "r")
         )
-        self.mcsa_biomolecules = json.load(open(args.mcsa_biomolecules_path, "r"))
-        self.mcsa_curated_data = json.load(open(args.mcsa_file_path, "r"))
 
     def assign_splits(self, metadata_json, split_probs, seed=0) -> None:
         """
         Assigns each sample to a split group based on split_probs
         """
+        # get all samples
+        rprint("Generating dataset in order to assign splits...")
+        dataset = self.create_dataset(
+            "train"
+        )  # must not skip samples by using split in dataset
+        self.to_split = {}
+
         # set seed
         np.random.seed(seed)
-        if self.args.split_type in ["sequence", "ec"]:
+
+        # assign groups
+        if self.args.split_type in ["sequence", "ec", "product"]:
 
             if self.args.split_type == "sequence":
                 # split based on uniprot_id
-                samples = []
-                for _, ec_dict in metadata_json.items():
-                    if not ec_dict.get("proteins", False):
-                        continue
-                    for k, v in ec_dict["proteins"].items():
-                        samples.extend(v[0]["accessions"])
-
-                for _, protein_dict in self.mcsa_biomolecules["proteins"].items():
-                    for uniprot, uniprot_dict in protein_dict.items():
-                        samples.append(uniprot_dict["uniprot"])
+                samples = [s["protein_id"] for s in dataset]
 
             elif self.args.split_type == "ec":
                 # split based on ec number
-                samples = list(metadata_json.keys())  # brenda
-                for entry in self.mcsa_curated_data:  # mcsa
-                    ec = entry["all_ecs"][0]
-                    samples.append(ec)
+                samples = [s["ec"] for s in dataset]
 
                 # option to change level of ec categorization based on which to split
                 samples = [
                     ".".join(e.split(".")[: self.args.ec_level + 1]) for e in samples
                 ]
 
+            elif self.args.split_type == "product":
+                # split by reaction product (splits share no products)
+                if any(len(s["products"]) > 1 for s in dataset):
+                    raise NotImplementedError(
+                        "Product split not implemented for multi-products"
+                    )
+
+                samples = [p for s in dataset for p in s["products"]]
+
             samples = sorted(list(set(samples)))
             np.random.shuffle(samples)
             split_indices = np.cumsum(np.array(split_probs) * len(samples)).astype(int)
             split_indices = np.concatenate([[0], split_indices])
-            self.to_split = {}
+
             for i in range(len(split_indices) - 1):
                 self.to_split.update(
                     {
@@ -127,30 +132,19 @@ class Brenda(AbstractDataset):
                         for sample in samples[split_indices[i] : split_indices[i + 1]]
                     }
                 )
+
+        # random splitting
         elif self.args.split_type == "random":
-            if not hasattr(self, "to_split"):
-                np.random.seed(seed)
 
-                print("Generating datasets in order to assign splits...")
-                dataset = self.create_dataset(
-                    "train"
-                )  # must not skip samples by using split in dataset
-
-                self.to_split = {}
-
-                for sample in dataset:
-                    seq = sample["sequence"]
-                    smi = sample["smiles"]
-                    self.to_split.update(
-                        {
-                            f"{seq}{smi}": np.random.choice(
-                                ["train", "dev", "test"], p=split_probs
-                            )
-                        }
-                    )
-            else:
-                print(
-                    "Not generating dataset for split assignment, using existing split assignments..."
+            for sample in dataset:
+                seq = sample["sequence"]
+                smi = sample["smiles"]
+                self.to_split.update(
+                    {
+                        f"{seq}{smi}": np.random.choice(
+                            ["train", "dev", "test"], p=split_probs
+                        )
+                    }
                 )
         else:
             raise ValueError("Split type not supported")
@@ -193,16 +187,19 @@ class Brenda(AbstractDataset):
             dict: MCSA data {uniprot_id: {ec: [ residues ], sequence = ""}}
         """
 
+        mcsa_biomolecules = json.load(open(args.mcsa_biomolecules_path, "r"))
+        mcsa_curated_data = json.load(open(args.mcsa_file_path, "r"))
+
         # load data
         pdb2uniprot = json.load(open(args.mcsa_pdb_to_uniprots, "r"))
         mcsa_homologs = json.load(open(args.mcsa_homologs_file_path, "r"))
-        mcsa_molecules = self.mcsa_biomolecules["molecules"]
-        mcsa_proteins = self.mcsa_biomolecules["proteins"]
+        mcsa_molecules = mcsa_biomolecules["molecules"]
+        mcsa_proteins = mcsa_biomolecules["proteins"]
 
         # to store reference proteins and not add them twice when processing homologs
         mcsa_curated_proteins = {}
         protein2enzymatic_residues = {}
-        for entry in tqdm(self.mcsa_curated_data, desc="Processing M-CSA data"):
+        for entry in tqdm(mcsa_curated_data, desc="Processing M-CSA data"):
             # all_ecs has length of 1
             ec = entry["all_ecs"][0]
 
@@ -480,6 +477,18 @@ class Brenda(AbstractDataset):
             default=False,
             help="Skip entries with unknown smiles",
         )
+        parser.add_argument(
+            "--precomputed_esm_features_dir",
+            type=str,
+            default=None,
+            help="directory with precomputed esm features for computation efficiency",
+        )
+        parser.add_argument(
+            "--max_protein_length",
+            type=int,
+            default=None,
+            help="skip proteins longer than max_protein_length",
+        )
 
     @staticmethod
     def set_args(args) -> None:
@@ -631,15 +640,6 @@ class BrendaConstants(Brenda):
         return dataset
 
     def skip_sample(self, sample, sequence_smiles2y, split_group) -> bool:
-        # check right split
-        if self.args.split_type == "sequence":
-            if self.to_split[sample["protein_id"]] != split_group:
-                return True
-
-        if self.args.split_type == "ec":
-            if self.to_split[sample["ec"]] != split_group:
-                return True
-
         # check if sample has mol
         if sample["smiles"] is None:
             # print("Skipped sample because SMILE is None")
@@ -649,12 +649,6 @@ class BrendaConstants(Brenda):
         if sample["sequence"] is None:
             print("Skipped sample because Sequence is None")
             return True
-
-        if self.args.split_type == "random" and hasattr(self, "to_split"):
-            seq = sample["sequence"]
-            smi = sample["smiles"]
-            if self.to_split[f"{seq}{smi}"] != split_group:
-                return True
 
         # check if multiple sequences
         # if len(sample["sequence"]) > 1: # each sample is a single sequence
@@ -712,6 +706,22 @@ class BrendaConstants(Brenda):
             ):
                 print("Skipped sample because of contradictory values")
                 return True
+
+        # check right split
+        if hasattr(self, "to_split"):
+            if self.args.split_type == "sequence":
+                if self.to_split[sample["protein_id"]] != split_group:
+                    return True
+
+            if self.args.split_type == "ec":
+                if self.to_split[sample["ec"]] != split_group:
+                    return True
+
+            if self.args.split_type == "random":
+                seq = sample["sequence"]
+                smi = sample["smiles"]
+                if self.to_split[f"{seq}{smi}"] != split_group:
+                    return True
 
         return False
 
@@ -860,13 +870,14 @@ class BrendaEC(Brenda):
         return y
 
     def skip_sample(self, sample, split_group) -> bool:
-        # check right split
-        if self.to_split[sample["protein_id"]] != split_group:
-            return True
-
         # if sequence is unknown
         if sample["sequence"] is None:
             return True
+
+        # check right split
+        if hasattr(self, "to_split"):
+            if self.to_split[sample["protein_id"]] != split_group:
+                return True
 
         return False
 
@@ -952,6 +963,7 @@ class BrendaReaction(Brenda):
                                             self.get_smiles(m)
                                             for m in sample["reactants"]
                                         ]
+
                                         sample["products"] = [
                                             self.get_smiles(m)
                                             for m in sample["products"]
@@ -997,7 +1009,7 @@ class BrendaReaction(Brenda):
                     "reaction_string": reaction_string,
                     "sample_id": sample_id,
                     "residues": residues["residues"],
-                    "residue_mask": residues["residue_mask"],
+                    # "residue_mask": residues["residue_mask"],
                     "residue_positions": residues["residue_positions"],
                     "has_residues": True,
                 }
@@ -1023,6 +1035,7 @@ class BrendaReaction(Brenda):
                     )
                     if rxn in all_reactions:
                         continue
+
                     all_reactions.add(rxn)
 
                 dataset.append(reaction)
@@ -1030,16 +1043,6 @@ class BrendaReaction(Brenda):
         return dataset
 
     def skip_sample(self, sample, split_group) -> bool:
-        # check right split
-        if self.args.split_type == "sequence":
-            if self.to_split[sample["protein_id"]] != split_group:
-                return True
-
-        if self.args.split_type == "ec":
-            ec = ".".join(sample["ec"].split(".")[: self.args.ec_level + 1])
-            if self.to_split[ec] != split_group:
-                return True
-
         # check if sample has mol
         if "?" in (sample["products"] + sample["reactants"]):
             return True
@@ -1053,6 +1056,16 @@ class BrendaReaction(Brenda):
         if sample["sequence"] is None:
             return True
 
+        # check right split
+        if hasattr(self, "to_split"):
+            if self.args.split_type == "sequence":
+                if self.to_split[sample["protein_id"]] != split_group:
+                    return True
+
+            if self.args.split_type == "ec":
+                ec = ".".join(sample["ec"].split(".")[: self.args.ec_level + 1])
+                if self.to_split[ec] != split_group:
+                    return True
         return False
 
     def get_uniprot_residues(self, mcsa_data, sequence, ec):
@@ -1103,7 +1116,6 @@ class BrendaReaction(Brenda):
         sample = self.dataset[index]
 
         try:
-
             reactants, products = copy.deepcopy(sample["reactants"]), copy.deepcopy(
                 sample["products"]
             )
@@ -1139,7 +1151,7 @@ class BrendaReaction(Brenda):
                 "protein_id": sample["protein_id"],
                 "sample_id": sample["sample_id"],
                 "residues": ".".join(sample["residues"]),
-                # "residue_mask": sample["residue_mask"],
+                "residue_mask": sample["residue_mask"],
                 "has_residues": sample["has_residues"],
                 "residue_positions": ".".join(
                     [str(s) for s in sample["residue_positions"]]
@@ -1226,15 +1238,6 @@ class MCSA(BrendaReaction):
         return dataset
 
     def skip_sample(self, sample, split_group) -> bool:
-        # check right split
-        if self.args.split_type == "sequence":
-            if self.to_split[sample["protein_id"]] != split_group:
-                return True
-
-        if self.args.split_type == "ec":
-            if self.to_split[sample["ec"]] != split_group:
-                return True
-
         # check if sample has mol
         if self.args.mcsa_skip_unk_smiles:
             if "?" in (sample["products"] + sample["reactants"]):
@@ -1246,5 +1249,21 @@ class MCSA(BrendaReaction):
         # if sequence is unknown
         if sample["sequence"] is None:
             return True
+
+        if (self.args.max_protein_length is not None) and len(
+            sample["sequence"]
+        ) > self.args.max_protein_length:
+            return True
+
+        # check right split
+        if hasattr(self, "to_split"):
+            if self.args.split_type == "sequence":
+                if self.to_split[sample["protein_id"]] != split_group:
+                    return True
+
+            if self.args.split_type == "ec":
+                ec = ".".join(sample["ec"].split(".")[: self.args.ec_level + 1])
+                if self.to_split[ec] != split_group:
+                    return True
 
         return False

@@ -24,3 +24,30 @@ AA_TO_SMILES = {
     "X": "X",
     "U": "C([C@@H](C(=O)O)N)[SeH]" # Selenocysteine
 }
+
+AA_TO_TRIPLET = {
+    "A": "ala",  # Alanine
+    "R": "arg",  # Arginine
+    "N": "asn",  # Asparagine
+    "D": "asp",  # Aspartic acid
+    "B": ["asp", "asn"],  # Aspartate or Asparagine
+    "C": "cys",  # Cysteine
+    "E": "glu",  # Glutamic acid
+    "Q": "gln",  # Glutamine
+    "Z": ["glu", "gln"],  # Glutamate or Glutamine
+    "G": "gly", # Glycine
+    "H": "his",  # Histidine
+    "I": "ile",  # Isoleucine
+    "L": "leu",  # Leucine
+    "K": "lys",  # Lysine
+    "M": "met",  # Methionine
+    "F": "phe",  # Phenylalanine
+    "P": "pro",  # Proline
+    "S": "ser",  # Serine
+    "T": "thr",  # Threonine
+    "W": "trp",  # Tryptophan
+    "Y": "tyr",  # Tyrosine
+    "V": "val",  # Valine
+    "X": "x",
+    "U": "sec" # Selenocysteine
+}

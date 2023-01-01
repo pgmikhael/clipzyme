@@ -33,13 +33,21 @@ def default_collate(batch):
         exclude_keys = None
         return Batch.from_data_list(batch, follow_batch, exclude_keys)
     elif isinstance(elem, torch.Tensor):
+        # pad with zero
+        if not all(v.shape == elem.shape for v in batch):
+            max_len = max(v.shape[0] for v in batch)
+            batch = [ torch.concat([x,torch.zeros(max_len - x.shape[0], *x.shape[1:])]) for x in batch]
+
+        elem = batch[0]
         out = None
         if torch.utils.data.get_worker_info() is not None:
             # If we're in a background process, concatenate directly into a
             # shared memory tensor to avoid an extra copy
-            numel = sum([x.numel() for x in batch])
-            storage = elem.storage()._new_shared(numel)
-            out = elem.new(storage)
+            numel = sum([x.numel() for x in batch])               # assumes all have the same size
+            #numel = max([x.numel() for x in batch]) * len(batch)    # total size of tensors 
+            storage = elem.storage()._new_shared(numel) # Creates a new storage in shared memory with the same data type
+            out = elem.new(storage).view(-1, *list(elem.size()))  
+        
         return torch.stack(batch, 0, out=out)
     elif (
         elem_type.__module__ == "numpy"
