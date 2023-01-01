@@ -75,8 +75,12 @@ class EnzymeActiveSiteModel(AbstractModel):
         super(EnzymeActiveSiteModel, self).__init__()
 
         self.args = args
-        self.protein_encoder = get_object(args.protein_encoder_name, "model")(args)
-        self.mlp = get_object(args.protein_substrate_aggregator, "model")(args)
+        self.protein_encoder = get_object(
+            args.protein_encoder_name_active_site, "model"
+        )(args)
+        self.mlp = get_object(args.protein_substrate_aggregator_active_site, "model")(
+            args
+        )
         # TODO: add substrate encoder
         # TODO: add reaction encoder
 
@@ -84,7 +88,7 @@ class EnzymeActiveSiteModel(AbstractModel):
         batch_size = len(batch["sequence"])
         seq_len = [len(p) for p in batch["sequence"]]
         sequence_dict = self.protein_encoder(batch["sequence"])
-        hidden = sequence_dict["token_hidden"][1:-1]  # B, seq_len, hidden_dim
+        hidden = sequence_dict["token_hiddens"][1:-1]  # B, seq_len, hidden_dim
         output = self.mlp({"x": hidden})  # B, seq_len, num_classes
 
         batch["y"] = torch.zeros_like(batch["residue_mask"]) + batch["residue_mask"]
@@ -102,9 +106,16 @@ class EnzymeActiveSiteModel(AbstractModel):
             parser (argparse.ArgumentParser): argument parser
         """
         parser.add_argument(
-            "--protein_encoder_name",
+            "--protein_encoder_name_active_site",
             type=str,
             action=set_nox_type("model"),
             default="fair_esm",
+            help="Name of encoder to use",
+        )
+        parser.add_argument(
+            "--protein_substrate_aggregator_active_site",
+            type=str,
+            action=set_nox_type("model"),
+            default="mlp_classifier",
             help="Name of encoder to use",
         )
