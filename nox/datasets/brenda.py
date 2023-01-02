@@ -85,9 +85,11 @@ class Brenda(AbstractDataset):
         """
         Assigns each sample to a split group based on split_probs
         """
-        # get all samples 
+        # get all samples
         rprint("Generating dataset in order to assign splits...")
-        dataset = self.create_dataset("train")  # must not skip samples by using split in dataset
+        dataset = self.create_dataset(
+            "train"
+        )  # must not skip samples by using split in dataset
         self.to_split = {}
 
         # set seed
@@ -98,30 +100,31 @@ class Brenda(AbstractDataset):
 
             if self.args.split_type == "sequence":
                 # split based on uniprot_id
-                samples = [s['protein_id'] for s in dataset]
-
+                samples = [s["protein_id"] for s in dataset]
 
             elif self.args.split_type == "ec":
                 # split based on ec number
-                samples = [s['ec'] for s in dataset]
+                samples = [s["ec"] for s in dataset]
 
                 # option to change level of ec categorization based on which to split
                 samples = [
                     ".".join(e.split(".")[: self.args.ec_level + 1]) for e in samples
                 ]
-            
+
             elif self.args.split_type == "product":
                 # split by reaction product (splits share no products)
-                if any(len(s['products']) > 1 for s in dataset):
-                    raise NotImplementedError("Product split not implemented for multi-products")
+                if any(len(s["products"]) > 1 for s in dataset):
+                    raise NotImplementedError(
+                        "Product split not implemented for multi-products"
+                    )
 
-                samples = [p for s in dataset for p in s['products']]
+                samples = [p for s in dataset for p in s["products"]]
 
             samples = sorted(list(set(samples)))
             np.random.shuffle(samples)
             split_indices = np.cumsum(np.array(split_probs) * len(samples)).astype(int)
             split_indices = np.concatenate([[0], split_indices])
-            
+
             for i in range(len(split_indices) - 1):
                 self.to_split.update(
                     {
@@ -129,10 +132,10 @@ class Brenda(AbstractDataset):
                         for sample in samples[split_indices[i] : split_indices[i + 1]]
                     }
                 )
-        
+
         # random splitting
         elif self.args.split_type == "random":
-            
+
             for sample in dataset:
                 seq = sample["sequence"]
                 smi = sample["smiles"]
@@ -193,9 +196,8 @@ class Brenda(AbstractDataset):
         mcsa_molecules = mcsa_biomolecules["molecules"]
         mcsa_proteins = mcsa_biomolecules["proteins"]
 
-        mcsa_curated_proteins = (
-            {}
-        )  # to store reference proteins and not add them twice when processing homologs
+        # to store reference proteins and not add them twice when processing homologs
+        mcsa_curated_proteins = {}
         protein2enzymatic_residues = {}
         for entry in tqdm(mcsa_curated_data, desc="Processing M-CSA data"):
             # all_ecs has length of 1
@@ -877,7 +879,6 @@ class BrendaEC(Brenda):
             if self.to_split[sample["protein_id"]] != split_group:
                 return True
 
-
         return False
 
 
@@ -962,6 +963,7 @@ class BrendaReaction(Brenda):
                                             self.get_smiles(m)
                                             for m in sample["reactants"]
                                         ]
+
                                         sample["products"] = [
                                             self.get_smiles(m)
                                             for m in sample["products"]
@@ -1033,6 +1035,7 @@ class BrendaReaction(Brenda):
                     )
                     if rxn in all_reactions:
                         continue
+
                     all_reactions.add(rxn)
 
                 dataset.append(reaction)
@@ -1113,7 +1116,6 @@ class BrendaReaction(Brenda):
         sample = self.dataset[index]
 
         try:
-
             reactants, products = copy.deepcopy(sample["reactants"]), copy.deepcopy(
                 sample["products"]
             )
@@ -1158,8 +1160,10 @@ class BrendaReaction(Brenda):
 
             return item
 
-        except Exception:
-            warnings.warn(f"Could not load sample: {sample['sample_id']}")
+        except Exception as e:
+            warnings.warn(
+                f"Could not load sample: {sample['sample_id']} because of exception: {e}"
+            )
 
     @property
     def SUMMARY_STATEMENT(self) -> None:
@@ -1246,9 +1250,11 @@ class MCSA(BrendaReaction):
         if sample["sequence"] is None:
             return True
 
-        if (self.args.max_protein_length is not None) and len(sample["sequence"]) > self.args.max_protein_length:
-            return True 
-        
+        if (self.args.max_protein_length is not None) and len(
+            sample["sequence"]
+        ) > self.args.max_protein_length:
+            return True
+
         # check right split
         if hasattr(self, "to_split"):
             if self.args.split_type == "sequence":
@@ -1259,6 +1265,5 @@ class MCSA(BrendaReaction):
                 ec = ".".join(sample["ec"].split(".")[: self.args.ec_level + 1])
                 if self.to_split[ec] != split_group:
                     return True
-
 
         return False

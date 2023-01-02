@@ -78,7 +78,9 @@ class EnzymeActiveSiteModel(AbstractModel):
         classifier_args = copy.deepcopy(args)
         self.protein_encoder = get_object(args.protein_encoder_name, "model")(args)
         if args.reaction_encoder_name is not None:
-            self.reaction_encoder = get_object(args.reaction_encoder_name, "model")(args)
+            self.reaction_encoder = get_object(args.reaction_encoder_name, "model")(
+                args
+            )
             classifier_args.mlp_input_dim = args.mlp_input_dim + args.hidden_size
         self.mlp = get_object(args.classifier_name, "model")(classifier_args)
 
@@ -87,22 +89,20 @@ class EnzymeActiveSiteModel(AbstractModel):
         seq_len = [len(p) for p in batch["sequence"]]
         sequence_dict = self.protein_encoder(batch["sequence"])
         hidden = sequence_dict["token_hiddens"][:, 1:-1]  # B, seq_len, hidden_dim
-        
-        
+
         if hasattr(self, "reaction_encoder"):
             rxn_dict = self.reaction_encoder({"x": batch["reaction"]})
-            rxn_h = rxn_dict["hidden"].unsqueeze(1) # B, 1, hidden_dim
-            rxn_h = torch.repeat_interleave(rxn_h, hidden.shape[1], dim = 1)
-            hidden = torch.concat([hidden, rxn_h], dim = -1)
-        
-        
+            rxn_h = rxn_dict["hidden"].unsqueeze(1)  # B, 1, hidden_dim
+            rxn_h = torch.repeat_interleave(rxn_h, hidden.shape[1], dim=1)
+            hidden = torch.concat([hidden, rxn_h], dim=-1)
+
         output = self.mlp({"x": hidden})  # B, seq_len, num_classes
- 
+
         labels = batch["residue_mask"]
-        residue_mask = sequence_dict['mask_hiddens'][:, 1:-1]
+        residue_mask = sequence_dict["mask_hiddens"][:, 1:-1]
         # cross entropy will ignore the padded residues (ignore_index=-100)
         labels[~residue_mask.squeeze(-1).bool()] = -100
-        batch["y"] = labels 
+        batch["y"] = labels
 
         return output
 
@@ -114,7 +114,7 @@ class EnzymeActiveSiteModel(AbstractModel):
             parser (argparse.ArgumentParser): argument parser
         """
         parser.add_argument(
-            "--protein_encoder_name",
+            "--protein_encoder_name_active_site",
             type=str,
             action=set_nox_type("model"),
             default="fair_esm",
