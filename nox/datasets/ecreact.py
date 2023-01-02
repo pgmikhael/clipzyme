@@ -369,7 +369,7 @@ class ECReact_RXNS(ECReact):
                     "ec": ec,
                     "reaction_string":reaction_string,
                     "protein_id": uniprot,
-                    "sequence": self.uniprot2sequence[uniprot]
+                    "sequence": self.uniprot2sequence[uniprot],
                     "split": reaction.get("split", None)
 
                 }
