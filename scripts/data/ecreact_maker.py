@@ -76,6 +76,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.from_ibm_splits:
+        """run first: rbt-preprocess.py /Mounts/rbg-storage1/datasets/Enzymes/ECReact/smarts_ecreact-1.0.csv /Mounts/rbg-storage1/datasets/Enzymes/ECReact/ibm_splits  --ec-level 4 """
         formatted_dataset = {
             "train": {"src": [], "tgt": []},
             "valid": {"src": [], "tgt": []},
