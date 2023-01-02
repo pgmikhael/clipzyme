@@ -183,9 +183,9 @@ class Ordinal_Classification(BaseClassification):
         preds = predictions_dict["preds"]  # B
         golds = predictions_dict["golds"]  # B
         stats_dict["accuracy"] = accuracy(golds, preds)
-        stats_dict["confusion_matrix"] = confusion_matrix(
-            preds, golds, args.num_classes + 1
-        )
+        #stats_dict["confusion_matrix"] = confusion_matrix(
+        #    preds, golds, args.num_classes + 1
+        #)
 
         for classindex in range(golds.shape[-1]):
             (
