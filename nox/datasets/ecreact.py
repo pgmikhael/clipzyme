@@ -67,6 +67,7 @@ class ECReact(BrendaReaction):
                 "ec": ec,
                 "reaction_string":reaction_string,
                 "sample_id": sample_id,
+                "split": reaction.get("split", None)
             }
 
             if hasattr(self, "to_split"):
@@ -102,6 +103,10 @@ class ECReact(BrendaReaction):
             if self.args.split_type == "product":
                 if any(self.to_split[p] != split_group for p in sample["products"]):
                     return True
+        
+        elif sample["split"] is not None:
+            if sample["split"] != split_group:
+                return True
 
         # if sequence is unknown
         if (sample["sequence"] is None) or (len(sample["sequence"]) == 0):
@@ -365,6 +370,7 @@ class ECReact_RXNS(ECReact):
                     "reaction_string":reaction_string,
                     "protein_id": uniprot,
                     "sequence": self.uniprot2sequence[uniprot]
+                    "split": reaction.get("split", None)
 
                 }
                 if self.skip_sample(temp_sample, split_group):
@@ -399,14 +405,18 @@ class ECReact_RXNS(ECReact):
             if self.to_split[split_ec] != split_group:
                 return True
         
-        if self.args.split_type == "product":
+        elif self.args.split_type == "product":
             products = sample['products']
             if any(self.to_split[p] != split_group for p in products):
                 return True
 
-        if self.args.split_type == "sequence":
+        elif self.args.split_type == "sequence":
             uniprot = sample['protein_id']
             if self.to_split[uniprot] != split_group:
+                return True
+        
+        elif sample["split"] is not None:
+            if sample["split"] != split_group:
                 return True
 
         # if sequence is unknown
