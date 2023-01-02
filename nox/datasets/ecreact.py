@@ -318,7 +318,7 @@ class ECReact_RXNS(ECReact):
 
             samples = sorted(list(set(samples)))
             np.random.shuffle(samples)
-            split_indices = np.cumsum(np.array(split_probs) * len(samples)).astype(int)
+            split_indices = np.ceil( np.cumsum(np.array(split_probs) * len(samples)) ).astype(int)
             split_indices = np.concatenate([[0], split_indices])
             
             for i in range(len(split_indices) - 1):
@@ -421,7 +421,7 @@ class ECReact_RXNS(ECReact):
 
     @staticmethod
     def set_args(args):
-        args.dataset_file_path = '/Mounts/rbg-storage1/datasets/Enzymes/ECReact/ecreact-1.0.json'
+        args.dataset_file_path = '/Mounts/rbg-storage1/datasets/Enzymes/ECReact/ecreact_ibm_splits.json'
     
     def __getitem__(self, index):
         sample = self.dataset[index]
