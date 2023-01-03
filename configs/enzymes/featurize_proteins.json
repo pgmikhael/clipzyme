@@ -1,7 +1,7 @@
 {
   "script": "main",
   "cartesian_hyperparams": {
-    "batch_size": [2],
+    "batch_size": [1],
     "dataset_name": ["ecreact_proteins"],
     "assign_splits": [false],
     "callback_names": [""],
@@ -10,6 +10,7 @@
     "max_protein_length": [10000],
     "freeze_esm": [true],
     "save_predictions": [true],
+    "save_hiddens": [true],
     "inference_dir":["/Mounts/rbg-storage1/datasets/Enzymes/ECReact/"],
     "predict": [true],
     "test": [true],

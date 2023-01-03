@@ -1,6 +1,6 @@
 {
   "script": "main",
-  "train_config": "configs/enzymes/reaction_synthesis_by_seq.json",
+  "train_config": "configs/enzymes/reaction_synthesis_ecreact.json",
   "log_dir": "/Mounts/rbg-storage1/logs/metabo/",
   "available_gpus": [3],
   "eval_args": {
@@ -14,6 +14,6 @@
     "metric_names_for_eval": ["topk_classification"],
     "topk_values": ["1 5 10"],
     "from_checkpoint": [true],
-    "checkpoint_path": ["/Mounts/rbg-storage1/snapshots/metabolomics/ceb873a38cc99db0062ba55b033dd708/ceb873a38cc99db0062ba55b033dd708epoch=19.ckpt"]
+    "checkpoint_path": ["/Mounts/rbg-storage1/snapshots/metabolomics/6688bc3b5c0f8e34e3621cd593c4f3d7/6688bc3b5c0f8e34e3621cd593c4f3d7epoch=49.ckpt"]
   }
 }
