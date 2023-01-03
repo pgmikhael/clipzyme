@@ -82,6 +82,7 @@ if __name__ == "__main__":
             "valid": {"src": [], "tgt": []},
             "test": {"src": [], "tgt": []},
         }
+        vocab = set()
 
         split_files = os.listdir(args.react_dir_or_path) 
         
@@ -101,6 +102,8 @@ if __name__ == "__main__":
             assert len(data_items["src"]) == len(data_items["tgt"])
             for i, (src, tgt) in enumerate(zip(data_items["src"], data_items["tgt"])):
                 reactants_str, ec_str = src.split("|")
+                if split != "test":
+                    vocab.update(reactants_str.split(" "))
                 ec = transform_ec_number(ec_str)
                 reactants = reactants_str.replace(" ", "").split(".")
                 products = tgt.replace(" ", "").split(".")
@@ -113,6 +116,13 @@ if __name__ == "__main__":
                     "from": filepath,
                     "rxnid": f"{split}_{i}",
                 })
+        
+        vocab = sorted(list(vocab))
+        vocabpath, _ = os.path.splitext(args.output_file_path)
+        with open(f"{vocabpath}_vocab.txt", "w") as f:
+            for tok in vocab:
+                f.write(tok)
+                f.write("\n")
 
     else:
 
