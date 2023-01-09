@@ -419,9 +419,13 @@ class EnzymaticReactionEncoder(ReactionEncoder):
         # combine protein - reactants attention mask
         if self.protein_representation_key == "token_hiddens":
             protein_reactants_attention_mask = torch.cat([protein_attention, encoder_input_ids['attention_mask']], dim = -1) 
+            # token id types (protein vs reactants)
+            token_type_ids = torch.cat([protein_attention * 0, encoder_input_ids['attention_mask']], dim = -1) .long()
         elif self.protein_representation_key == "hidden":
             protein_reactants_attention_mask = torch.cat([protein_attention[:,:1], encoder_input_ids['attention_mask']], dim = -1) 
-
+            # token id types (protein vs reactants)
+            token_type_ids = torch.cat([protein_attention[:,:1] * 0, encoder_input_ids['attention_mask']], dim = -1).long()
+        
         if not self.append_enzyme_to_hiddens:
             # append to embeddings of reactants
             embeddings = self.model.encoder.embeddings(
@@ -435,7 +439,7 @@ class EnzymaticReactionEncoder(ReactionEncoder):
             encoder_outputs = self.model.encoder(
                     inputs_embeds=embeddings_w_protein,
                     attention_mask=protein_reactants_attention_mask,
-                    token_type_ids=protein_attention,
+                    token_type_ids=token_type_ids,
                     )
 
         else:
@@ -444,7 +448,7 @@ class EnzymaticReactionEncoder(ReactionEncoder):
             encoder_outputs = self.model.encoder(
                     input_ids=encoder_input_ids['input_ids'],
                     attention_mask=encoder_input_ids['attention_mask'],
-                    token_type_ids=protein_attention,
+                    token_type_ids=token_type_ids,
                     )
 
         encoder_hidden_states = encoder_outputs[0]
