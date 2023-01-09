@@ -376,28 +376,7 @@ class EnzymaticReactionEncoder(ReactionEncoder):
         if args.hidden_size != args.protein_feature_dim:
             self.protein_fc = nn.Linear(args.protein_feature_dim, args.hidden_size)
 
-    def forward(self, batch) -> Dict:
-
-        if self.args.predict:
-            predictions = self.generate(batch)
-            return {
-                "preds": predictions,
-                "golds": batch["products"],
-            }
-        
-        return_dict = self.config.use_return_dict
-
-        # get molecule tokens
-        encoder_input_ids = self.tokenize(batch["reactants"], self.tokenizer, self.args)
-        decoder_input_ids = self.tokenize(batch["products"], self.tokenizer, self.args)
-
-        # move to device
-        for k, v in encoder_input_ids.items():
-            encoder_input_ids[k] = v.to(self.devicevar.device)
-
-        for k, v in decoder_input_ids.items():
-            decoder_input_ids[k] = v.to(self.devicevar.device)
-
+    def encode_reactants_and_enzyme(self, batch, encoder_input_ids):
         # pass sequences through protein model or use precomputed hiddens
         if hasattr(self, "protein_model"):
             protein_output = self.protein_model(batch)
@@ -450,11 +429,37 @@ class EnzymaticReactionEncoder(ReactionEncoder):
                     attention_mask=encoder_input_ids['attention_mask'],
                     token_type_ids=token_type_ids,
                     )
+        return  encoder_outputs, protein_reactants_attention_mask
+
+    def forward(self, batch) -> Dict:
+
+        if self.args.predict:
+            predictions = self.generate(batch)
+            return {
+                "preds": predictions,
+                "golds": batch["products"],
+            }
+        
+        return_dict = self.config.use_return_dict
+
+        # get molecule tokens
+        encoder_input_ids = self.tokenize(batch["reactants"], self.tokenizer, self.args)
+        decoder_input_ids = self.tokenize(batch["products"], self.tokenizer, self.args)
+
+        # move to device
+        for k, v in encoder_input_ids.items():
+            encoder_input_ids[k] = v.to(self.devicevar.device)
+
+        for k, v in decoder_input_ids.items():
+            decoder_input_ids[k] = v.to(self.devicevar.device)
+
+        # encode and get attention mask with proteins
+        encoder_outputs, encoder_attention_mask = self.encode_reactants_and_enzyme(batch, encoder_input_ids)
 
         encoder_hidden_states = encoder_outputs[0]
 
         # attention mask with proteins
-        encoder_attention_mask = protein_reactants_attention_mask
+        # encoder_attention_mask = protein_reactants_attention_mask
 
         if self.append_enzyme_to_hiddens:
             encoder_hidden_states = torch.cat(
@@ -500,6 +505,44 @@ class EnzymaticReactionEncoder(ReactionEncoder):
         }
 
         return output
+    
+    def generate(self, batch):
+        """Applies auto-regressive generation for reaction prediction
+        Usage: https://huggingface.co/docs/transformers/main/en/main_classes/text_generation#transformers.GenerationMixin
+
+        Args:
+            batch (dict): dictionary with input reactants
+            decoder_start_token_id = 2,
+            bos_token_id = 2,
+            max_new_tokens=100
+        """
+        bos_id = self.tokenizer.cls_token_id
+        eos_id = self.tokenizer.eos_token_id
+        pad_id = self.tokenizer.pad_token_id
+
+        encoder_input_ids = self.tokenize(batch["reactants"], self.tokenizer, self.args)
+        for k, v in encoder_input_ids.items():
+            encoder_input_ids[k] = v.to(self.devicevar.device)
+
+        encoder_outputs, encoder_attention_mask = self.encode_reactants_and_enzyme(batch, encoder_input_ids)
+
+        generated_ids = self.model.generate(
+            encoder_outputs=encoder_outputs,
+            attention_mask = encoder_attention_mask,
+            #input_ids=encoder_input_ids["input_ids"],
+            decoder_start_token_id = bos_id,
+            bos_token_id = bos_id,
+            eos_token_id = eos_id,
+            pad_token_id = pad_id,
+            output_scores=True,
+            return_dict_in_generate=True,
+            **self.generation_config
+        )
+        generated_samples = self.tokenizer.batch_decode(generated_ids.sequences, skip_special_tokens = True)
+        generated_samples = [s.replace(' ', '') for s in generated_samples]
+        beam_search_n = self.generation_config["num_return_sequences"]
+        batch_samples = [ generated_samples[i:i + beam_search_n] for i in range(0, len(generated_samples), beam_search_n)]
+        return batch_samples
 
     @staticmethod
     def add_args(parser) -> None:
