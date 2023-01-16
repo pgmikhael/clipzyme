@@ -3,10 +3,13 @@ from nox.utils.registry import register_object
 from nox.datasets.abstract import AbstractDataset
 from nox.utils.pyg import from_smiles
 from nox.utils.smiles import get_rdkit_feature
+from nox.utils.proteins import get_protein_graphs_from_path
 from tqdm import tqdm
 import torch
 import numpy as np
 from collections import defaultdict
+from nox.utils.messages import METAFILE_NOTFOUND_ERR, LOAD_FAIL_MSG
+import traceback, warnings
 
 
 @register_object("brenda_kcat", "dataset")
@@ -14,11 +17,13 @@ class BrendaKCat(AbstractDataset):
     def create_dataset(
         self, split_group: Literal["train", "dev", "test"]
     ) -> List[dict]:
-        
+
         # get sequence,smiles pair to y-value
         seq_smi_2_y = defaultdict(list)
         for kcat_dict in self.metadata_json:
-            seq_smi_2_y[f"{kcat_dict['Sequence']}{kcat_dict['Smiles']}"].append(self.get_label(kcat_dict))
+            seq_smi_2_y[f"{kcat_dict['Sequence']}{kcat_dict['Smiles']}"].append(
+                self.get_label(kcat_dict)
+            )
 
         # create samples
         dataset = []
@@ -38,7 +43,7 @@ class BrendaKCat(AbstractDataset):
                 "smiles": kcat_dict["Smiles"],
                 "sequence": kcat_dict["Sequence"],
                 "y": self.get_label(kcat_dict),
-                "sample_id": kcat_dict["sample_id"]
+                "sample_id": kcat_dict["sample_id"],
             }
 
             dataset.append(sample)
@@ -56,18 +61,18 @@ class BrendaKCat(AbstractDataset):
         """
         if sample["split"] != split_group:
             return True
-        
+
         if "." in sample["Smiles"]:
             return True
-        
+
         if float(sample["Value"]) <= 0:
             return True
-        
+
         # skip if sequence, smile pair has inconsistent values (across organisms, conditions)
         smi = sample["Smiles"]
         seq = sample["Sequence"]
         if any(i != seq_smi_2_y[f"{seq}{smi}"][0] for i in seq_smi_2_y[f"{seq}{smi}"]):
-            return True 
+            return True
 
         return False
 
@@ -153,7 +158,7 @@ class BrendaKCat(AbstractDataset):
                     sample["split"] = np.random.choice(
                         ["train", "dev"], p=[1 - dev_probs, dev_probs]
                     )
-        
+
         elif self.args.split_type == "mutation":
             #  split based on mutation
             assert len(split_probs) == 2, "Mutation split only supports 2 splits"
@@ -164,6 +169,26 @@ class BrendaKCat(AbstractDataset):
                     sample["split"] = np.random.choice(["dev", "test"], split_probs)
         else:
             raise ValueError("Split type not supported")
+
+    def __getitem__(self, index):
+        """
+        Fetch single sample from dataset
+
+        Args:
+            index (int): random index of sample from dataset
+
+        Returns:
+            sample (dict): a sample
+        """
+        sample = self.dataset[index]
+        if self.args.generate_3d_graphs:
+            sample, data_params = get_protein_graphs_from_path([sample], self.args)
+        try:
+            return sample
+        except Exception:
+            warnings.warn(
+                LOAD_FAIL_MSG.format(sample["sample_id"], traceback.print_exc())
+            )
 
     @staticmethod
     def add_args(parser) -> None:
@@ -180,12 +205,48 @@ class BrendaKCat(AbstractDataset):
             default="rdkit_fingerprint",
             help="name of rdkit features to use",
         )
+        parser.add_argument(
+            "--generate_3d_graphs",
+            action="store_true",
+            default=False,
+            help="Generate 3D graphs from protein sequences",
+        )
+        parser.add_argument(
+            "--protein_cache_path",
+            type=str,
+            default="/Mounts/rbg-storage1/datasets/Metabo/Brenda/cache",
+            help="Path to cache protein graphs",
+        )
+        parser.add_argument(
+            "--protein_resolution",
+            type=str,
+            default="residue",
+            help="Resolution of protein graphs",
+        )
+        parser.add_argument(
+            "--debug",
+            action="store_true",
+            default=False,
+            help="For debugging purposes, appends debug to cache paths",
+        )
+        parser.add_argument(
+            "--no_graph_cache",
+            action="store_true",
+            default=False,
+            help="Skip caching graphs",
+        )
+        parser.add_argument(
+            "--knn_size",
+            type=int,
+            default=20,
+            help="Number of nearest neighbors to use for graph construction",
+        )
 
     @staticmethod
     def set_args(args) -> None:
         args.dataset_file_path = "/Mounts/rbg-storage1/datasets/Enzymes/DLKcat/DeeplearningApproach/Data/database/Kcat_combination_0918_wildtype_mutant_sample_ids.json"
         args.num_classes = 1
-        
+
     @property
     def SUMMARY_STATEMENT(self) -> None:
         """
