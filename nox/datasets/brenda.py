@@ -4,6 +4,7 @@ from nox.datasets.abstract import AbstractDataset
 from nox.utils.pyg import from_smiles
 from nox.utils.smiles import get_rdkit_feature
 from nox.utils.amino_acids import AA_TO_SMILES
+from nox.utils.proteins import get_protein_graphs_from_path
 from tqdm import tqdm
 import torch
 import numpy as np
@@ -12,11 +13,12 @@ import argparse
 import json
 import os
 from rxn.chemutils.smiles_randomization import randomize_smiles_rotated
-import warnings
+import traceback, warnings
 import hashlib
 from frozendict import frozendict
 import copy
 from rich import print as rprint
+from nox.utils.messages import METAFILE_NOTFOUND_ERR, LOAD_FAIL_MSG
 
 CHEBI_DB = json.load(open("/Mounts/rbg-storage1/datasets/Metabo/chebi_db.json", "r"))
 
@@ -725,6 +727,26 @@ class BrendaConstants(Brenda):
 
         return False
 
+    def __getitem__(self, index):
+        """
+        Fetch single sample from dataset
+
+        Args:
+            index (int): random index of sample from dataset
+
+        Returns:
+            sample (dict): a sample
+        """
+        sample = self.dataset[index]
+        if self.args.generate_3d_graphs:
+            sample, data_params = get_protein_graphs_from_path([sample], self.args)
+        try:
+            return sample
+        except Exception:
+            warnings.warn(
+                LOAD_FAIL_MSG.format(sample["sample_id"], traceback.print_exc())
+            )
+
     @staticmethod
     def set_args(args) -> None:
         super(BrendaConstants, BrendaConstants).set_args(args)
@@ -814,6 +836,42 @@ class BrendaConstants(Brenda):
             action="store_true",
             default=False,
             help="If labels have more than one value, or multiple samples have different labels, use the mean",
+        )
+        parser.add_argument(
+            "--generate_3d_graphs",
+            action="store_true",
+            default=False,
+            help="Generate 3D graphs from protein sequences",
+        )
+        parser.add_argument(
+            "--protein_cache_path",
+            type=str,
+            default="/Mounts/rbg-storage1/datasets/Metabo/Brenda/cache",
+            help="Path to cache protein graphs",
+        )
+        parser.add_argument(
+            "--protein_resolution",
+            type=str,
+            default="residue",
+            help="Resolution of protein graphs",
+        )
+        parser.add_argument(
+            "--debug",
+            action="store_true",
+            default=False,
+            help="For debugging purposes, appends debug to cache paths",
+        )
+        parser.add_argument(
+            "--no_graph_cache",
+            action="store_true",
+            default=False,
+            help="Skip caching graphs",
+        )
+        parser.add_argument(
+            "--knn_size",
+            type=int,
+            default=20,
+            help="Number of nearest neighbors to use for graph construction",
         )
 
 
