@@ -9,7 +9,7 @@ import torch
 import numpy as np
 from collections import defaultdict
 from nox.utils.messages import METAFILE_NOTFOUND_ERR, LOAD_FAIL_MSG
-import traceback, warnings
+import traceback, warnings, os
 
 
 @register_object("brenda_kcat", "dataset")
@@ -45,6 +45,11 @@ class BrendaKCat(AbstractDataset):
                 "y": self.get_label(kcat_dict),
                 "sample_id": kcat_dict["sample_id"],
             }
+            if self.args.generate_3d_graphs:
+                sample["path"] = os.path.join(
+                    "/Mounts/rbg-storage1/datasets/Enzymes/DLKcat/DeeplearningApproach/Data/database/Kcat_combination_0918_wildtype_mutant_structures/",
+                    f"seq_id_{sample['seq_id']}.pdb",
+                )
 
             dataset.append(sample)
 
