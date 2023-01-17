@@ -20,4 +20,5 @@ python -m pip install torch==1.11.0+cu113 torchvision==0.12.0+cu113 --extra-inde
 python -m pip install  pytorch-lightning==1.6.4 torchmetrics==0.6.2 --no-cache-dir
 python -m pip install torch-scatter==2.0.9 torch-sparse==0.6.14 torch-geometric==2.0.4 ninja easydict pyyaml -f https://data.pyg.org/whl/torch-1.11.0+cu115.html
 python -m pip install wget cobra==0.25.0 bioservices==1.9.0 pubchempy==1.0.4 openpyxl==3.0.10 transformers==4.22.2 rxn-chem-utils==1.0.4 rxn-utils==1.1.3 frozendict==2.3.4
+python -m pip install biopython p_tqdm
 ```
