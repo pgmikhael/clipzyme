@@ -9,7 +9,7 @@ from collections import defaultdict
 import csv
 import hashlib
 
-from tqdm import tqdm
+# from tqdm import tqdm
 
 import numpy as np
 import torch
@@ -31,7 +31,7 @@ from Bio.Data.IUPACData import protein_letters_3to1
 
 def read_files(data_to_load, args):
     pdb_id2prot_dict = {}
-    for sample in tqdm(data_to_load, desc="data loading", ncols=50):
+    for sample in data_to_load:
         pdb_path = sample["path"]
         pdb_id = sample["sample_id"]
         item = pdb_id2prot_dict.get(pdb_id)
@@ -265,7 +265,7 @@ def compute_embeddings(pdb_id2prot_dict, args):
         print("Loaded cached ESM embeddings")
         return pdb_id2prot_dict
 
-    print("Computing ESM embeddings")
+    # print("Computing ESM embeddings")
     # load pretrained model
     torch.hub.set_dir(args.pretrained_hub_dir)
     esm_model, alphabet = torch.hub.load(
@@ -344,7 +344,7 @@ def _run_esm(batches, padding_idx, esm_model):
     """
     # run ESM model
     all_reps = []
-    for batch in tqdm(batches, desc="Computing ESM Embeddings", ncols=50):
+    for batch in batches:
         reps = esm_model(batch.cuda(), repr_layers=[33])
         reps = reps["representations"][33].cpu().squeeze()[:, 1:]
         all_reps.append(reps)
@@ -432,17 +432,3 @@ def get_protein_graphs_from_path(data_to_load, args):
     pdb_id2prot_dict, data_params = process_embed(pdb_id2prot_dict, args)
 
     return pdb_id2prot_dict, data_params
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description="Test args for pdb graph generation", allow_abbrev=False
-    )
-
-    parser.add_argument(
-        "--train",
-        action="store_true",
-        default=False,
-        help="Whether or not to train model",
-    )
-    get_protein_graphs_from_path(data_to_load, args)

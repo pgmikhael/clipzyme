@@ -48,7 +48,7 @@ class BrendaKCat(AbstractDataset):
             if self.args.generate_3d_graphs:
                 sample["path"] = os.path.join(
                     "/Mounts/rbg-storage1/datasets/Enzymes/DLKcat/DeeplearningApproach/Data/database/Kcat_combination_0918_wildtype_mutant_structures/",
-                    f"seq_id_{sample['seq_id']}.pdb",
+                    f"seq_id_{kcat_dict['seq_id']}.pdb",
                 )
 
             dataset.append(sample)
@@ -245,6 +245,12 @@ class BrendaKCat(AbstractDataset):
             type=int,
             default=20,
             help="Number of nearest neighbors to use for graph construction",
+        )
+        parser.add_argument(
+            "--protein_dim",
+            type=int,
+            default=1280,
+            help="Hidden ESM dimension",
         )
 
     @staticmethod
