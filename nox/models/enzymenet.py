@@ -114,7 +114,7 @@ class EnzymeActiveSiteModel(AbstractModel):
             parser (argparse.ArgumentParser): argument parser
         """
         parser.add_argument(
-            "--protein_encoder_name_active_site",
+            "--protein_encoder_name",
             type=str,
             action=set_nox_type("model"),
             default="fair_esm",
