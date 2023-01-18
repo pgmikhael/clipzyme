@@ -426,9 +426,10 @@ def get_protein_graphs_from_path(data_to_load, args):
     pdb_id2prot_dict = read_files(data_to_load, args)
 
     # filters resolution, generates graphs and caches pdb_id2prot_dict
+    data_params = {}
     pdb_id2prot_dict = process_data(pdb_id2prot_dict, args)
 
     # generate ESM embeddings and cache cat([one-hot, esm_embeddings])
-    pdb_id2prot_dict, data_params = process_embed(pdb_id2prot_dict, args)
+    # pdb_id2prot_dict, data_params = process_embed(pdb_id2prot_dict, args)
 
-    return pdb_id2prot_dict, data_params
+    return pdb_id2prot_dict.values(), data_params
