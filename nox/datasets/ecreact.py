@@ -354,7 +354,7 @@ class ECReact_RXNS(ECReact):
 
         dataset = []
         
-        for reaction in tqdm(self.metadata_json, desc="Building dataset"):
+        for rowid, reaction in tqdm(enumerate(self.metadata_json), desc="Building dataset"):
             
             ec = reaction["ec"]
             reactants = reaction["reactants"]
@@ -389,6 +389,7 @@ class ECReact_RXNS(ECReact):
                     "products": products,
                     "ec": ec,
                     "reaction_string":reaction_string,
+                    "rowid": rowid
                 }
             
             # add reaction sample to dataset
@@ -474,8 +475,8 @@ class ECReact_RXNS(ECReact):
                     pass
             
 
-            sample_id = hashlib.md5(f"{uniprot_id}_{sample['reaction_string']}".encode()).hexdigest()
-                
+            # sample_id = hashlib.md5(f"{uniprot_id}_{sample['reaction_string']}".encode()).hexdigest()
+            sample_id = sample['rowid']    
             item = {
                 "reaction": reaction,
                 "reactants": ".".join(reactants),
@@ -485,11 +486,11 @@ class ECReact_RXNS(ECReact):
                 "organism": sample.get("organism", "none"),
                 "protein_id": uniprot_id,
                 "sample_id": sample_id,
-                "residues": ".".join(residues),
-                "has_residues": has_residues,
-                "residue_positions": ".".join(
-                    [str(s) for s in residue_positions]
-                ),
+                # "residues": ".".join(residues),
+                # "has_residues": has_residues,
+                # "residue_positions": ".".join(
+                #     [str(s) for s in residue_positions]
+                # ),
             }
 
             if self.args.precomputed_esm_features_dir is not None:
@@ -525,3 +526,20 @@ class ECReact_RXNS(ECReact):
         * Number of ECs: {len(set(ecs))}
         """
         return statement
+
+
+@register_object("ecreact_multiproduct_reactions", "dataset")
+class ECReact_MultiProduct_RXNS(ECReact_RXNS):
+
+    @staticmethod
+    def set_args(args):
+        args.dataset_file_path = '/Mounts/rbg-storage1/datasets/Enzymes/ECReact/ecreact_multiproduct.json'
+    
+    def skip_sample(self, sample, split_group) -> bool:
+        if super().skip_sample(sample, split_group):
+            return True
+        
+        if len(sample['reaction_string']) > 2000:
+            return True 
+        
+        return False 
