@@ -18,7 +18,7 @@ from torchmetrics.functional import (
     r2_score,
     cosine_similarity,
     pearson_corrcoef,
-    spearman_corrcoef
+    spearman_corrcoef,
 )
 import torch
 import copy
@@ -183,9 +183,9 @@ class Ordinal_Classification(BaseClassification):
         preds = predictions_dict["preds"]  # B
         golds = predictions_dict["golds"]  # B
         stats_dict["accuracy"] = accuracy(golds, preds)
-        #stats_dict["confusion_matrix"] = confusion_matrix(
+        # stats_dict["confusion_matrix"] = confusion_matrix(
         #    preds, golds, args.num_classes + 1
-        #)
+        # )
 
         for classindex in range(golds.shape[-1]):
             (
@@ -252,32 +252,34 @@ class MultiTask_Classification(BaseClassification):
         if "has_golds" in predictions_dict:
             metrics = defaultdict(list)
             for col in range(predictions_dict["golds"].shape[1]):
-                row = predictions_dict["has_golds"][:,col]
+                row = predictions_dict["has_golds"][:, col]
                 pr, rc = precision_recall(probs[row, col], golds[row, col])
                 metrics["precision"].append(pr)
                 metrics["recall"].append(rc)
-                metrics["f1"].append( f1(probs[row, col], golds[row, col] ))
-                metrics["roc_auc"].append( auroc(probs[row, col], golds[row, col] ) )
-            stats_dict = {k:torch.stack(v).mean() for k,v in metrics.items()}
+                metrics["f1"].append(f1(probs[row, col], golds[row, col]))
+                metrics["roc_auc"].append(auroc(probs[row, col], golds[row, col]))
+            stats_dict = {k: torch.stack(v).mean() for k, v in metrics.items()}
         else:
-            stats_dict["precision"], stats_dict["recall"] = precision_recall(probs, golds, multiclass=False)
+            stats_dict["precision"], stats_dict["recall"] = precision_recall(
+                probs, golds, multiclass=False
+            )
             stats_dict["f1"] = f1(probs, golds, multiclass=False, average="macro")
             stats_dict["roc_auc"] = auroc(probs, golds, multiclass=False, num_classes=2)
-            
+
         return stats_dict
 
 
-@register_object("regression", 'metric')
+@register_object("regression", "metric")
 class BaseRegression(Nox):
     def __init__(self, args) -> None:
         super().__init__()
 
     @property
     def metric_keys(self):
-        return ['probs', 'golds']
+        return ["probs", "golds"]
 
     def __call__(self, logging_dict, args) -> Dict:
-        '''
+        """
         Computes standard regresssion loss
         Args:
             logging_dict: dictionary obtained from computing loss and model outputs
@@ -286,23 +288,25 @@ class BaseRegression(Nox):
 
         Returns:
             stats_dict (dict): contains (where applicable) values for mse, mae, r2
-        '''
+        """
         stats_dict = OrderedDict()
 
-        probs = logging_dict['probs']
-        golds = logging_dict['golds']
+        probs = logging_dict["probs"]
+        golds = logging_dict["golds"]
 
-        stats_dict['mse'] = mean_squared_error(probs, golds)
-        stats_dict['mae'] = mean_absolute_error(probs, golds)
-        stats_dict['pearson'] = pearson_corrcoef(probs.view(-1), golds.view(-1))
-        stats_dict['spearman'] = spearman_corrcoef(probs.view(-1), golds.view(-1))
+        stats_dict["mse"] = mean_squared_error(probs, golds)
+        stats_dict["mae"] = mean_absolute_error(probs, golds)
+        stats_dict["pearson"] = pearson_corrcoef(probs.view(-1), golds.view(-1))
+        stats_dict["spearman"] = spearman_corrcoef(probs.view(-1), golds.view(-1))
 
-        r2 = r2_score(probs, golds, multioutput='raw_values')
+        r2 = r2_score(probs, golds, multioutput="raw_values")
         if probs.shape[-1] > 1:
-            stats_dict['r2'] = torch.stack([r for r in r2 if not torch.isinf(r)] ).mean()
-            stats_dict['cosine_similarity'] = cosine_similarity(probs, golds, reduction = 'mean')
+            stats_dict["r2"] = torch.stack([r for r in r2 if not torch.isinf(r)]).mean()
+            stats_dict["cosine_similarity"] = cosine_similarity(
+                probs, golds, reduction="mean"
+            )
         else:
-            stats_dict['r2'] = r2
+            stats_dict["r2"] = r2
 
         return stats_dict
 
@@ -322,28 +326,24 @@ class Seq2SeqClassification(BaseClassification):
         probs = predictions_dict["probs"]  # B, N, C (float)
         preds = predictions_dict["preds"]  # B, N
         golds = predictions_dict["golds"].int()  # B, N
-        
+
         top1_correct = 0
-        for sample_probs, sample_preds, sample_golds  in zip(probs, preds, golds):
-            sample_probs = sample_probs[sample_golds!=-100]
-            sample_preds = sample_preds[sample_golds!=-100]
-            sample_golds = sample_golds[sample_golds!=-100]
+        for sample_probs, sample_preds, sample_golds in zip(probs, preds, golds):
+            sample_probs = sample_probs[sample_golds != -100]
+            sample_preds = sample_preds[sample_golds != -100]
+            sample_golds = sample_golds[sample_golds != -100]
             sample_stats = super().__call__(
-                {
-                    "probs": sample_probs, 
-                    "preds": sample_preds,
-                    "golds": sample_golds
-                }, args
+                {"probs": sample_probs, "preds": sample_preds, "golds": sample_golds},
+                args,
             )
             top1_correct += torch.all(sample_preds == sample_golds).int()
-            for k,v in sample_stats.items():
+            for k, v in sample_stats.items():
                 if len(v.shape) < 2:
                     stats_dict[k].append(v)
-        
-        for k,v in stats_dict.items():
+
+        for k, v in stats_dict.items():
             stats_dict[k] = torch.stack(v).mean()
-        
+
         stats_dict["top_1"] = top1_correct / len(golds)
 
         return stats_dict
-    
