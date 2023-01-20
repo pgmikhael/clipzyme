@@ -222,20 +222,6 @@ class SamplingMolecularMetrics(Metric, Nox):
 
         return stats_dict
 
-    @staticmethod
-    def add_args(parser) -> None:
-        """Add class specific args
-
-        Args:
-            parser (argparse.ArgumentParser): argument parser
-        """
-        parser.add_argument(
-            "--store_classwise_metrics",
-            action="store_true",
-            default=False,
-            help="Whether to log metrics per class or just log average across classes",
-        )
-
 
 class CEPerClass(Metric):
     full_state_update = False

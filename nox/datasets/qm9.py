@@ -21,7 +21,7 @@ from nox.utils.digress.rdkit_functions import (
     build_molecule_with_partial_charges,
     compute_molecular_metrics,
 )
-from nox.utils.registry import register_object
+from nox.utils.registry import register_object, md5
 from nox.datasets.abstract import AbstractDataset
 import nox.utils.digress.diffusion_utils as utils
 from nox.utils.digress.extra_features import ExtraFeatures
@@ -375,6 +375,22 @@ class QM9(AbstractDataset, InMemoryDataset):
             self.datasets["test"] = torch.load(self.processed_paths[2])
         except Exception as e:
             raise Exception("Unable to load dataset", e)
+
+    def get_version(self):
+        """Checks if changes have been made that would effect the preprocessed graphs"""
+
+        args_hash = md5(
+            str(
+                [
+                    self.args.dataset_name,
+                    self.args.data_dir,
+                    self.args.recompute_statistics,
+                    self.args.remove_h,
+                    self.args.extra_features,
+                ]
+            )
+        )
+        return args_hash
 
     def get_transform(self, args) -> None:
         target = getattr(args, "guidance_target", None)
