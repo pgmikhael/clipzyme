@@ -349,15 +349,18 @@ class QM9(AbstractDataset, InMemoryDataset):
         self.dataset = self.create_dataset(split_group)
 
         # get data info (input / output dimensions)
-        self.data_info = DatasetInfo(self.datasets, args)
+        data_info = DatasetInfo(self.datasets, args)
 
-        extra_features = ExtraFeatures(args.extra_features, dataset_info=self.data_info)
-        domain_features = ExtraMolecularFeatures(dataset_infos=self.data_info)
+        extra_features = ExtraFeatures(args.extra_features, dataset_info=data_info)
+        domain_features = ExtraMolecularFeatures(dataset_infos=data_info)
 
-        self.data_info.compute_input_output_dims(
+        data_info.compute_input_output_dims(
             extra_features=extra_features,
             domain_features=domain_features,
         )
+
+        args.dataset_statistics = data_info
+        args.train_smiles = get_train_smiles(data_info, self.dataset, args)
 
         if len(self.dataset) == 0:
             return
@@ -573,13 +576,9 @@ class QM9(AbstractDataset, InMemoryDataset):
         )
 
 
-def get_train_smiles(cfg, train_dataloader, dataset_infos, evaluate_dataset=False):
-    if evaluate_dataset:
-        assert (
-            dataset_infos is not None
-        ), "If wanting to evaluate dataset, need to pass dataset_infos"
-    datadir = cfg.dataset.datadir
-    remove_h = cfg.dataset.remove_h
+def get_train_smiles(dataset_infos, train_data, args):
+    datadir = args.datadir
+    remove_h = args.remove_h
     atom_decoder = dataset_infos.atom_decoder
     root_dir = pathlib.Path(os.path.realpath(__file__)).parents[2]
     smiles_file_name = "train_smiles_no_h.npy" if remove_h else "train_smiles_h.npy"
@@ -589,40 +588,13 @@ def get_train_smiles(cfg, train_dataloader, dataset_infos, evaluate_dataset=Fals
         train_smiles = np.load(smiles_path)
     else:
         print("Computing dataset smiles...")
-        train_smiles = compute_qm9_smiles(atom_decoder, train_dataloader, remove_h)
+        train_smiles = compute_qm9_smiles(atom_decoder, train_data, remove_h)
         np.save(smiles_path, np.array(train_smiles))
-
-    if evaluate_dataset:
-        train_dataloader = train_dataloader
-        all_molecules = []
-        for i, data in enumerate(train_dataloader):
-            dense_data, node_mask = utils.to_dense(
-                data.x, data.edge_index, data.edge_attr, data.batch
-            )
-            dense_data = dense_data.mask(node_mask, collapse=True)
-            X, E = dense_data.X, dense_data.E
-
-            for k in range(X.size(0)):
-                n = int(torch.sum((X != -1)[k, :]))
-                atom_types = X[k, :n].cpu()
-                edge_types = E[k, :n, :n].cpu()
-                all_molecules.append([atom_types, edge_types])
-
-        print(
-            "Evaluating the dataset -- number of molecules to evaluate",
-            len(all_molecules),
-        )
-        metrics = compute_molecular_metrics(
-            molecule_list=all_molecules,
-            train_smiles=train_smiles,
-            dataset_info=dataset_infos,
-        )
-        print(metrics[0])
 
     return train_smiles
 
 
-def compute_qm9_smiles(atom_decoder, train_dataloader, remove_h):
+def compute_qm9_smiles(atom_decoder, train_data, remove_h):
     """
 
     :param dataset_name: qm9 or qm9_second_half
@@ -631,10 +603,10 @@ def compute_qm9_smiles(atom_decoder, train_dataloader, remove_h):
     print(f"\tConverting QM9 dataset to SMILES for remove_h={remove_h}...")
 
     mols_smiles = []
-    len_train = len(train_dataloader)
+    len_train = len(train_data)
     invalid = 0
     disconnected = 0
-    for i, data in enumerate(train_dataloader):
+    for i, data in enumerate(train_data):
         dense_data, node_mask = utils.to_dense(
             data.x, data.edge_index, data.edge_attr, data.batch
         )
