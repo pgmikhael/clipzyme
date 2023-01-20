@@ -12,10 +12,8 @@ class DigressLoss(Nox):
     def __init__(self) -> None:
         super().__init__()
 
-    # def __call__(self, model_output, batch, model, args):
-    def forward(
-        self, masked_pred_X, masked_pred_E, pred_y, true_X, true_E, true_y, args
-    ):
+    def __call__(self, model_output, batch, model, args):
+
         """Compute train metrics
         masked_pred_X : tensor -- (bs, n, dx)
         masked_pred_E : tensor -- (bs, n, n, de)
@@ -24,6 +22,13 @@ class DigressLoss(Nox):
         true_E : tensor -- (bs, n, n, de)
         true_y : tensor -- (bs, )
         log : boolean."""
+        masked_pred_X = model_output["masked_pred_X"]
+        masked_pred_E = model_output["masked_pred_E"]
+        pred_y = model_output["pred_y"]
+        true_X = model_output["true_X"]
+        true_E = model_output["true_E"]
+        true_y = model_output["true_y"]
+
         true_X = torch.reshape(true_X, (-1, true_X.size(-1)))  # (bs * n, dx)
         true_E = torch.reshape(true_E, (-1, true_E.size(-1)))  # (bs * n * n, de)
         masked_pred_X = torch.reshape(
@@ -104,8 +109,7 @@ class DigressSimpleVLBLoss(Nox):
     def __init__(self) -> None:
         super().__init__()
 
-    # def __call__(self, model_output, batch, model, args):
-    def compute_val_loss(self, pred, noisy_data, X, E, y, node_mask):
+    def __call__(self, model_output, batch, model, args):
         """Computes an estimator for the variational lower bound, or the simple loss (MSE).
         pred: (batch_size, n, total_features)
         noisy_data: dict
@@ -114,6 +118,14 @@ class DigressSimpleVLBLoss(Nox):
         Output: nll (size 1)
         """
         test = model.phase == "test"
+        pred = diffusion_utils.PlaceHolder(
+            X=model_output["masked_pred_X"],
+            E=model_output["masked_pred_E"],
+            y=model_output["pred_y"],
+        )
+        noisy_data = model_output["noisy_data"]
+        X, E, y = model_output["dense_data"].X, model_output["dense_data"].E, batch["y"]
+        node_mask = batch["node_mask"]
 
         t = noisy_data["t"]
 
