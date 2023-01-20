@@ -3,8 +3,8 @@ from nox.utils.registry import register_object
 from nox.utils.classes import Nox
 from nox.utils.digress.rdkit_functions import compute_molecular_metrics
 import torch
-from torchmetrics import Metric, MeanAbsoluteError
-import time
+from torchmetrics import Metric, MeanAbsoluteError, MetricCollection
+from torch import Tensor
 
 
 class GeneratedNDistribution(Metric):
@@ -117,9 +117,10 @@ class HistogramsMAE(MeanAbsoluteError):
 
 @register_object("molecule_sampling_metrics", "metric")
 class SamplingMolecularMetrics(Metric, Nox):
-    def __init__(self, dataset_infos, train_smiles):
-        # def __init__(self, args) -> None:
+    def __init__(self, args):
         super().__init__()
+        dataset_infos = args.dataset_statistics
+        train_smiles = args.train_smiles
         di = dataset_infos
         self.generated_n_dist = GeneratedNDistribution(di.max_n_nodes)
         self.generated_node_dist = GeneratedNodesDistribution(di.output_dims["X"])
@@ -152,24 +153,15 @@ class SamplingMolecularMetrics(Metric, Nox):
 
         self.train_smiles = train_smiles
         self.dataset_info = di
+        self.add_state("preds_smiles", [], dist_reduce_fx="cat")
 
     @property
     def metric_keys(self):
         return ["masked_pred_X", "masked_pred_E", "true_X", "true_E"]
 
-    # def __call__(self, predictions_dict, args) -> Dict:
-
-    def forward(self, molecules: list, name, current_epoch, val_counter, test=False):
-        stability, rdkit_metrics, all_smiles = compute_molecular_metrics(
-            molecules, self.train_smiles, self.dataset_info
-        )
-
-        if test:
-            with open(r"final_smiles.txt", "w") as fp:
-                for smiles in all_smiles:
-                    # write each item on a new line
-                    fp.write("%s\n" % smiles)
-                print("All smiles saved")
+    def update(self, predictions_dict, args):
+        molecules = predictions_dict["molecules"]
+        self.preds_smiles.extend(molecules)
 
         self.generated_n_dist(molecules)
         generated_n_dist = self.generated_n_dist.compute()
@@ -187,11 +179,21 @@ class SamplingMolecularMetrics(Metric, Nox):
         generated_valency_dist = self.generated_valency_dist.compute()
         self.valency_dist_mae(generated_valency_dist)
 
-        to_log = {}
+    def compute(self) -> Dict:
+
+        stability, rdkit_metrics, all_smiles = compute_molecular_metrics(
+            self.preds_smiles, self.train_smiles, self.dataset_info
+        )
+
+        generated_node_dist = self.generated_node_dist.compute()
+        generated_edge_dist = self.generated_edge_dist.compute()
+        generated_valency_dist = self.generated_valency_dist.compute()
+
+        stats_dict = {}
         for i, atom_type in enumerate(self.dataset_info.atom_decoder):
             generated_probability = generated_node_dist[i]
             target_probability = self.node_target_dist[i]
-            to_log[f"molecular_metrics/{atom_type}_dist"] = (
+            stats_dict[f"{atom_type}_dist"] = (
                 generated_probability - target_probability
             ).item()
 
@@ -201,25 +203,24 @@ class SamplingMolecularMetrics(Metric, Nox):
             generated_probability = generated_edge_dist[j]
             target_probability = self.edge_target_dist[j]
 
-            to_log[f"molecular_metrics/bond_{bond_type}_dist"] = (
+            stats_dict[f"bond_{bond_type}_dist"] = (
                 generated_probability - target_probability
             ).item()
 
         for valency in range(6):
             generated_probability = generated_valency_dist[valency]
             target_probability = self.valency_target_dist[valency]
-            to_log[f"molecular_metrics/valency_{valency}_dist"] = (
+            stats_dict[f"valency_{valency}_dist"] = (
                 generated_probability - target_probability
             ).item()
 
-        valid_unique_molecules = rdkit_metrics[1]
-        textfile = open(
-            f"graphs/{name}/valid_unique_molecules_e{current_epoch}_b{val_counter}.txt",
-            "w",
-        )
-        textfile.writelines(valid_unique_molecules)
-        textfile.close()
-        print("Stability metrics:", stability, "--", rdkit_metrics[0])
+        for key, value in stability.items():
+            stats_dict[key] = value
+
+        for key, value in rdkit_metrics[0].items():
+            stats_dict[key] = value
+
+        return stats_dict
 
     @staticmethod
     def add_args(parser) -> None:
@@ -234,3 +235,193 @@ class SamplingMolecularMetrics(Metric, Nox):
             default=False,
             help="Whether to log metrics per class or just log average across classes",
         )
+
+
+class CEPerClass(Metric):
+    full_state_update = False
+
+    def __init__(self, class_id):
+        super().__init__()
+        self.class_id = class_id
+        self.add_state("total_ce", default=torch.tensor(0.0), dist_reduce_fx="sum")
+        self.add_state("total_samples", default=torch.tensor(0.0), dist_reduce_fx="sum")
+        self.softmax = torch.nn.Softmax(dim=-1)
+        self.binary_cross_entropy = torch.nn.BCELoss(reduction="sum")
+
+    def update(self, preds: Tensor, target: Tensor) -> None:
+        """Update state with predictions and targets.
+        Args:
+            preds: Predictions from model   (bs, n, d) or (bs, n, n, d)
+            target: Ground truth values     (bs, n, d) or (bs, n, n, d)
+        """
+        target = target.reshape(-1, target.shape[-1])
+        mask = (target != 0.0).any(dim=-1)
+
+        prob = self.softmax(preds)[..., self.class_id]
+        prob = prob.flatten()[mask]
+
+        target = target[:, self.class_id]
+        target = target[mask]
+
+        output = self.binary_cross_entropy(prob, target)
+        self.total_ce += output
+        self.total_samples += prob.numel()
+
+    def compute(self):
+        return self.total_ce / self.total_samples
+
+
+class HydrogenCE(CEPerClass):
+    def __init__(self, i):
+        super().__init__(i)
+
+
+class CarbonCE(CEPerClass):
+    def __init__(self, i):
+        super().__init__(i)
+
+
+class NitroCE(CEPerClass):
+    def __init__(self, i):
+        super().__init__(i)
+
+
+class OxyCE(CEPerClass):
+    def __init__(self, i):
+        super().__init__(i)
+
+
+class FluorCE(CEPerClass):
+    def __init__(self, i):
+        super().__init__(i)
+
+
+class BoronCE(CEPerClass):
+    def __init__(self, i):
+        super().__init__(i)
+
+
+class BrCE(CEPerClass):
+    def __init__(self, i):
+        super().__init__(i)
+
+
+class ClCE(CEPerClass):
+    def __init__(self, i):
+        super().__init__(i)
+
+
+class IodineCE(CEPerClass):
+    def __init__(self, i):
+        super().__init__(i)
+
+
+class PhosphorusCE(CEPerClass):
+    def __init__(self, i):
+        super().__init__(i)
+
+
+class SulfurCE(CEPerClass):
+    def __init__(self, i):
+        super().__init__(i)
+
+
+class SeCE(CEPerClass):
+    def __init__(self, i):
+        super().__init__(i)
+
+
+class SiCE(CEPerClass):
+    def __init__(self, i):
+        super().__init__(i)
+
+
+class NoBondCE(CEPerClass):
+    def __init__(self, i):
+        super().__init__(i)
+
+
+class SingleCE(CEPerClass):
+    def __init__(self, i):
+        super().__init__(i)
+
+
+class DoubleCE(CEPerClass):
+    def __init__(self, i):
+        super().__init__(i)
+
+
+class TripleCE(CEPerClass):
+    def __init__(self, i):
+        super().__init__(i)
+
+
+class AromaticCE(CEPerClass):
+    def __init__(self, i):
+        super().__init__(i)
+
+
+class AtomMetricsCE(MetricCollection):
+    def __init__(self, dataset_infos):
+        atom_decoder = dataset_infos.atom_decoder
+
+        class_dict = {
+            "H": HydrogenCE,
+            "C": CarbonCE,
+            "N": NitroCE,
+            "O": OxyCE,
+            "F": FluorCE,
+            "B": BoronCE,
+            "Br": BrCE,
+            "Cl": ClCE,
+            "I": IodineCE,
+            "P": PhosphorusCE,
+            "S": SulfurCE,
+            "Se": SeCE,
+            "Si": SiCE,
+        }
+
+        metrics_list = []
+        for i, atom_type in enumerate(atom_decoder):
+            metrics_list.append(class_dict[atom_type](i))
+        super().__init__(metrics_list)
+
+
+class BondMetricsCE(MetricCollection):
+    def __init__(self):
+        ce_no_bond = NoBondCE(0)
+        ce_SI = SingleCE(1)
+        ce_DO = DoubleCE(2)
+        ce_TR = TripleCE(3)
+        ce_AR = AromaticCE(4)
+        super().__init__([ce_no_bond, ce_SI, ce_DO, ce_TR, ce_AR])
+
+
+@register_object("molecule_classification_metrics", "metric")
+class TrainMolecularMetricsDiscrete(Metric, Nox):
+    def __init__(self, args):
+        super().__init__()
+        self.train_atom_metrics = AtomMetricsCE(dataset_infos=args.dataset_statistics)
+        self.train_bond_metrics = BondMetricsCE()
+
+    def update(self, predictions_dict, args) -> Dict:
+        masked_pred_X = predictions_dict["masked_pred_X"]
+        masked_pred_E = predictions_dict["masked_pred_E"]
+        true_X = predictions_dict["true_X"]
+        true_E = predictions_dict["true_E"]
+
+        self.train_atom_metrics(masked_pred_X, true_X)
+        self.train_bond_metrics(masked_pred_E, true_E)
+
+    def compute(self):
+        stats_dict = {}
+        for key, val in self.train_atom_metrics.compute().items():
+            stats_dict[key] = val.item()
+        for key, val in self.train_bond_metrics.compute().items():
+            stats_dict[key] = val.item()
+
+        return stats_dict
+
+    def reset(self):
+        for metric in [self.train_atom_metrics, self.train_bond_metrics]:
+            metric.reset()
