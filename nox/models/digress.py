@@ -27,7 +27,7 @@ class Digress(AbstractModel):
         )
 
         if args.digress_transition == "uniform":  # TODO args
-            self.transition_model = DiscreteUniformTransition(
+            self.transition_model = DiscreteUniformTransition(  # TODO: ARG
                 x_classes=self.Xdim_output,
                 e_classes=self.Edim_output,
                 y_classes=self.ydim_output,
@@ -35,7 +35,7 @@ class Digress(AbstractModel):
             x_limit = torch.ones(self.Xdim_output) / self.Xdim_output
             e_limit = torch.ones(self.Edim_output) / self.Edim_output
             y_limit = torch.ones(self.ydim_output) / self.ydim_output
-            self.limit_dist = diffusion_utils.PlaceHolder(
+            self.limit_dist = diffusion_utils.PlaceHolder(  # TODO: ARG
                 X=x_limit, E=e_limit, y=y_limit
             )
         elif args.digress_transition == "marginal":  # TODO args # marginal
@@ -45,19 +45,19 @@ class Digress(AbstractModel):
                 node_types
             )  # [0.7230, 0.1151, 0.1593, 0.0026]
 
-            edge_types = self.dataset_info.edge_types.float()
+            edge_types = self.dataset_info.edge_types.float()  # TODO: ARG
             e_marginals = edge_types / torch.sum(
                 edge_types
             )  # [0.7261, 0.2384, 0.0274, 0.0081, 0.0000]
             print(
                 f"Marginal distribution of the classes: {x_marginals} for nodes, {e_marginals} for edges"
             )
-            self.transition_model = MarginalUniformTransition(
+            self.transition_model = MarginalUniformTransition(  # TODO: ARG
                 x_marginals=x_marginals,
                 e_marginals=e_marginals,
                 y_classes=self.ydim_output,
             )
-            self.limit_dist = diffusion_utils.PlaceHolder(
+            self.limit_dist = diffusion_utils.PlaceHolder(  # TODO: ARG
                 X=x_marginals,
                 E=e_marginals,
                 y=torch.ones(self.ydim_output) / self.ydim_output,
@@ -74,13 +74,21 @@ class Digress(AbstractModel):
         X = torch.cat((noisy_data["X_t"], extra_data.X), dim=2).float()
         E = torch.cat((noisy_data["E_t"], extra_data.E), dim=3).float()
         y = torch.hstack((noisy_data["y_t"], extra_data.y)).float()
-        model_output = self.model(X, E, y, node_mask)
+        pred = self.model(X, E, y, node_mask)
 
-        return {
-            "model_output": model_output,
+        output = {
+            "masked_pred_X": pred.X,
+            "masked_pred_E": pred.E,
+            "pred_y": pred.y,
+            "true_X": X,
+            "true_E": E,
+            "true_y": data.y,
             "noisy_data": noisy_data,
             "dense_data": dense_data,
+            "extra_data": extra_data,
         }
+
+        return output
 
     def apply_noise(self, X, E, y, node_mask):
         """Sample noise and apply it to the data."""

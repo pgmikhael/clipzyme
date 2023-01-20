@@ -353,7 +353,12 @@ class GraphTransformer(AbstractModel):
         )
 
     def forward(self, batch):
-        X, E, y, node_mask = batch["X"], batch["E"], batch["y"], batch["node_mask"]
+        X, E, y, node_mask = (
+            batch["X"],
+            batch["E"],
+            batch["y"],
+            batch["node_mask"],
+        )  # TODO: ARG
 
         bs, n = X.shape[0], X.shape[1]
 
