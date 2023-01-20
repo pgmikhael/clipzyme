@@ -24,8 +24,17 @@ class Base(pl.LightningModule, Nox):
         self.args = args
         self.model = get_object(args.model_name, "model")(args)
 
-    def setup(self, stage):
-        # losses 
+    def on_fit_start(self):
+        self.setup_losses_and_metrics()
+
+    def on_test_start(self):
+        self.setup_losses_and_metrics()
+
+    def on_predict_start(self):
+        self.setup_losses_and_metrics()
+
+    def setup_losses_and_metrics(self):
+        # losses
         self.loss_fns = {
             "train": [get_object(l, "loss")() for l in self.args.loss_names]
         }
@@ -37,18 +46,37 @@ class Base(pl.LightningModule, Nox):
         )
 
         # metrics
-        self.metrics={
-            "train": [get_object(m, "metric")(self.args) for m in self.args.metric_names]
+        self.metrics = {
+            "train": [
+                get_object(m, "metric")(self.args).to(self.device)
+                for m in self.args.metric_names
+            ]
         }
-        self.metrics["val"] = self.metrics["train"]
+        self.metrics["val"] = [
+            get_object(m, "metric")(self.args).to(self.device)
+            for m in self.args.metric_names
+        ]
         self.metrics["test"] = (
-            self.metrics["train"]
+            [
+                get_object(m, "metric")(self.args).to(self.device)
+                for m in self.args.metric_names
+            ]
             if self.args.metric_names_for_eval is None
-            else [get_object(l, "metric")(self.args) for l in self.args.metric_names_for_eval]
+            else [
+                get_object(l, "metric")(self.args)
+                for l in self.args.metric_names_for_eval
+            ]
         )
-            
+
         self.metric_keys = list(
-            set([key for split, metrics in self.metrics.items() for metric in metrics for key in metric.metric_keys])
+            set(
+                [
+                    key
+                    for split, metrics in self.metrics.items()
+                    for metric in metrics
+                    for key in metric.metric_keys
+                ]
+            )
         )
 
     @property
@@ -72,7 +100,7 @@ class Base(pl.LightningModule, Nox):
             "pearson",
             "spearman",
             "cosine_similarity",
-            "top"
+            "top",
         ]
 
     @property
@@ -100,10 +128,13 @@ class Base(pl.LightningModule, Nox):
         loss, logging_dict, predictions_dict = self.compute_loss(model_output, batch)
         predictions_dict = self.store_in_predictions(predictions_dict, batch)
         predictions_dict = self.store_in_predictions(predictions_dict, model_output)
+        self.call_metric(predictions_dict, "update")
+        if self.args.compute_metrics_every_step:
+            metrics = self.call_metric(predictions_dict, "compute")
+            self.log_outputs(metrics, "train")
 
         logged_output["loss"] = loss
         logged_output.update(logging_dict)
-        logged_output["preds_dict"] = predictions_dict
 
         if (
             (self.args.log_gen_image)
@@ -128,18 +159,21 @@ class Base(pl.LightningModule, Nox):
             batch: dict obtained from DataLoader. batch must contain they keys ['x', 'sample_id']
         """
         logged_output = OrderedDict()
-        predictions_dict =  {}
         model_output = self.model(batch)
         if not self.args.predict:
             loss, logging_dict, predictions_dict = self.compute_loss(
                 model_output, batch
             )
-            logged_output["loss"] = loss
-            logged_output.update(logging_dict)
+            predictions_dict = self.store_in_predictions(predictions_dict, batch)
+            predictions_dict = self.store_in_predictions(predictions_dict, model_output)
+            self.call_metric(predictions_dict, "update")
+        else:
+            predictions_dict = {}
+            predictions_dict = self.store_in_predictions(predictions_dict, batch)
+            predictions_dict = self.store_in_predictions(predictions_dict, model_output)
 
-        predictions_dict = self.store_in_predictions(predictions_dict, model_output)
-        predictions_dict = self.store_in_predictions(predictions_dict, batch)
-        
+        logged_output["loss"] = loss
+        logged_output.update(logging_dict)
         logged_output["preds_dict"] = predictions_dict
         if self.args.save_hiddens:
             logged_output["preds_dict"].update(model_output)
@@ -154,13 +188,6 @@ class Base(pl.LightningModule, Nox):
         """
         self.phase = "train"
         output = self.step(batch, batch_idx, optimizer_idx)
-
-        if self.args.compute_metrics_every_step:
-            metrics = self.compute_metric(output["preds_dict"])
-            metrics.update(output)
-            self.log_outputs(metrics, "train")
-            del output["preds_dict"]
-
         return output
 
     def validation_step(self, batch, batch_idx, optimizer_idx=None):
@@ -169,11 +196,6 @@ class Base(pl.LightningModule, Nox):
         """
         self.phase = "val"
         output = self.step(batch, batch_idx, optimizer_idx)
-        if self.args.compute_metrics_every_step:
-            metrics = self.compute_metric(output["preds_dict"])
-            metrics.update(output)
-            self.log_outputs(metrics, "val")
-            del output["preds_dict"]
         return output
 
     def test_step(self, batch, batch_idx):
@@ -193,12 +215,6 @@ class Base(pl.LightningModule, Nox):
         output["preds_dict"] = {
             k: v for k, v in output["preds_dict"].items() if k not in self.UNLOG_KEYS
         }
-
-        if self.args.compute_metrics_every_step:
-            metrics = self.compute_metric(output["preds_dict"])
-            metrics.update(output)
-            self.log_outputs(metrics, "test")
-            del output["preds_dict"]
         return output
 
     def training_epoch_end(self, outputs):
@@ -207,13 +223,15 @@ class Base(pl.LightningModule, Nox):
             - Aggregates predictions and losses from all steps
             - Computes the metric (auc, accuracy, etc.)
         """
+        self.phase = "train"
         if len(outputs) == 0:
             return
         outputs = gather_step_outputs(outputs)
         outputs["loss"] = outputs["loss"].mean()
-        if "preds_dict" in outputs:
-            outputs.update(self.compute_metric(outputs["preds_dict"]))
+        outputs.update(self.call_metric({}, "compute"))
         self.log_outputs(outputs, "train")
+        for metric_fn in self.metrics["train"]:
+            metric_fn.reset()
         return
 
     def validation_epoch_end(self, outputs):
@@ -222,13 +240,15 @@ class Base(pl.LightningModule, Nox):
             - Aggregates predictions and losses from all steps
             - Computes the metric (auc, accuracy, etc.)
         """
+        self.phase = "val"
         if len(outputs) == 0:
             return
         outputs = gather_step_outputs(outputs)
         outputs["loss"] = outputs["loss"].mean()
-        if "preds_dict" in outputs:
-            outputs.update(self.compute_metric(outputs["preds_dict"]))
+        outputs.update(self.call_metric({}, "compute"))
         self.log_outputs(outputs, "val")
+        for metric_fn in self.metrics["val"]:
+            metric_fn.reset()
         return
 
     def test_epoch_end(self, outputs):
@@ -237,14 +257,17 @@ class Base(pl.LightningModule, Nox):
             - Aggregates predictions and losses from all batches
             - Computes the metric if defined in args
         """
+        self.phase = "test"
         if len(outputs) == 0:
             return
         outputs = gather_step_outputs(outputs)
         if isinstance(outputs.get("loss", 0), torch.Tensor):
             outputs["loss"] = outputs["loss"].mean()
-        if ("preds_dict" in outputs) and all([m in outputs['preds_dict'] for metric in self.metrics['test'] for m in metric.metric_keys]):
-            outputs.update(self.compute_metric(outputs["preds_dict"]))
+        if not self.args.predict:
+            outputs.update(self.call_metric({}, "compute"))
         self.log_outputs(outputs, "test")
+        for metric_fn in self.metrics["test"]:
+            metric_fn.reset()
         return
 
     def configure_optimizers(self):
@@ -287,11 +310,14 @@ class Base(pl.LightningModule, Nox):
             predictions.update(p_dict)
         return total_loss, logging_dict, predictions
 
-    def compute_metric(self, predictions):
+    def call_metric(self, predictions, func):
         logging_dict = OrderedDict()
         for metric_fn in self.metrics[self.phase]:
-            l_dict = metric_fn(predictions, self.args)
-            logging_dict.update(l_dict)
+            if func == "update":
+                metric_fn.update(predictions, self.args)
+            elif func == "compute":
+                l_dict = metric_fn.compute()
+                logging_dict.update(l_dict)
         return logging_dict
 
     def store_in_predictions(self, preds, storage_dict):
@@ -320,10 +346,7 @@ class Base(pl.LightningModule, Nox):
         # log clocktime of methods for epoch
         if (self.args.profiler is not None) and (self.args.log_profiler):
             logging_dict.update(self.get_time_profile(key))
-        if self.args.compute_metrics_every_step:
-            self.log_dict(logging_dict, prog_bar=True, logger=True, batch_size=1)
-        else:
-            self.log_dict(logging_dict, prog_bar=True, logger=True)
+        self.log_dict(logging_dict, prog_bar=True, logger=True)
 
     def get_time_profile(self, key):
         """Obtain trainer method times
