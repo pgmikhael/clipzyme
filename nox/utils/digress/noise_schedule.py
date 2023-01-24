@@ -1,6 +1,5 @@
 import numpy as np
 import torch
-from src import utils
 from nox.utils.digress import diffusion_utils
 
 
@@ -118,7 +117,7 @@ class DiscreteUniformTransition:
             self.y_classes, device=device
         ).unsqueeze(0)
 
-        return utils.PlaceHolder(X=q_x, E=q_e, y=q_y)
+        return diffusion_utils.PlaceHolder(X=q_x, E=q_e, y=q_y)
 
     def get_Qt_bar(self, alpha_bar_t, device):
         """Returns t-step transition matrices for X and E, from step 0 to step t.
@@ -146,7 +145,7 @@ class DiscreteUniformTransition:
             + (1 - alpha_bar_t) * self.u_y
         )
 
-        return utils.PlaceHolder(X=q_x, E=q_e, y=q_y)
+        return diffusion_utils.PlaceHolder(X=q_x, E=q_e, y=q_y)
 
 
 class MarginalUniformTransition:
@@ -185,7 +184,7 @@ class MarginalUniformTransition:
             self.y_classes, device=device
         ).unsqueeze(0)
 
-        return utils.PlaceHolder(X=q_x, E=q_e, y=q_y)
+        return diffusion_utils.PlaceHolder(X=q_x, E=q_e, y=q_y)
 
     def get_Qt_bar(self, alpha_bar_t, device):
         """Returns t-step transition matrices for X and E, from step 0 to step t. Paragraph after EQN 8
@@ -213,7 +212,7 @@ class MarginalUniformTransition:
             + (1 - alpha_bar_t) * self.u_y
         )
 
-        return utils.PlaceHolder(X=q_x, E=q_e, y=q_y)
+        return diffusion_utils.PlaceHolder(X=q_x, E=q_e, y=q_y)
 
 
 class AbsorbingStateTransition:

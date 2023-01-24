@@ -8,6 +8,7 @@ import pathlib
 from typing import List, Any, Sequence
 from tqdm import tqdm
 import pandas as pd
+import copy 
 
 from rdkit import Chem, RDLogger
 from rdkit.Chem.rdchem import BondType as BT
@@ -15,6 +16,7 @@ from rdkit.Chem.rdchem import BondType as BT
 import torch.nn.functional as F
 from torch_geometric.data import Data, InMemoryDataset, download_url, extract_zip, Batch
 from torch_geometric.utils import subgraph
+from torch_geometric.data.separate import separate
 
 from nox.utils.digress.rdkit_functions import (
     mol2smiles,
@@ -26,6 +28,7 @@ from nox.datasets.abstract import AbstractDataset
 import nox.utils.digress.diffusion_utils as utils
 from nox.utils.digress.extra_features import ExtraFeatures
 from nox.utils.digress.extra_features_molecular import ExtraMolecularFeatures
+
 
 
 def files_exist(files) -> bool:
@@ -93,6 +96,7 @@ class DatasetInfo:
     def __init__(self, datasets, args):
 
         self.datasets = datasets
+        self.remove_h = args.remove_h
         self.need_to_strip = (
             False  # to indicate whether we need to ignore one output from the model
         )
@@ -215,7 +219,7 @@ class DatasetInfo:
 
     def node_types(self):
         num_classes = None
-        for data in self.datasets["train"][-1]:
+        for data in self.datasets["train"][0]:
             num_classes = data.x.shape[1]
             break
 
@@ -230,7 +234,7 @@ class DatasetInfo:
 
     def edge_counts(self):
         num_classes = None
-        for data in self.datasets["train"][-1]:
+        for data in self.datasets["train"][0]:
             num_classes = data.edge_attr.shape[1]
             break
 
@@ -281,9 +285,7 @@ class DatasetInfo:
         self.max_n_nodes = len(n_nodes) - 1
         self.nodes_dist = DistributionNodes(n_nodes)
 
-    def compute_input_output_dims(self, extra_features, domain_features):
-        example_batch = [self.datasets["train"][-1][0], self.datasets["train"][-1][1]]
-        example_batch = Batch.from_data_list(example_batch, None, None)
+    def compute_input_output_dims(self, example_batch, extra_features, domain_features):
 
         ex_dense, node_mask = utils.to_dense(
             example_batch.x,
@@ -320,7 +322,7 @@ class DatasetInfo:
         }
 
 
-@register_object("moleculenet", "qm9")
+@register_object("qm9", "dataset")
 class QM9(AbstractDataset, InMemoryDataset):
 
     raw_url = (
@@ -337,14 +339,14 @@ class QM9(AbstractDataset, InMemoryDataset):
 
         self.version = self.get_version()
 
-        self.name = self.get_name
+        self.name = "QM9"
         self.root = args.data_dir
         # self.version = None
 
         transform = self.get_transform(args)
         InMemoryDataset.__init__(self, root=self.root, transform=transform)
 
-        self.load_datasets(args)
+        self.load_datasets()
 
         self.dataset = self.create_dataset(split_group)
 
@@ -354,13 +356,17 @@ class QM9(AbstractDataset, InMemoryDataset):
         extra_features = ExtraFeatures(args.extra_features, dataset_info=data_info)
         domain_features = ExtraMolecularFeatures(dataset_infos=data_info)
 
+        example_batch = [self.dataset[0], self.dataset[1]]
+        example_batch = Batch.from_data_list(example_batch, None, None)
+        
         data_info.compute_input_output_dims(
+            example_batch=example_batch,
             extra_features=extra_features,
             domain_features=domain_features,
         )
 
         args.dataset_statistics = data_info
-        args.train_smiles = get_train_smiles(data_info, self.dataset, args)
+        args.train_smiles = get_train_smiles(data_info, self.dataset, split_group, args)
 
         if len(self.dataset) == 0:
             return
@@ -551,8 +557,19 @@ class QM9(AbstractDataset, InMemoryDataset):
         Creates the dataset of samples
         """
 
-        dataset, slices = self.datasets[split_group]
+        data, slices = self.datasets[split_group]
 
+        dataset = []
+        for idx in tqdm(range(100)): #range(len(data.idx)), position=0, desc="Converting to pyg.Data"):
+            data_item = separate(
+                cls=data.__class__, 
+                batch=data, 
+                idx=idx, 
+                slice_dict=slices, 
+                decrement=False
+            )
+            dataset.append(copy.deepcopy(data_item))
+            
         return dataset
 
     def __getitem__(self, index):
@@ -592,17 +609,18 @@ class QM9(AbstractDataset, InMemoryDataset):
         )
 
 
-def get_train_smiles(dataset_infos, train_data, args):
-    datadir = args.datadir
+def get_train_smiles(dataset_infos, train_data, split_group, args):
+    datadir = args.data_dir
     remove_h = args.remove_h
     atom_decoder = dataset_infos.atom_decoder
     root_dir = pathlib.Path(os.path.realpath(__file__)).parents[2]
     smiles_file_name = "train_smiles_no_h.npy" if remove_h else "train_smiles_h.npy"
-    smiles_path = os.path.join(root_dir, datadir, smiles_file_name)
+    smiles_path = os.path.join(datadir, "smiles", smiles_file_name)
     if os.path.exists(smiles_path):
         print("Dataset smiles were found.")
         train_smiles = np.load(smiles_path)
     else:
+        assert split_group == "train"
         print("Computing dataset smiles...")
         train_smiles = compute_qm9_smiles(atom_decoder, train_data, remove_h)
         np.save(smiles_path, np.array(train_smiles))

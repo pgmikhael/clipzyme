@@ -29,6 +29,7 @@ import nox.datasets.reactions
 import nox.datasets.brenda
 import nox.datasets.dlkcat
 import nox.datasets.ecreact
+import nox.datasets.qm9
 
 # augmentation
 import nox.augmentations.rawinput
@@ -41,6 +42,7 @@ import nox.loaders.image_loaders
 import nox.lightning.base
 import nox.lightning.linker
 import nox.lightning.gsm_base
+import nox.lightning.diffusion
 
 # optimizers
 import nox.learning.optimizers.basic
@@ -53,16 +55,19 @@ import nox.learning.schedulers.noam
 import nox.learning.losses.basic
 import nox.learning.losses.link_prediction
 import nox.learning.losses.contrastive
+import nox.learning.losses.digress
 
 # metrics
 import nox.learning.metrics.basic
 import nox.learning.metrics.link_prediction
 import nox.learning.metrics.representation
 import nox.learning.metrics.reactions
+import nox.learning.metrics.digress
 
 # callbacks
 import nox.callbacks.basic
 import nox.callbacks.swa
+import nox.callbacks.ema 
 
 # models
 import nox.models.vision
@@ -77,6 +82,8 @@ import nox.models.longformer
 import nox.models.enzymenet
 import nox.models.seq2seq
 import nox.models.contrastive
+import nox.models.graph_transformer
+import nox.models.digress
 
 # comet
 import nox.loggers.comet

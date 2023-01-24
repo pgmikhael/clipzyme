@@ -115,7 +115,7 @@ class DiscreteDenoisingDiffusion(Base):
         Args:
             parser (argparse.ArgumentParser): argument parser
         """
-        super(DiscreteDenoisingDiffusion, DiscreteDenoisingDiffusion).super(parser)
+        super(DiscreteDenoisingDiffusion, DiscreteDenoisingDiffusion).add_args(parser)
         parser.add_argument(
             "--sampling_metric",
             type=str,
