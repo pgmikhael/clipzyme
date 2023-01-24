@@ -115,6 +115,7 @@ if __name__ == "__main__":
             products = tgt.replace(" ", "").split(".")
 
             dataset.append({
+                "reaction": "{}>>{}".format(src, tgt),
                 "reactants": reactants,
                 "products": products,
                 "split": "dev" if split == "valid" else split,

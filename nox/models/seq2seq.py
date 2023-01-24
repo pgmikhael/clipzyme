@@ -373,6 +373,63 @@ class EnzymaticReactionEncoder(ReactionEncoder):
 
         self.append_enzyme_to_hiddens = args.append_enzyme_to_hiddens
         self.protein_representation_key = args.protein_representation_key
+        if args.hidden_size != args.protein_feature_dim:
+            self.protein_fc = nn.Linear(args.protein_feature_dim, args.hidden_size)
+
+    def encode_reactants_and_enzyme(self, batch, encoder_input_ids):
+        # pass sequences through protein model or use precomputed hiddens
+        if hasattr(self, "protein_model"):
+            protein_output = self.protein_model(batch)
+            protein_attention = torch.ne(protein_output["tokens"], self.protein_model.alphabet.padding_idx).long()
+        else:
+            protein_output = batch 
+            protein_attention = torch.zeros( len(batch['sequence']), max(batch['protein_len']) ).to(self.devicevar.device)
+            for i, length in enumerate(batch["protein_len"]):
+                protein_attention[i,:length] = 1
+
+        protein_embeds = protein_output[self.protein_representation_key]
+        if len(protein_embeds.shape) == 2:
+            protein_embeds = protein_embeds.unsqueeze(1).contiguous()
+
+        # project to hidden_dim if necessary
+        if hasattr(self, "protein_fc"):
+            protein_embeds = self.protein_fc(protein_embeds)
+
+        # combine protein - reactants attention mask
+        if self.protein_representation_key == "token_hiddens":
+            protein_reactants_attention_mask = torch.cat([protein_attention, encoder_input_ids['attention_mask']], dim = -1) 
+            # token id types (protein vs reactants)
+            token_type_ids = torch.cat([protein_attention * 0, encoder_input_ids['attention_mask']], dim = -1) .long()
+        elif self.protein_representation_key == "hidden":
+            protein_reactants_attention_mask = torch.cat([protein_attention[:,:1], encoder_input_ids['attention_mask']], dim = -1) 
+            # token id types (protein vs reactants)
+            token_type_ids = torch.cat([protein_attention[:,:1] * 0, encoder_input_ids['attention_mask']], dim = -1).long()
+        
+        if not self.append_enzyme_to_hiddens:
+            # append to embeddings of reactants
+            embeddings = self.model.encoder.embeddings(
+                    input_ids=encoder_input_ids["input_ids"],
+                    token_type_ids=None,
+                    past_key_values_length=0
+                    )
+            embeddings_w_protein = torch.cat(
+                [protein_embeds, embeddings], dim=1
+            )
+            encoder_outputs = self.model.encoder(
+                    inputs_embeds=embeddings_w_protein,
+                    attention_mask=protein_reactants_attention_mask,
+                    token_type_ids=token_type_ids,
+                    )
+
+        else:
+            encoder_attention_mask = encoder_input_ids['attention_mask'] 
+            # get reactant embeddings
+            encoder_outputs = self.model.encoder(
+                    input_ids=encoder_input_ids['input_ids'],
+                    attention_mask=encoder_input_ids['attention_mask'],
+                    token_type_ids=token_type_ids,
+                    )
+        return  encoder_outputs, protein_reactants_attention_mask
 
     def forward(self, batch) -> Dict:
 
@@ -396,63 +453,15 @@ class EnzymaticReactionEncoder(ReactionEncoder):
         for k, v in decoder_input_ids.items():
             decoder_input_ids[k] = v.to(self.devicevar.device)
 
-        # pass sequences through protein model or use precomputed hiddens
-        if hasattr(self, "protein_model"):
-            protein_output = self.protein_model(batch)
-            protein_attention = torch.ne(protein_output["tokens"], self.protein_model.alphabet.padding_idx).long()
-        else:
-            protein_output = batch 
-            protein_attention = torch.zeros( len(batch['sequence']), max(batch['protein_len']) ).to(self.devicevar.device)
-            for i, length in enumerate(batch["protein_len"]):
-                protein_attention[i,:length] = 1
-
-        # combine protein - reactants attention mask
-        if self.protein_representation_key == "token_hiddens":
-            protein_reactants_attention_mask = torch.cat([protein_attention, encoder_input_ids['attention_mask']], dim = -1) 
-        elif self.protein_representation_key == "hidden":
-            protein_reactants_attention_mask = torch.cat([protein_attention[:,:1], encoder_input_ids['attention_mask']], dim = -1) 
-
-        if not self.append_enzyme_to_hiddens:
-            # append to embeddings of reactants
-            embeddings = self.model.encoder.embeddings(
-                    input_ids=encoder_input_ids["input_ids"],
-                    token_type_ids=token_type_ids,
-                    past_key_values_length=0
-                    )
-            embeddings_w_protein = torch.cat(
-                [protein_output[self.protein_representation_key], embeddings], dim=1
-            )
-
-            # attention mask with proteins
-            head_mask = self.model.get_head_mask(head_mask, self.config.num_hidden_layers)
-
-            encoder_outputs = self.model.encoder.encoder(
-                    embeddings_w_protein,
-                    attention_mask=protein_reactants_attention_mask, 
-                    head_mask=head_mask,
-                    use_cache=False,
-                    output_attentions=self.config.output_attentions,
-                    output_hidden_states=self.config.output_hidden_states,
-                    return_dict=self.config.use_return_dict,
-                    )
-        else:
-            encoder_attention_mask = encoder_input_ids['attention_mask'] 
-            # get reactant embeddings
-            encoder_outputs = self.model.encoder(
-                    input_ids=encoder_input_ids['input_ids'],
-                    attention_mask=encoder_input_ids['attention_mask'],
-                    )
-            encoder_attention_mask = protein_reactants_attention_mask
+        # encode and get attention mask with proteins
+        encoder_outputs, encoder_attention_mask = self.encode_reactants_and_enzyme(batch, encoder_input_ids)
 
         encoder_hidden_states = encoder_outputs[0]
 
-        if self.append_enzyme_to_hiddens:
-            # attention mask with proteins
-            encoder_attention_mask = protein_reactants_attention_mask 
-            protein_embeds = protein_output[self.protein_representation_key]
-            if len(protein_embeds.shape) == 2:
-                protein_embeds = protein_embeds.unsqueeze(-1).transpose(2,1).contiguous()
+        # attention mask with proteins
+        # encoder_attention_mask = protein_reactants_attention_mask
 
+        if self.append_enzyme_to_hiddens:
             encoder_hidden_states = torch.cat(
                 [protein_embeds, encoder_hidden_states], dim=1
             )
@@ -496,6 +505,44 @@ class EnzymaticReactionEncoder(ReactionEncoder):
         }
 
         return output
+    
+    def generate(self, batch):
+        """Applies auto-regressive generation for reaction prediction
+        Usage: https://huggingface.co/docs/transformers/main/en/main_classes/text_generation#transformers.GenerationMixin
+
+        Args:
+            batch (dict): dictionary with input reactants
+            decoder_start_token_id = 2,
+            bos_token_id = 2,
+            max_new_tokens=100
+        """
+        bos_id = self.tokenizer.cls_token_id
+        eos_id = self.tokenizer.eos_token_id
+        pad_id = self.tokenizer.pad_token_id
+
+        encoder_input_ids = self.tokenize(batch["reactants"], self.tokenizer, self.args)
+        for k, v in encoder_input_ids.items():
+            encoder_input_ids[k] = v.to(self.devicevar.device)
+
+        encoder_outputs, encoder_attention_mask = self.encode_reactants_and_enzyme(batch, encoder_input_ids)
+
+        generated_ids = self.model.generate(
+            encoder_outputs=encoder_outputs,
+            attention_mask = encoder_attention_mask,
+            #input_ids=encoder_input_ids["input_ids"],
+            decoder_start_token_id = bos_id,
+            bos_token_id = bos_id,
+            eos_token_id = eos_id,
+            pad_token_id = pad_id,
+            output_scores=True,
+            return_dict_in_generate=True,
+            **self.generation_config
+        )
+        generated_samples = self.tokenizer.batch_decode(generated_ids.sequences, skip_special_tokens = True)
+        generated_samples = [s.replace(' ', '') for s in generated_samples]
+        beam_search_n = self.generation_config["num_return_sequences"]
+        batch_samples = [ generated_samples[i:i + beam_search_n] for i in range(0, len(generated_samples), beam_search_n)]
+        return batch_samples
 
     @staticmethod
     def add_args(parser) -> None:
@@ -518,4 +565,10 @@ class EnzymaticReactionEncoder(ReactionEncoder):
             default="hidden",
             choices=["hidden", "token_hiddens"],
             help="which protein encoder output to uses",
+        )
+        parser.add_argument(
+            "--protein_feature_dim",
+            type=int,
+            default=480,
+            help="size of protein residue features from ESM models",
         )

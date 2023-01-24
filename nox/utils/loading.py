@@ -11,6 +11,7 @@ from nox.utils.sampler import DistributedWeightedSampler
 from nox.utils.augmentations import get_augmentations_by_split
 from pytorch_lightning.utilities.cloud_io import load as pl_load
 from torch_geometric.data import Data, HeteroData, Batch
+from rich import print as rprint 
 
 string_classes = (str, bytes)
 int_classes = int
@@ -265,6 +266,7 @@ def get_lightning_model(args: Namespace):
             strict=not args.relax_checkpoint_matching,
             **{"args": args}
         )
+        rprint(f"[bold] Loaded checkpoint from {modelpath}")
     else:
         model = get_object(args.lightning_name, "lightning")(args)
     return model
