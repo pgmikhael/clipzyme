@@ -33,12 +33,14 @@ class FairEsm(AbstractModel):
         """
         output = {}
         if isinstance(x, list):
-            pass 
+            pass
         elif isinstance(x, dict):
             try:
                 x = x["sequence"]
             except:
-                raise ValueError("FairEsm forward received dict without 'sequence' key ")
+                raise ValueError(
+                    "FairEsm forward received dict without 'sequence' key "
+                )
 
         fair_x = self.truncate_protein(x)
         batch_labels, batch_strs, batch_tokens = self.batch_converter(fair_x)
@@ -47,11 +49,15 @@ class FairEsm(AbstractModel):
         if self.args.freeze_esm:
             with torch.no_grad():
                 result = self.model(
-                    batch_tokens, repr_layers=[self.repr_layer], return_contacts=False
+                    batch_tokens,
+                    repr_layers=[self.repr_layer],
+                    return_contacts=self.args.esm_return_contacts,
                 )
         else:
             result = self.model(
-                batch_tokens, repr_layers=[self.repr_layer], return_contacts=False
+                batch_tokens,
+                repr_layers=[self.repr_layer],
+                return_contacts=self.args.esm_return_contacts,
             )
 
         # Generate per-sequence representations via averaging
@@ -64,11 +70,22 @@ class FairEsm(AbstractModel):
             sequence_mask *= torch.ne(batch_tokens, self.alphabet.padding_idx).long()
             sequence_mask = sequence_mask.unsqueeze(-1)
             # remove cls and eos tokens
-            output["hidden"] = (result["representations"][self.repr_layer]* sequence_mask).sum(1) / sequence_mask.sum(1)
+            output["hidden"] = (
+                result["representations"][self.repr_layer] * sequence_mask
+            ).sum(1) / sequence_mask.sum(1)
 
         output["tokens"] = batch_tokens
         output["token_hiddens"] = result["representations"][self.repr_layer]
         output["mask_hiddens"] = sequence_mask
+        
+        if self.args.esm_return_only_contacts:
+            del output["hidden"]
+            output["attentions"] = result["attentions"]
+        
+        if self.args.esm_return_only_attention:
+            del output["hidden"]
+            # B, (batch_tokens - 2), (batch_tokens - 2) because removes bos and eos tokens
+            output["contacts"] = result["contacts"]
 
         return output
 
@@ -115,6 +132,18 @@ class FairEsm(AbstractModel):
             action="store_true",
             default=False,
             help="use cls token as representation",
+        )
+        parser.add_argument(
+            "--esm_return_only_contacts",
+            action="store_true",
+            default=False,
+            help="return contacts",
+        )
+        parser.add_argument(
+            "--esm_return_only_attention",
+            action="store_true",
+            default=False,
+            help="return attention",
         )
 
 
