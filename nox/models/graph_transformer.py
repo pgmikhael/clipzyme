@@ -12,6 +12,7 @@ from torch import Tensor
 from nox.utils.digress import diffusion_utils
 from nox.utils.registry import register_object
 from nox.models.abstract import AbstractModel
+import json 
 
 
 class Xtoy(nn.Module):
@@ -277,22 +278,10 @@ class GraphTransformer(AbstractModel):
     def __init__(self, args):
         super().__init__()
 
-        # TODO: input_dims: dict,
-        # TODO: hidden_mlp_dims: dict,
-        # TODO: hidden_dims: dict,
-        # TODO: output_dims: dict,
-        input_dims = {"X": 12, "E": 5, "y": 13}
-        hidden_mlp_dims = {"X": 17, "E": 18, "y": 19}
-        hidden_dims = {
-            "dx": 20,
-            "de": 21,
-            "dy": 22,
-            "n_head": 5,
-            "dim_ffX": 23,
-            "dim_ffE": 24,
-            "dim_ffy": 25,
-        }
-        output_dims = {"X": 4, "E": 5, "y": 0}
+        input_dims = args.dataset_statistics.input_dims 
+        hidden_mlp_dims = args.gt_hidden_mlp_dims 
+        hidden_dims = args.gt_hidden_dims
+        output_dims = args.dataset_statistics.output_dims 
 
         self.n_layers = args.gt_n_layers
         self.out_dim_X = output_dims["X"]
@@ -358,7 +347,7 @@ class GraphTransformer(AbstractModel):
             batch["E"],
             batch["y"],
             batch["node_mask"],
-        )  # TODO: ARG
+        ) 
 
         bs, n = X.shape[0], X.shape[1]
 
@@ -391,3 +380,32 @@ class GraphTransformer(AbstractModel):
         E = 1 / 2 * (E + torch.transpose(E, 1, 2))
 
         return diffusion_utils.PlaceHolder(X=X, E=E, y=y).mask(node_mask)
+
+    @staticmethod
+    def add_args(parser) -> None:
+        """Add class specific args
+
+        Args:
+            parser (argparse.ArgumentParser): argument parser
+        """
+        super(GraphTransformer, GraphTransformer).add_args(parser)
+        parser.add_argument(
+            "--gt_hidden_mlp_dims",
+            type=json.loads,
+            default='{ "X": 17, "E": 18, "y": 19 }',
+            help="dimension of ffns",
+        )
+        parser.add_argument(
+            "--gt_hidden_dims",
+            type=json.loads,
+            default='{"dx": 20, "de": 21, "dy": 22, "n_head": 5, "dim_ffX": 23, "dim_ffE": 24, "dim_ffy": 25}',
+            help="dimension of transformer hiddens",
+        )
+        parser.add_argument(
+            "--gt_n_layers",
+            type=int,
+            default=2,
+            help="num layers",
+        )
+
+        

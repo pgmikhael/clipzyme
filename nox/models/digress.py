@@ -9,8 +9,10 @@ from nox.utils.digress.noise_schedule import (
     MarginalUniformTransition,
 )
 from nox.utils.digress import diffusion_utils
+from nox.utils.digress.visualization import MolecularVisualization
 import os
-
+from nox.utils.classes import set_nox_type
+from rich import print 
 
 @register_object("digress", "model")
 class Digress(AbstractModel):
@@ -18,16 +20,34 @@ class Digress(AbstractModel):
         super(Digress, self).__init__()
 
         self.model_dtype = torch.float32
-        self.T = args.diffusion_steps  # TODO args # diffusion steps
-        self.model = get_object(args.digress_graph_denoiser, "model")(args)  # TODO args
+        self.T = args.diffusion_steps  
+        self.model = get_object(args.digress_graph_denoiser, "model")(args)  
 
         # cosine diffusion schedule
         self.noise_schedule = PredefinedNoiseScheduleDiscrete(
-            args.diffusion_noise_schedule, timesteps=args.diffusion_steps  # TODO args
+            args.diffusion_noise_schedule, timesteps=args.diffusion_steps  
         )
 
-        if args.digress_transition == "uniform":  # TODO args
-            self.transition_model = DiscreteUniformTransition(  # TODO: ARG
+        self.dataset_info = args.dataset_statistics
+
+        input_dims = args.dataset_statistics.input_dims
+        output_dims = args.dataset_statistics.output_dims
+
+        self.Xdim = input_dims["X"]
+        self.Edim = input_dims["E"]
+        self.ydim = input_dims["y"]
+        self.Xdim_output = output_dims["X"]
+        self.Edim_output = output_dims["E"]
+        self.ydim_output = output_dims["y"]
+
+        self.register_buffer("devicevar", torch.zeros(1, dtype=torch.int8))
+        
+        # TODO: move to dataset 
+        self.extra_features = args.extra_features
+        self.domain_features = args.domain_features
+
+        if args.digress_transition == "uniform":  
+            self.transition_model = DiscreteUniformTransition(  
                 x_classes=self.Xdim_output,
                 e_classes=self.Edim_output,
                 y_classes=self.ydim_output,
@@ -35,33 +55,34 @@ class Digress(AbstractModel):
             x_limit = torch.ones(self.Xdim_output) / self.Xdim_output
             e_limit = torch.ones(self.Edim_output) / self.Edim_output
             y_limit = torch.ones(self.ydim_output) / self.ydim_output
-            self.limit_dist = diffusion_utils.PlaceHolder(  # TODO: ARG
+            self.limit_dist = diffusion_utils.PlaceHolder(  
                 X=x_limit, E=e_limit, y=y_limit
             )
-        elif args.digress_transition == "marginal":  # TODO args # marginal
+        elif args.digress_transition == "marginal":  
 
-            node_types = self.dataset_info.node_types.float()  # TODO: pre-compute
-            x_marginals = node_types / torch.sum(
-                node_types
-            )  # [0.7230, 0.1151, 0.1593, 0.0026]
+            node_types = self.dataset_info.node_types.float()  
+            x_marginals = node_types / torch.sum(node_types)
 
-            edge_types = self.dataset_info.edge_types.float()  # TODO: ARG
-            e_marginals = edge_types / torch.sum(
-                edge_types
-            )  # [0.7261, 0.2384, 0.0274, 0.0081, 0.0000]
+            edge_types = self.dataset_info.edge_types.float()  
+            e_marginals = edge_types / torch.sum(edge_types)  
+
             print(
                 f"Marginal distribution of the classes: {x_marginals} for nodes, {e_marginals} for edges"
             )
-            self.transition_model = MarginalUniformTransition(  # TODO: ARG
+            self.transition_model = MarginalUniformTransition(  
                 x_marginals=x_marginals,
                 e_marginals=e_marginals,
                 y_classes=self.ydim_output,
             )
-            self.limit_dist = diffusion_utils.PlaceHolder(  # TODO: ARG
+            self.limit_dist = diffusion_utils.PlaceHolder(  
                 X=x_marginals,
                 E=e_marginals,
                 y=torch.ones(self.ydim_output) / self.ydim_output,
             )
+        
+        self.visualization_tools = MolecularVisualization(
+            args.remove_h, dataset_infos=args.dataset_statistics
+        )
 
     def forward(self, data):
         dense_data, node_mask = diffusion_utils.to_dense(
@@ -74,18 +95,27 @@ class Digress(AbstractModel):
         X = torch.cat((noisy_data["X_t"], extra_data.X), dim=2).float()
         E = torch.cat((noisy_data["E_t"], extra_data.E), dim=3).float()
         y = torch.hstack((noisy_data["y_t"], extra_data.y)).float()
-        pred = self.model(X, E, y, node_mask)
+
+        denoiser_input = {
+            "X": X,
+            "E": E, 
+            "y": y, 
+            "node_mask":node_mask
+        }
+
+        pred = self.model(denoiser_input)
 
         output = {
-            "masked_pred_X": pred.X,
-            "masked_pred_E": pred.E,
-            "pred_y": pred.y,
-            "true_X": X,
-            "true_E": E,
-            "true_y": data.y,
-            "noisy_data": noisy_data,
-            "dense_data": dense_data,
-            "extra_data": extra_data,
+            "masked_pred_X": pred.X, 
+            "masked_pred_E": pred.E,  
+            "pred_y": pred.y,  
+            "true_X": dense_data.X, 
+            "true_E": dense_data.E, 
+            "true_y": data.y, 
+            "noisy_data": noisy_data, 
+            "dense_data": dense_data, 
+            "extra_data": extra_data, 
+            "node_mask": node_mask,
         }
 
         return output
@@ -97,7 +127,7 @@ class Digress(AbstractModel):
         # When evaluating, the loss for t=0 is computed separately
         lowest_t = 0 if self.training else 1
         t_int = torch.randint(
-            lowest_t, self.T + 1, size=(X.size(0), 1), device=X.device
+            lowest_t, self.T + 1, size=(X.size(0), 1), device=self.devicevar.device
         ).float()  # (bs, 1) # a timestep t for each sample
         s_int = t_int - 1  # one timestep before t (for going from t to t-1)
 
@@ -114,9 +144,7 @@ class Digress(AbstractModel):
         alpha_t_bar = self.noise_schedule.get_alpha_bar(t_normalized=t_float)  # (bs, 1)
 
         # get transition matrices for X, E, y (as placeholder obj)
-        Qtb = self.transition_model.get_Qt_bar(
-            alpha_t_bar, device=self.device
-        )  # (bs, dx_in, dx_out), (bs, de_in, de_out)
+        Qtb = self.transition_model.get_Qt_bar(alpha_t_bar, device=X.device)  # (bs, dx_in, dx_out), (bs, de_in, de_out)
         assert (abs(Qtb.X.sum(dim=2) - 1.0) < 1e-4).all(), Qtb.X.sum(dim=2) - 1
         assert (abs(Qtb.E.sum(dim=2) - 1.0) < 1e-4).all()
 
@@ -185,10 +213,10 @@ class Digress(AbstractModel):
         :return: molecule_list. Each element of this list is a tuple (atom_types, charges, positions)
         """
         if num_nodes is None:
-            n_nodes = self.node_dist.sample_n(batch_size, self.device)
+            n_nodes = self.node_dist.sample_n(batch_size, self.devicevar.device)
         elif type(num_nodes) == int:
             n_nodes = num_nodes * torch.ones(
-                batch_size, device=self.device, dtype=torch.int
+                batch_size, device=self.devicevar.device, dtype=torch.int
             )
         else:
             assert isinstance(num_nodes, torch.Tensor)
@@ -196,7 +224,7 @@ class Digress(AbstractModel):
         n_max = torch.max(n_nodes).item()
         # Build the masks
         arange = (
-            torch.arange(n_max, device=self.device).unsqueeze(0).expand(batch_size, -1)
+            torch.arange(n_max, device=self.devicevar.device).unsqueeze(0).expand(batch_size, -1)
         )
         node_mask = arange < n_nodes.unsqueeze(1)
         # TODO: how to move node_mask on the right device in the multi-gpu case?
@@ -318,9 +346,9 @@ class Digress(AbstractModel):
         alpha_t_bar = self.noise_schedule.get_alpha_bar(t_normalized=t)
 
         # Retrieve transitions matrix
-        Qtb = self.transition_model.get_Qt_bar(alpha_t_bar, self.device)
-        Qsb = self.transition_model.get_Qt_bar(alpha_s_bar, self.device)
-        Qt = self.transition_model.get_Qt(beta_t, self.device)
+        Qtb = self.transition_model.get_Qt_bar(alpha_t_bar, self.devicevar.device)
+        Qsb = self.transition_model.get_Qt_bar(alpha_s_bar, self.devicevar.device)
+        Qt = self.transition_model.get_Qt(beta_t, self.devicevar.device)
 
         # Neural net predictions
         noisy_data = {
@@ -388,3 +416,39 @@ class Digress(AbstractModel):
         return out_one_hot.mask(node_mask).type_as(y_t), out_discrete.mask(
             node_mask, collapse=True
         ).type_as(y_t)
+
+    @staticmethod
+    def add_args(parser) -> None:
+        """Add class specific args
+
+        Args:
+            parser (argparse.ArgumentParser): argument parser
+        """
+        super(Digress, Digress).add_args(parser)
+        parser.add_argument(
+            "--diffusion_steps",
+            type=int,
+            default=100,
+            help="number of steps in diffusion process",
+        )
+        parser.add_argument(
+            "--digress_graph_denoiser",
+            type=str,
+            action=set_nox_type("model"),
+            default="graph_transformer",
+            help="denoiser model",
+        )
+        parser.add_argument(
+            "--diffusion_noise_schedule",
+            type=str,
+            default="cosine",
+            choices=["cosine", "custom"],
+            help="noise schedule",
+        )
+        parser.add_argument(
+            "--digress_transition",
+            type=str,
+            default="uniform",
+            choices=["uniform", "marginal"],
+            help="transition matrix distribution",
+        )

@@ -4,8 +4,7 @@ import re
 
 try:
     from rdkit import Chem
-
-    print("Found rdkit, all good")
+    # print("Found rdkit, all good")
 except ModuleNotFoundError as e:
     use_rdkit = False
     from warnings import warn

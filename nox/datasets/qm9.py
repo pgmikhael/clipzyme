@@ -353,7 +353,7 @@ class QM9(AbstractDataset, InMemoryDataset):
         # get data info (input / output dimensions)
         data_info = DatasetInfo(self.datasets, args)
 
-        extra_features = ExtraFeatures(args.extra_features, dataset_info=data_info)
+        extra_features = ExtraFeatures(args.extra_features_type, dataset_info=data_info)
         domain_features = ExtraMolecularFeatures(dataset_infos=data_info)
 
         example_batch = [self.dataset[0], self.dataset[1]]
@@ -367,6 +367,8 @@ class QM9(AbstractDataset, InMemoryDataset):
 
         args.dataset_statistics = data_info
         args.train_smiles = get_train_smiles(data_info, self.dataset, split_group, args)
+        args.extra_features = extra_features
+        args.domain_features = domain_features
 
         if len(self.dataset) == 0:
             return
@@ -392,7 +394,7 @@ class QM9(AbstractDataset, InMemoryDataset):
                     self.args.data_dir,
                     self.args.recompute_statistics,
                     self.args.remove_h,
-                    self.args.extra_features,
+                    self.args.extra_features_type,
                 ]
             )
         )
@@ -601,7 +603,7 @@ class QM9(AbstractDataset, InMemoryDataset):
             help="remove hydrogens from the molecules",
         )
         parser.add_argument(
-            "--extra_features",
+            "--extra_features_type",
             type=str,
             choices=["eigenvalues", "all", "cycles"],
             default=None,

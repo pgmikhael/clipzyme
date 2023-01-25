@@ -411,3 +411,7 @@ class TrainMolecularMetricsDiscrete(Metric, Nox):
     def reset(self):
         for metric in [self.train_atom_metrics, self.train_bond_metrics]:
             metric.reset()
+        
+    @property
+    def metric_keys(self):
+        return ["masked_pred_X", "masked_pred_E", "true_X", "true_E"]
