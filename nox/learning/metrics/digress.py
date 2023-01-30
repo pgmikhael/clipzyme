@@ -157,7 +157,7 @@ class SamplingMolecularMetrics(Metric, Nox):
 
     @property
     def metric_keys(self):
-        return ["masked_pred_X", "masked_pred_E", "true_X", "true_E"]
+        return ["molecules"]
 
     def update(self, predictions_dict, args):
         molecules = predictions_dict["molecules"]
@@ -217,8 +217,8 @@ class SamplingMolecularMetrics(Metric, Nox):
         for key, value in stability.items():
             stats_dict[key] = value
 
-        for key, value in rdkit_metrics[0].items():
-            stats_dict[key] = value
+        for i, key in enumerate(["validity", "relaxed_validity", "uniqueness", "novelty"]):
+            stats_dict[key] = rdkit_metrics[0][i]
 
         return stats_dict
 

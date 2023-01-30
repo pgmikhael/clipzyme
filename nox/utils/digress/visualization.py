@@ -61,35 +61,27 @@ class MolecularVisualization:
         try:
             mol = mol.GetMol()
         except rdkit.Chem.KekulizeException:
-            print("Can't kekulize molecule")
+            # print("Can't kekulize molecule")
             mol = None
         return mol
 
-    def visualize(self, path: str, molecules: list, num_molecules_to_visualize: int, trainer=None, log='graph'):
-        # define path to save figures
-        if not os.path.exists(path):
-            os.makedirs(path)
+    def visualize(self, molecules: list, num_molecules_to_visualize: int):
 
         # visualize the final molecules
-        print(f"Visializing {num_molecules_to_visualize} of {len(molecules)}")
         if num_molecules_to_visualize > len(molecules):
-            print(f"Shortening to {len(molecules)}")
             num_molecules_to_visualize = len(molecules)
         
-        can_log=trainer is not None and hasattr(trainer,"logger") and trainer.logger is not None
+        mol_images = []
         for i in range(num_molecules_to_visualize):
-            file_path = os.path.join(path, 'molecule_{}.png'.format(i))
             mol = self.mol_from_graphs(molecules[i][0].numpy(), molecules[i][1].numpy())
             try:
-                Draw.MolToFile(mol, file_path)
-                if can_log:
-                    print(f"Saving {file_path} to wandb")
-                    trainer.logger.log_image(key=log, images=[file_path])
+                mol_images.append( Draw.MolToImage(mol, size=(64, 64)) )
             except rdkit.Chem.KekulizeException:
-                print("Can't kekulize molecule")
+                mol_images.append(None)
+        return mol_images
 
 
-    def visualize_chain(self, path, nodes_list, adjacency_matrix, trainer=None):
+    def visualize_chain(self, nodes_list, adjacency_matrix, trainer=None):
         RDLogger.DisableLog('rdApp.*')
         # convert graphs to the rdkit molecules
         mols = [self.mol_from_graphs(nodes_list[i], adjacency_matrix[i]) for i in range(nodes_list.shape[0])]
@@ -115,29 +107,9 @@ class MolecularVisualization:
         save_paths = []
         num_frams = nodes_list.shape[0]
 
-        for frame in range(num_frams):
-            file_name = os.path.join(path, 'fram_{}.png'.format(frame))
-            Draw.MolToFile(mols[frame], file_name, size=(300, 300), legend=f"Frame {frame}")
-            save_paths.append(file_name)
-
-        imgs = [imageio.imread(fn) for fn in save_paths]
-        gif_path = os.path.join(os.path.dirname(path), '{}.gif'.format(path.split('/')[-1]))
-        imgs.extend([imgs[-1]] * 10)
-        imageio.mimsave(gif_path, imgs, subrectangles=True, fps=5)
-
-        can_log=trainer is not None and hasattr(trainer,"logger") and trainer.logger is not None
-        if can_log:
-            print(f"Saving {gif_path} to wandb")
-            trainer.logger.experiment.log({'chain': [wandb.Video(gif_path, caption=gif_path, format="gif")]})
-
-        # draw grid image
-        try:
-            img = Draw.MolsToGridImage(mols, molsPerRow=10, subImgSize=(200, 200))
-            img.save(os.path.join(path, '{}_grid_image.png'.format(path.split('/')[-1])))
-        except Chem.rdchem.KekulizeException:
-            print("Can't kekulize molecule")
-        return mols
-
+        mol_frames = [ Draw.MolToImage(m, size=(300, 300), legend=f"Frame {i+1}") for i,m in enumerate(mols) ]
+        mol_gif = np.transpose(np.stack(mol_frames), (0,3,1,2))
+        return mol_gif
 
 class NonMolecularVisualization:
     def to_networkx(self, node_list, adjacency_matrix):

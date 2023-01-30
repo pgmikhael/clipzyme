@@ -19,6 +19,8 @@ class Digress(AbstractModel):
     def __init__(self, args):
         super(Digress, self).__init__()
 
+        self.args = args
+
         self.model_dtype = torch.float32
         self.T = args.diffusion_steps  
         self.model = get_object(args.digress_graph_denoiser, "model")(args)  
@@ -29,6 +31,8 @@ class Digress(AbstractModel):
         )
 
         self.dataset_info = args.dataset_statistics
+
+        self.node_dist = self.dataset_info.nodes_dist
 
         input_dims = args.dataset_statistics.input_dims
         output_dims = args.dataset_statistics.output_dims
@@ -200,14 +204,12 @@ class Digress(AbstractModel):
         batch_size: int,
         keep_chain: int,
         number_chain_steps: int,
-        save_final: int,
         num_nodes=None,
     ):
         """
         :param batch_id: int
         :param batch_size: int
         :param num_nodes: int, <int>tensor (batch_size) (optional) for specifying number of nodes
-        :param save_final: int: number of predictions to save to file
         :param keep_chain: int: number of chains to save to file
         :param keep_chain_steps: number of timesteps to save for each chain
         :return: molecule_list. Each element of this list is a tuple (atom_types, charges, positions)
@@ -242,8 +244,8 @@ class Digress(AbstractModel):
             (number_chain_steps, keep_chain, E.size(1), E.size(2))
         )
 
-        chain_X = torch.zeros(chain_X_size)
-        chain_E = torch.zeros(chain_E_size)
+        chain_X = torch.zeros(chain_X_size) # chain length, batch size, max num nodes 
+        chain_E = torch.zeros(chain_E_size) # chain length, batch size, max num nodes x max num nodes
 
         # Iteratively sample p(z_s | z_t) for t = 1, ..., T, with s = t - 1.
         for s_int in reversed(range(0, self.T)):
@@ -289,59 +291,18 @@ class Digress(AbstractModel):
             atom_types = X[i, :n].cpu()
             edge_types = E[i, :n, :n].cpu()
             molecule_list.append([atom_types, edge_types])
-            if i < 3:
-                print("Example of generated E: ", atom_types)
-                print("Example of generated X: ", edge_types)
 
-        predicted_graph_list = []
-        for i in range(batch_size):
-            n = n_nodes[i]
-            atom_types = X[i, :n].cpu()
-            edge_types = E[i, :n, :n].cpu()
-            predicted_graph_list.append([atom_types, edge_types])
-
-        # Visualize chains
-        # TODO: add functionality
-        if self.visualization_tools is not None:
-            print("Visualizing chains...")
-            current_path = os.getcwd()
-            num_molecules = chain_X.size(1)  # number of molecules
-            for i in range(num_molecules):
-                result_path = os.path.join(
-                    current_path,
-                    f"chains/{self.cfg.general.name}/"
-                    f"epoch{self.current_epoch}/"
-                    f"chains/molecule_{batch_id + i}",
-                )
-                if not os.path.exists(result_path):
-                    os.makedirs(result_path)
-                    _ = self.visualization_tools.visualize_chain(
-                        result_path, chain_X[:, i, :].numpy(), chain_E[:, i, :].numpy()
-                    )
-                print(
-                    "\r{}/{} complete".format(i + 1, num_molecules), end="", flush=True
-                )
-            print("\nVisualizing molecules...")
-
-            # Visualize the final molecules
-            current_path = os.getcwd()
-            result_path = os.path.join(
-                current_path,
-                f"graphs/{self.name}/epoch{self.current_epoch}_b{batch_id}/",
-            )
-            self.visualization_tools.visualize(result_path, molecule_list, save_final)
-            self.visualization_tools.visualize(
-                result_path, predicted_graph_list, save_final, log="predicted"
-            )
-            print("Done.")
-
-        return molecule_list
+        return {
+            "chain_X": chain_X,
+            "chain_E": chain_E,
+            "molecules": molecule_list
+        }
 
     def sample_p_zs_given_zt(self, s, t, X_t, E_t, y_t, node_mask):
         """Samples from zs ~ p(zs | zt). Only used during sampling.
         if last_step, return the graph prediction as well"""
         bs, n, dxs = X_t.shape
-        beta_t = self.noise_schedule(t_normalized=t)  # (bs, 1)
+        beta_t = self.noise_schedule(t_normalized=t)  # (bs, 1) the noise level associated with the timestep
         alpha_s_bar = self.noise_schedule.get_alpha_bar(t_normalized=s)
         alpha_t_bar = self.noise_schedule.get_alpha_bar(t_normalized=t)
 
@@ -359,12 +320,21 @@ class Digress(AbstractModel):
             "node_mask": node_mask,
         }
         extra_data = self.compute_extra_data(noisy_data)
-        pred = self.forward(noisy_data, extra_data, node_mask)
+        
+        denoiser_input = {
+            "X": torch.cat((noisy_data["X_t"], extra_data.X), dim=2).float(),
+            "E": torch.cat((noisy_data["E_t"], extra_data.E), dim=3).float(), 
+            "y": torch.hstack((noisy_data["y_t"], extra_data.y)).float(), 
+            "node_mask":node_mask
+        }
 
-        # Normalize predictions
+        pred = self.model(denoiser_input)
+
+        # Normalize predictions to get p(x) and p(e) (prior in EQN 6)
         pred_X = F.softmax(pred.X, dim=-1)  # bs, n, d0
         pred_E = F.softmax(pred.E, dim=-1)  # bs, n, n, d0
 
+        # Compute posterior q(s | t, x) EQN 1
         p_s_and_t_given_0_X = (
             diffusion_utils.compute_batched_over0_posterior_distribution(
                 X_t=X_t, Qt=Qt.X, Qsb=Qsb.X, Qtb=Qtb.X
@@ -376,8 +346,10 @@ class Digress(AbstractModel):
                 X_t=E_t, Qt=Qt.E, Qsb=Qsb.E, Qtb=Qtb.E
             )
         )
-        # Dim of these two tensors: bs, N, d0, d_t-1
-        weighted_X = pred_X.unsqueeze(-1) * p_s_and_t_given_0_X  # bs, n, d0, d_t-1
+
+        # Compute EQN 6
+        # Dim of these two tensors: bs, N, d0, d_t-1 
+        weighted_X = pred_X.unsqueeze(-1) * p_s_and_t_given_0_X  # bs, n, d0, d_t-1  
         unnormalized_prob_X = weighted_X.sum(dim=2)  # bs, n, d_t-1
         unnormalized_prob_X[torch.sum(unnormalized_prob_X, dim=-1) == 0] = 1e-5
         prob_X = unnormalized_prob_X / torch.sum(
