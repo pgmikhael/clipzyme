@@ -9,7 +9,6 @@ from nox.utils.digress.noise_schedule import (
     MarginalUniformTransition,
 )
 from nox.utils.digress import diffusion_utils
-from nox.utils.digress.visualization import MolecularVisualization
 import os
 from nox.utils.classes import set_nox_type
 from rich import print 
@@ -83,10 +82,6 @@ class Digress(AbstractModel):
                 E=e_marginals,
                 y=torch.ones(self.ydim_output) / self.ydim_output,
             )
-        
-        self.visualization_tools = MolecularVisualization(
-            args.remove_h, dataset_infos=args.dataset_statistics
-        )
 
     def forward(self, data):
         dense_data, node_mask = diffusion_utils.to_dense(
