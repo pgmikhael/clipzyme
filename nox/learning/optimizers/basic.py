@@ -49,7 +49,7 @@ class Adam(optim.Adam, Nox):
 @register_object("adamw", "optimizer")
 class AdamW(optim.AdamW, Nox):
     """
-    https://pytorch.org/docs/stable/generated/torch.optim.Adam.html#torch.optim.Adam
+    https://pytorch.org/docs/stable/generated/torch.optim.AdamW.html#torch.optim.AdamW
     """
 
     def __init__(self, params, args):
