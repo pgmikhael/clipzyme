@@ -13,6 +13,36 @@ class DiscreteDenoisingDiffusion(Base):
         self.visualization_tools = MolecularVisualization(
             args.remove_h, dataset_infos=args.dataset_statistics
         )
+    
+    @property
+    def LOG_KEYS(self):
+        return [
+            "loss",
+            "accuracy",
+            "mean",
+            "std",
+            "precision",
+            "recall",
+            "f1",
+            "auc",
+            "similarity",
+            "tau",
+            "mse",
+            "mae",
+            "r2",
+            "c_index",
+            "hit",
+            "pearson",
+            "spearman",
+            "cosine_similarity",
+            "top",
+            "dist",
+            "stable",
+            "stable",
+            "validity",
+            "uniqueness",
+            "novelty",
+        ]
 
     def validation_epoch_end(self, outputs) -> None:
 
@@ -23,13 +53,13 @@ class DiscreteDenoisingDiffusion(Base):
         outputs["loss"] = outputs["loss"].mean()
 
         self.args.val_counter += 1
+        
         if self.args.val_counter % self.args.sample_every_val == 0:
+            samples = []
 
             samples_left_to_generate = self.args.samples_to_generate
             samples_left_to_save = self.args.samples_to_save
             chains_left_to_save = self.args.chains_to_save
-
-            samples = []
 
             ident = 0
             while samples_left_to_generate > 0:
@@ -53,11 +83,14 @@ class DiscreteDenoisingDiffusion(Base):
                 samples.extend(sampled_dict["molecules"])
                 
                 # Visualize samples
-                if self.args.visualize_diffusion_samples:
+                if self.args.val_counter % self.args.visualize_diffusion_samples_every_val == 0:
                     self.log_generated_samples(sampled_dict, num_to_log=to_save)
 
-        self.sampling_metric_val.update({"molecules": samples}, self.args)
-        outputs.update(self.sampling_metric_val.compute())
+                self.sampling_metric_val.update({"molecules": samples}, self.args)
+                sampling_metrics = self.sampling_metric_val.compute()
+                sampling_metrics = {k: torch.tensor([v], device=self.device).float() for k,v in sampling_metrics.items()}
+                outputs.update(sampling_metrics)
+                
         self.log_outputs(outputs, "val")
 
         for metric_fn in self.metrics["val"]:
@@ -104,7 +137,10 @@ class DiscreteDenoisingDiffusion(Base):
 
         if not self.args.predict:
             self.sampling_metric_test.update({"molecules": samples}, self.args)
-            outputs.update(self.sampling_metric_test.compute())
+            sampling_metrics = self.sampling_metric_val.compute()
+            sampling_metrics = {k: torch.tensor([v], device=self.device).float() for k,v in sampling_metrics.items()}
+            outputs.update(sampling_metrics)
+
             self.log_outputs(outputs, "test")
 
         for metric_fn in self.metrics["test"]:
@@ -204,3 +240,11 @@ class DiscreteDenoisingDiffusion(Base):
             default=False,
             help="whether to log samples as images using Chem Draw or not",
         )
+        parser.add_argument(
+            "--visualize_diffusion_samples_every_val",
+            type=int,
+            default=100,
+            help="how often to visualize samples during training",
+        )
+
+        
