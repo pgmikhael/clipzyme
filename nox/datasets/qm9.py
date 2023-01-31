@@ -562,7 +562,7 @@ class QM9(AbstractDataset, InMemoryDataset):
         data, slices = self.datasets[split_group]
 
         dataset = []
-        for idx in tqdm(range(100)): #range(len(data.idx)), position=0, desc="Converting to pyg.Data"):
+        for idx in tqdm(range(len(data.idx)), position=0, desc="Converting to pyg.Data"):
             data_item = separate(
                 cls=data.__class__, 
                 batch=data, 
@@ -570,7 +570,7 @@ class QM9(AbstractDataset, InMemoryDataset):
                 slice_dict=slices, 
                 decrement=False
             )
-            dataset.append(copy.deepcopy(data_item))
+            dataset.append(data_item)
             
         return dataset
 
