@@ -1,43 +1,35 @@
 import torch
 from torch import nn, einsum, broadcast_tensors
 import torch.nn.functional as F
+from torch.nn import SiLU
+
+from nox.utils.registry import register_object, get_object
+from nox.models.abstract import AbstractModel
+from nox.utils.classes import set_nox_type
 
 from einops import rearrange, repeat
 from einops.layers.torch import Rearrange
 
-# types
+import copy
+import os, sys
+import pickle
+import warnings
+import hashlib
+from collections import defaultdict
+from rich import print as rprint
+from typing import Optional, List, Union, Tuple, Any
 
-from typing import Optional, List, Union
-
-# pytorch geometric
-
-try:
-    import torch_geometric
-    from torch_geometric.nn import MessagePassing
-    from torch_geometric.typing import Adj, Size, OptTensor, Tensor
-except:
-    Tensor = OptTensor = Adj = MessagePassing = Size = object
-    PYG_AVAILABLE = False
-
-    # to stop throwing errors from type suggestions
-    Adj = object
-    Size = object
-    OptTensor = object
-    Tensor = object
+import torch_geometric
+from torch_geometric.nn import MessagePassing
+from torch_geometric.typing import Adj, Size, OptTensor, Tensor
+from torch_geometric.data import Batch
+from torch_scatter import scatter
+from torch_geometric.utils import to_dense_batch
+from torch_geometric.utils.loop import add_remaining_self_loops
 
 
 def exists(val):
     return val is not None
-
-
-def embedd_token(x, dims, layers):
-    stop_concat = -len(dims)
-    to_embedd = x[:, stop_concat:].long()
-    for i, emb_layer in enumerate(layers):
-        # the portion corresponding to `to_embedd` part gets dropped
-        x = torch.cat([x[:, :stop_concat], emb_layer(to_embedd[:, i])], dim=-1)
-        stop_concat = x.shape[-1]
-    return x
 
 
 class CoorsNorm(nn.Module):
@@ -53,132 +45,14 @@ class CoorsNorm(nn.Module):
         return normed_coors * self.scale
 
 
-# global linear attention
-class Attention(nn.Module):
-    def __init__(self, dim, heads=8, dim_head=64):
-        super().__init__()
-        inner_dim = heads * dim_head
-        self.heads = heads
-        self.scale = dim_head**-0.5
-
-        self.to_q = nn.Linear(dim, inner_dim, bias=False)
-        self.to_kv = nn.Linear(dim, inner_dim * 2, bias=False)
-        self.to_out = nn.Linear(inner_dim, dim)
-
-    def forward(self, x, context, mask=None):
-        h = self.heads
-
-        q = self.to_q(x)
-        kv = self.to_kv(context).chunk(2, dim=-1)
-
-        q, k, v = map(lambda t: rearrange(t, "b n (h d) -> b h n d", h=h), (q, *kv))
-        dots = einsum("b h i d, b h j d -> b h i j", q, k) * self.scale
-
-        if exists(mask):
-            mask_value = -torch.finfo(dots.dtype).max
-            mask = rearrange(mask, "b n -> b () () n")
-            dots.masked_fill_(~mask, mask_value)
-
-        attn = dots.softmax(dim=-1)
-        out = einsum("b h i j, b h j d -> b h i d", attn, v)
-
-        out = rearrange(out, "b h n d -> b n (h d)", h=h)
-        return self.to_out(out)
-
-
-class Attention_Sparse(Attention):
-    def __init__(self, **kwargs):
-        """Wraps the attention class to operate with pytorch-geometric inputs."""
-        super(Attention_Sparse, self).__init__(**kwargs)
-
-    def sparse_forward(self, x, context, batch=None, batch_uniques=None, mask=None):
-        assert (
-            batch is not None or batch_uniques is not None
-        ), "Batch/(uniques) must be passed for block_sparse_attn"
-        if batch_uniques is None:
-            batch_uniques = torch.unique(batch, return_counts=True)
-        # only one example in batch - do dense - faster
-        if batch_uniques[0].shape[0] == 1:
-            x, context = map(lambda t: rearrange(t, "h d -> () h d"), (x, context))
-            return self.forward(x, context, mask=None).squeeze()  # get rid of batch dim
-        # multiple examples in batch - do block-sparse by dense loop
-        else:
-            x_list = []
-            aux_count = 0
-            for bi, n_idxs in zip(*batch_uniques):
-                x_list.append(
-                    self.sparse_forward(
-                        x[aux_count : aux_count + n_i],
-                        context[aux_count : aux_count + n_idxs],
-                        batch_uniques=(bi.unsqueeze(-1), n_idxs.unsqueeze(-1)),
-                    )
-                )
-            return torch.cat(x_list, dim=0)
-
-
-class GlobalLinearAttention_Sparse(nn.Module):
-    def __init__(self, *, dim, heads=8, dim_head=64):
-        super().__init__()
-        self.norm_seq = torch_geomtric.nn.norm.LayerNorm(dim)
-        self.norm_queries = torch_geomtric.nn.norm.LayerNorm(dim)
-        self.attn1 = Attention_Sparse(dim, heads, dim_head)
-        self.attn2 = Attention_Sparse(dim, heads, dim_head)
-
-        # can't concat pyg norms with torch sequentials
-        self.ff_norm = torch_geomtric.nn.norm.LayerNorm(dim)
-        self.ff = nn.Sequential(
-            nn.Linear(dim, dim * 4), nn.GELU(), nn.Linear(dim * 4, dim)
-        )
-
-    def forward(self, x, queries, batch=None, batch_uniques=None, mask=None):
-        res_x, res_queries = x, queries
-        x, queries = self.norm_seq(x, batch=batch), self.norm_queries(
-            queries, batch=batch
-        )
-
-        induced = self.attn1.sparse_forward(
-            queries, x, batch=batch, batch_uniques=batch_uniques, mask=mask
-        )
-        out = self.attn2.sparse_forward(
-            x, induced, batch=batch, batch_uniques=batch_uniques
-        )
-
-        x = out + res_x
-        queries = induced + res_queries
-
-        x_norm = self.ff_norm(x, batch=batch)
-        x = self.ff(x_norm) + x_norm
-        return x, queries
-
-
-# define pytorch-geometric equivalents
-
-
 class EGNN_Sparse(MessagePassing):
-    """Different from the above since it separates the edge assignment
-    from the computation (this allows for great reduction in time and
-    computations when the graph is locally or sparse connected).
-    * aggr: one of ["add", "mean", "max"]
-    """
+    """ """
 
-    def __init__(
-        self,
-        feats_dim,
-        pos_dim=3,
-        edge_attr_dim=0,
-        m_dim=16,
-        fourier_features=0,
-        soft_edge=0,
-        norm_feats=False,
-        norm_coors=False,
-        norm_coors_scale_init=1e-2,
-        update_feats=True,
-        update_coors=True,
-        dropout=0.0,
-        coor_weights_clamp_value=None,
-        aggr="add",
-        **kwargs,
-    ):
+    def __init__(self, args, **kwargs):
+        self.args = args
+        aggr = self.args.neighbour_aggr
+        self.update_feats = self.args.update_feats
+        self.update_coors = self.args.update_coors
         assert aggr in {
             "add",
             "sum",
@@ -186,26 +60,22 @@ class EGNN_Sparse(MessagePassing):
             "mean",
         }, "pool method must be a valid option"
         assert (
-            update_feats or update_coors
+            self.update_feats or self.update_coors
         ), "you must update either features, coordinates, or both"
         kwargs.setdefault("aggr", aggr)
         super(EGNN_Sparse, self).__init__(**kwargs)
         # model params
-        self.fourier_features = fourier_features
-        self.feats_dim = feats_dim
-        self.pos_dim = pos_dim
-        self.m_dim = m_dim
-        self.soft_edge = soft_edge
-        self.norm_feats = norm_feats
-        self.norm_coors = norm_coors
-        self.update_coors = update_coors
-        self.update_feats = update_feats
-        self.coor_weights_clamp_value = None
+        self.feats_dim = self.args.protein_dim
+        self.edge_attr_dim = self.args.edge_attr_dim
+        self.m_dim = self.args.message_dim
+        self.soft_edge = self.args.soft_edge
+        self.norm_feats = self.args.norm_feats
+        self.norm_coors = self.args.norm_coors
+        self.norm_coors_scale_init = self.args.norm_coors_scale_init
+        self.coor_weights_clamp_value = self.args.coor_weights_clamp_value
 
-        self.edge_input_dim = (
-            (fourier_features * 2) + edge_attr_dim + 1 + (feats_dim * 2)
-        )
-        self.dropout = nn.Dropout(dropout) if dropout > 0 else nn.Identity()
+        self.edge_input_dim = self.edge_attr_dim + 1 + (self.feats_dim * 2)
+        self.dropout = nn.Dropout(dropout) if self.args.dropout > 0 else nn.Identity()
 
         # EDGES
         # \phi_e
@@ -213,31 +83,36 @@ class EGNN_Sparse(MessagePassing):
             nn.Linear(self.edge_input_dim, self.edge_input_dim * 2),
             self.dropout,
             SiLU(),
-            nn.Linear(self.edge_input_dim * 2, m_dim),
+            nn.Linear(self.edge_input_dim * 2, self.m_dim),
             SiLU(),
         )
 
         self.edge_weight = (
-            nn.Sequential(nn.Linear(m_dim, 1), nn.Sigmoid()) if soft_edge else None
+            nn.Sequential(nn.Linear(self.m_dim, 1), nn.Sigmoid())
+            if self.soft_edge
+            else None
         )
 
-        # NODES - can't do identity in node_norm bc pyg expects 2 inputs, but identity expects 1.
         self.node_norm = (
-            torch_geometric.nn.norm.LayerNorm(feats_dim) if norm_feats else None
+            torch_geometric.nn.norm.LayerNorm(self.feats_dim)
+            if self.norm_feats
+            else None
         )
         self.coors_norm = (
-            CoorsNorm(scale_init=norm_coors_scale_init) if norm_coors else nn.Identity()
+            CoorsNorm(scale_init=self.norm_coors_scale_init)
+            if self.norm_coors
+            else nn.Identity()
         )
 
         # \phi_h
         self.node_mlp = (
             nn.Sequential(
-                nn.Linear(feats_dim + m_dim, feats_dim * 2),
+                nn.Linear(self.feats_dim + self.m_dim, self.feats_dim * 2),
                 self.dropout,
                 SiLU(),
-                nn.Linear(feats_dim * 2, feats_dim),
+                nn.Linear(self.feats_dim * 2, self.feats_dim),
             )
-            if update_feats
+            if self.update_feats
             else None
         )
 
@@ -245,12 +120,12 @@ class EGNN_Sparse(MessagePassing):
         # \phi_x
         self.coors_mlp = (
             nn.Sequential(
-                nn.Linear(m_dim, m_dim * 4),
+                nn.Linear(self.m_dim, self.m_dim * 4),
                 self.dropout,
                 SiLU(),
                 nn.Linear(self.m_dim * 4, 1),
             )
-            if update_coors
+            if self.update_coors
             else None
         )
 
@@ -264,31 +139,16 @@ class EGNN_Sparse(MessagePassing):
 
     def forward(
         self,
-        x: Tensor,
+        feats: Tensor,
+        coors: Tensor,
         edge_index: Adj,
         edge_attr: OptTensor = None,
         batch: Adj = None,
-        angle_data: List = None,
         size: Size = None,
     ) -> Tensor:
-        """Inputs:
-        * x: (n_points, d) where d is pos_dims + feat_dims
-        * edge_index: (2, n_edges)
-        * edge_attr: tensor (n_edges, n_feats) excluding basic distance feats.
-        * batch: (n_points,) long tensor. specifies xloud belonging for each point
-        * angle_data: list of tensors (levels, n_edges_i, n_length_path) long tensor.
-        * size: None
-        """
-        coors, feats = x[:, : self.pos_dim], x[:, self.pos_dim :]
-
+        """ """
         rel_coors = coors[edge_index[0]] - coors[edge_index[1]]
         rel_dist = (rel_coors**2).sum(dim=-1, keepdim=True)
-
-        if self.fourier_features > 0:
-            rel_dist = fourier_encode_dist(
-                rel_dist, num_encodings=self.fourier_features
-            )
-            rel_dist = rearrange(rel_dist, "n () d -> n d")
 
         if exists(edge_attr):
             edge_attr_feats = torch.cat([edge_attr, rel_dist], dim=-1)
@@ -301,23 +161,26 @@ class EGNN_Sparse(MessagePassing):
             edge_attr=edge_attr_feats,
             coors=coors,
             rel_coors=rel_coors,
+            size=None,
             batch=batch,
         )
-        return torch.cat([coors_out, hidden_out], dim=-1)
+        return coors_out, hidden_out
 
     def message(self, x_i, x_j, edge_attr) -> Tensor:
         m_ij = self.edge_mlp(torch.cat([x_i, x_j, edge_attr], dim=-1))
         return m_ij
 
     def propagate(self, edge_index: Adj, size: Size = None, **kwargs):
-        """The initial call to start propagating messages.
+        """
+        The initial call to start propagating messages.
+
         Args:
-        `edge_index` holds the indices of a general (sparse)
-            assignment matrix of shape :obj:`[N, M]`.
-        size (tuple, optional) if none, the size will be inferred
-            and assumed to be quadratic.
-        **kwargs: Any additional data which is needed to construct and
-            aggregate messages, and to update node embeddings.
+            `edge_index` holds the indices of a general (sparse)
+                assignment matrix of shape :obj:`[N, M]`.
+            size (tuple, optional) if none, the size will be inferred
+                and assumed to be quadratic.
+            **kwargs: Any additional data which is needed to construct and
+                aggregate messages, and to update node embeddings.
         """
         size = self.__check_input__(edge_index, size)
         coll_dict = self.__collect__(self.__user_args__, edge_index, size, kwargs)
@@ -326,23 +189,23 @@ class EGNN_Sparse(MessagePassing):
         update_kwargs = self.inspector.distribute("update", coll_dict)
 
         # get messages
-        m_ij = self.message(**msg_kwargs)
+        m_ij = self.message(**msg_kwargs)  # graph_size x m_dim
 
         # update coors if specified
         if self.update_coors:
-            coor_wij = self.coors_mlp(m_ij)
+            coor_wij = self.coors_mlp(m_ij)  # graph_size x 1
             # clamp if arg is set
             if self.coor_weights_clamp_value:
-                coor_weights_clamp_value = self.coor_weights_clamp_value
+                clamp_value = self.coor_weights_clamp_value
                 coor_weights.clamp_(min=-clamp_value, max=clamp_value)
 
             # normalize if needed
-            kwargs["rel_coors"] = self.coors_norm(kwargs["rel_coors"])
+            kwargs["rel_coors"] = self.coors_norm(kwargs["rel_coors"])  # graph_size x 3
 
             mhat_i = self.aggregate(
                 coor_wij * kwargs["rel_coors"], **aggr_kwargs
-            )  # TODO: Check why mult not add
-            coors_out = kwargs["coors"] + mhat_i
+            )  # graph_size / num_neighbours x 3
+            coors_out = kwargs["coors"] + mhat_i  # graph_size / num_neighbours x 3
         else:
             coors_out = kwargs["coors"]
 
@@ -358,213 +221,41 @@ class EGNN_Sparse(MessagePassing):
                 if self.node_norm
                 else kwargs["x"]
             )
-            hidden_out = self.node_mlp(torch.cat([hidden_feats, m_i], dim=-1))
+            hidden_out = self.node_mlp(
+                torch.cat([hidden_feats, m_i], dim=-1)
+            )  # graph_size / num_neighbours x feat_dim (esm)
             hidden_out = kwargs["x"] + hidden_out
         else:
             hidden_out = kwargs["x"]
 
-        # return tuple
         return self.update((hidden_out, coors_out), **update_kwargs)
-
-    def __repr__(self):
-        dict_print = {}
-        return "E(n)-GNN Layer for Graphs " + str(self.__dict__)
 
 
 class EGNN_Sparse_Network(nn.Module):
-    r"""Sample GNN model architecture that uses the EGNN-Sparse
-    message passing layer to learn over point clouds.
-    Main MPNN layer introduced in https://arxiv.org/abs/2102.09844v1
+    """ """
 
-    Inputs will be standard GNN: x, edge_index, edge_attr, batch, ...
-
-    Args:
-    * n_layers: int. number of MPNN layers
-    * ... : same interpretation as the base layer.
-    * embedding_nums: list. number of unique keys to embedd. for points
-                      1 entry per embedding needed.
-    * embedding_dims: list. point - number of dimensions of
-                      the resulting embedding. 1 entry per embedding needed.
-    * edge_embedding_nums: list. number of unique keys to embedd. for edges.
-                           1 entry per embedding needed.
-    * edge_embedding_dims: list. point - number of dimensions of
-                           the resulting embedding. 1 entry per embedding needed.
-    * recalc: int. Recalculate edge feats every `recalc` MPNN layers. 0 for no recalc
-    * verbose: bool. verbosity level.
-    -----
-    Diff with normal layer: one has to do preprocessing before (radius, global token, ...)
-    """
-
-    def __init__(
-        self,
-        n_layers,
-        feats_dim,
-        pos_dim=3,
-        edge_attr_dim=0,
-        m_dim=16,
-        fourier_features=0,
-        soft_edge=0,
-        embedding_nums=[],
-        embedding_dims=[],
-        edge_embedding_nums=[],
-        edge_embedding_dims=[],
-        update_coors=True,
-        update_feats=True,
-        norm_feats=True,
-        norm_coors=False,
-        norm_coors_scale_init=1e-2,
-        dropout=0.0,
-        coor_weights_clamp_value=None,
-        aggr="add",
-        global_linear_attn_every=0,
-        global_linear_attn_heads=8,
-        global_linear_attn_dim_head=64,
-        num_global_tokens=4,
-        recalc=0,
-    ):
-        super().__init__()
-
-        self.n_layers = n_layers
-
-        # Embeddings? solve here
-        self.embedding_nums = embedding_nums
-        self.embedding_dims = embedding_dims
-        self.emb_layers = nn.ModuleList()
-        self.edge_embedding_nums = edge_embedding_nums
-        self.edge_embedding_dims = edge_embedding_dims
-        self.edge_emb_layers = nn.ModuleList()
-
-        # instantiate point and edge embedding layers
-
-        for i in range(len(self.embedding_dims)):
-            self.emb_layers.append(
-                nn.Embedding(
-                    num_embeddings=embedding_nums[i], embedding_dim=embedding_dims[i]
-                )
-            )
-            feats_dim += embedding_dims[i] - 1
-
-        for i in range(len(self.edge_embedding_dims)):
-            self.edge_emb_layers.append(
-                nn.Embedding(
-                    num_embeddings=edge_embedding_nums[i],
-                    embedding_dim=edge_embedding_dims[i],
-                )
-            )
-            edge_attr_dim += edge_embedding_dims[i] - 1
-        # rest
+    def __init__(self, args):
+        super(EGNN_Sparse_Network, self).__init__()
+        self.args = args
         self.mpnn_layers = nn.ModuleList()
-        self.feats_dim = feats_dim
-        self.pos_dim = pos_dim
-        self.edge_attr_dim = edge_attr_dim
-        self.m_dim = m_dim
-        self.fourier_features = fourier_features
-        self.soft_edge = soft_edge
-        self.norm_feats = norm_feats
-        self.norm_coors = norm_coors
-        self.norm_coors_scale_init = norm_coors_scale_init
-        self.update_feats = update_feats
-        self.update_coors = update_coors
-        self.dropout = dropout
-        self.coor_weights_clamp_value = coor_weights_clamp_value
-        self.recalc = recalc
 
-        self.has_global_attn = global_linear_attn_every > 0
-        self.global_tokens = None
-        self.global_linear_attn_every = global_linear_attn_every
-        if self.has_global_attn:
-            self.global_tokens = nn.Parameter(torch.randn(num_global_tokens, dim))
+        for i in range(self.args.egcl_layers):
+            layer = EGNN_Sparse(args)
+            self.mpnn_layers.append(layer)
 
-        # instantiate layers
-        for i in range(n_layers):
-            layer = EGNN_Sparse(
-                feats_dim=feats_dim,
-                pos_dim=pos_dim,
-                edge_attr_dim=edge_attr_dim,
-                m_dim=m_dim,
-                fourier_features=fourier_features,
-                soft_edge=soft_edge,
-                norm_feats=norm_feats,
-                norm_coors=norm_coors,
-                norm_coors_scale_init=norm_coors_scale_init,
-                update_feats=update_feats,
-                update_coors=update_coors,
-                dropout=dropout,
-                coor_weights_clamp_value=coor_weights_clamp_value,
-            )
+    def forward(self, batch):
+        """ """
+        coors = batch["graph"]["receptor"].pos
+        feats = batch["graph"]["receptor"].x
+        edge_index = batch["graph"]["receptor", "contact", "receptor"].edge_index
+        edge_attr = None
+        batch_idx = batch["graph"]["receptor"].batch
+        bsize = self.args.batch_size
 
-            # global attention case
-            is_global_layer = (
-                self.has_global_attn and (i % self.global_linear_attn_every) == 0
-            )
-            if is_global_layer:
-                attn_layer = GlobalLinearAttention(
-                    dim=self.feats_dim,
-                    heads=global_linear_attn_heads,
-                    dim_head=global_linear_attn_dim_head,
-                )
-                self.mpnn_layers.append(nn.ModuleList([layer, attn_layer]))
-            # normal case
-            else:
-                self.mpnn_layers.append(layer)
+        for i, egcl in enumerate(self.mpnn_layers):
+            coors, feats = egcl(feats, coors, edge_index, size=bsize, batch=batch_idx)
 
-    def forward(
-        self, x, edge_index, batch, edge_attr, bsize=None, recalc_edge=None, verbose=0
-    ):
-        """Recalculate edge features every `self.recalc_edge` with the
-        `recalc_edge` function if self.recalc_edge is set.
-
-        * x: (N, pos_dim+feats_dim) will be unpacked into coors, feats.
-        """
-        # NODES - Embedd each dim to its target dimensions:
-        x = embedd_token(x, self.embedding_dims, self.emb_layers)
-
-        # regulates wether to embedd edges each layer
-        edges_need_embedding = True
-        for i, layer in enumerate(self.mpnn_layers):
-
-            # EDGES - Embedd each dim to its target dimensions:
-            if edges_need_embedding:
-                edge_attr = embedd_token(
-                    edge_attr, self.edge_embedding_dims, self.edge_emb_layers
-                )
-                edges_need_embedding = False
-
-            # attn tokens
-            global_tokens = None
-            if exists(self.global_tokens):
-                unique, amounts = torch.unique(batch, return_counts)
-                num_idxs = torch.cat(
-                    [torch.arange(num_idxs_i) for num_idxs_i in amounts], dim=-1
-                )
-                global_tokens = self.global_tokens[num_idxs]
-
-            # pass layers
-            is_global_layer = (
-                self.has_global_attn and (i % self.global_linear_attn_every) == 0
-            )
-            if not is_global_layer:
-                x = layer(x, edge_index, edge_attr, batch=batch, size=bsize)
-            else:
-                # only pass feats to the attn layer
-                x_attn = layer[0](x[:, self.pos_dim :], global_tokens)
-                # merge attn-ed feats and coords
-                x = torch.cat((x[:, : self.pos_dim], x_attn), dim=-1)
-                x = layer[-1](x, edge_index, edge_attr, batch=batch, size=bsize)
-
-            # recalculate edge info - not needed if last layer
-            if self.recalc and (
-                (i % self.recalc == 0) and not (i == len(self.mpnn_layers) - 1)
-            ):
-                edge_index, edge_attr, _ = recalc_edge(
-                    x
-                )  # returns attr, idx, any_other_info
-                edges_need_embedding = True
-
-        return x
-
-    def __repr__(self):
-        return "EGNN_Sparse_Network of: {0} layers".format(len(self.mpnn_layers))
+        return feats, coors
 
 
 @register_object("egnn_classifier", "model")
@@ -574,160 +265,97 @@ class EGNN_Classifier(AbstractModel):
 
         self.args = args
 
-        # self.egnn = EGNN_Sparse_Network(
-        #     n_layers=,
-        #     feats_dim=,
-        #     pos_dim=3,
-        #     edge_attr_dim=0,
-        #     m_dim=16,
-        #     fourier_features=0,
-        #     soft_edge=0,
-        #     embedding_nums=[],
-        #     embedding_dims=[],
-        #     edge_embedding_nums=[],
-        #     edge_embedding_dims=[],
-        #     update_coors=True,
-        #     update_feats=True,
-        #     norm_feats=True,
-        #     norm_coors=False,
-        #     norm_coors_scale_init=1e-2,
-        #     dropout=0.0,
-        #     coor_weights_clamp_value=None,
-        #     aggr="add",
-        #     global_linear_attn_every=0,
-        #     global_linear_attn_heads=8,
-        #     global_linear_attn_dim_head=64,
-        #     num_global_tokens=4,
-        #     recalc=0,
-        # )
-        self.egnn = EGNN_Sparse(
-            feats_dim=480,
-            pos_dim=3,
-            edge_attr_dim=0,
-            m_dim=16,
-            fourier_features=0,
-            soft_edge=0,
-            norm_feats=False,
-            norm_coors=False,
-            norm_coors_scale_init=1e-2,
-            update_feats=True,
-            update_coors=True,
-            dropout=0.0,
-            coor_weights_clamp_value=None,
-            aggr="add",
-        )
+        self.egnn = EGNN_Sparse_Network(args)
+
         self.esm_model = get_object(args.esm_model_name, "model")(args)
         classifier_args = copy.deepcopy(args)
         self.mlp = get_object(args.classifier_name, "model")(args)
 
     def forward(self, batch=None):
+        output = {}
         # run ESM and update node embeddings
-        pdb_id2prot_dict, data_params = self.compute_embeddings(batch, args)
+        batch = self.compute_embeddings(batch, self.args)
+        del batch["mask_hiddens"]  # not used and is big
+        feats, coors = self.egnn(batch)
+        output["node_features"] = feats
+        output["node_coords"] = coors
+        if self.args.pool_type != "none":
+            output["graph_features"] = scatter(
+                feats,
+                batch["graph"]["receptor"].batch,
+                dim=0,
+                reduce=self.args.pool_type,
+            )
+        else:
+            output["graph_features"] = output["node_features"]
 
-        hidden = self.egnn(
-            hidden, batch["edge_index"], batch["edge_attr"], batch["batch"]
-        )
-        output = self.mlp({"x": hidden})  # B, seq_len, num_classes
-
-        labels = batch["residue_mask"]
-        residue_mask = sequence_dict["mask_hiddens"][:, 1:-1]
-        # cross entropy will ignore the padded residues (ignore_index=-100)
-        labels[~residue_mask.squeeze(-1).bool()] = -100
-        batch["y"] = labels
+        output.update(self.mlp({"x": output["graph_features"]}))
 
         return output
 
-    def compute_embeddings(self, pdb_id2prot_dict, args):
+    def compute_embeddings(self, batch, args):
         """
         Pre-compute ESM2 embeddings.
         """
+        batch_hash = hashlib.md5(f"{batch}".encode()).hexdigest()
         esm_cache = os.path.join(
-            args.protein_cache_path, f"{args.hash_saved_data}_cached_prot_esm.pkl"
+            args.protein_cache_path, f"{batch_hash}_cached_prot_esm.pkl"
         )
         if args.debug:
             esm_cache = esm_cache.replace(".pkl", "_debug.pkl")
+
         # check if we already computed embeddings
-        if os.path.exists(esm_cache):
+        if not args.no_graph_cache and os.path.exists(esm_cache):
             with open(esm_cache, "rb") as f:
-                pdb_id2prot_graph_node_feat = pickle.load(f)
-            self._save_esm_rep(pdb_id2prot_dict, pdb_id2prot_graph_node_feat)
+                cropped_representations = pickle.load(f)
+            self._save_esm_rep(batch, cropped_representations)
             print("Loaded cached ESM embeddings")
-            return pdb_id2prot_dict
+            return batch
 
-        # convert to 3 letter codes
-        aa_code = defaultdict(lambda: "<unk>")
-        aa_code.update({k.upper(): v for k, v in protein_letters_3to1.items()})
-        # fix ordering
-        pdb_id2prot_dict_sorted = sorted(pdb_id2prot_dict)
-        all_graphs = [pdb_id2prot_dict[pdb]["graph"] for pdb in pdb_id2prot_dict_sorted]
-        rec_seqs = [g["receptor"].x for g in all_graphs]  # residue ids
-        # this is the prot sequence
-        rec_seqs = ["".join(aa_code[s] for s in seq) for seq in rec_seqs]
-
-        with torch.no_grad():
-            pad_idx = self.esm_model.alphabet.padding_idx
-            rec_reps = self._run_esm(
-                rec_batches, pad_idx
-            )  # list of (cropped reps and cropped tokens)
-
-        # cat one-hot representation and ESM embedding
-        pdb_id2prot_graph_node_feat = {}
-        for idx, pdb in enumerate(pdb_id2prot_dict_sorted):
-            # if batch size is 1, unsqueeze to make it 2D
-            if len(rec_reps[idx][0].shape) == 1:
-                rec_graph_x = torch.cat(
-                    [rec_reps[idx][0].unsqueeze(-1), rec_reps[idx][1]], dim=1
-                )
-            else:
-                rec_graph_x = torch.cat([rec_reps[idx][0], rec_reps[idx][1]], dim=1)
-            pdb_id2prot_graph_node_feat[pdb] = rec_graph_x
-
-        # dump to cache
-        with open(esm_cache, "wb+") as f:
-            pickle.dump(pdb_id2prot_graph_node_feat, f)
-
-        # overwrite graph.x for each element in batch
-        self._save_esm_rep(pdb_id2prot_dict, pdb_id2prot_graph_node_feat)
-
-        return pdb_id2prot_dict
-
-    def _save_esm_rep(self, pdb_id2prot_dict, pdb_id2prot_graph_node_feat):
-        """
-        Assign new ESM representation to graph.x INPLACE
-        """
-        for pdb_id, prot_graph_node_features in pdb_id2prot_graph_node_feat.items():
-            rec_graph = pdb_id2prot_dict[pdb_id]["graph"]["receptor"]
-            rec_graph.x = prot_graph_node_features
-            assert len(rec_graph.pos) == len(rec_graph.x)
-
-        return pdb_id2prot_dict
-
-    def _run_esm(self, batch, padding_idx):
-        """
-        1. Runs ESM on a batch of sequences
-        2. Crops representations and tokens to length of sequence
-
-        Args:
-            batches (list): list of tokenized sequences
-            padding_idx (int): padding index
-            esm_model (nn.Module): ESM model
-        Returns:
-            list: list of (esm_repr, tokens) without <CLS> and <EOS>
-        """
-        # run ESM model
+        # run ESM model, use args.freeze_esm for no training
         esm_output = self.esm_model(batch)
+
         tokens = esm_output["tokens"]
-        reps = output["token_hiddens"]
+        reps = esm_output["token_hiddens"]
 
         cropped_representations = []
         seq_len = [len(p) for p in batch["sequence"]]
 
+        # TODO: use padding mask
         for i, rep in enumerate(reps):
             length = seq_len[i]
-            rep_crop = rep[1 : length + 1]
-            token_crop = tokens[1 : length + 1, None]
-            cropped_representations.append((rep_crop, token_crop))
-        return cropped_representations
+            rep_cropped = rep[
+                1 : length + 1
+            ]  # removes cls at idx 0 and removes eos at idx length + 2
+            token_cropped = tokens[i][1 : length + 1, None]
+            cropped_representations.append((rep_cropped, token_cropped))
+
+        # dump to cache
+        if not args.no_graph_cache:
+            with open(esm_cache, "wb+") as f:
+                pickle.dump(cropped_representations, f)
+
+        # overwrite graph.x for each element in batch
+        self._save_esm_rep(batch, cropped_representations)
+
+        batch["mask_hiddens"] = esm_output["mask_hiddens"]
+
+        return batch
+
+    def _save_esm_rep(self, batch, cropped_representations):
+        """
+        Assign new ESM representation to graph.x INPLACE
+        """
+        all_graphs = batch["graph"].to_data_list()
+        # cropped_representations = (rep_crop, token_crop)
+        for idx, graph in enumerate(all_graphs):
+            rec_graph = graph["receptor"]
+            rec_graph.x = cropped_representations[idx][0]  # esm embedding
+            assert len(rec_graph.pos) == len(rec_graph.x)
+
+        batch["graph"] = Batch.from_data_list(all_graphs, None, None)
+
+        return batch
 
     @staticmethod
     def add_args(parser) -> None:
@@ -747,6 +375,163 @@ class EGNN_Classifier(AbstractModel):
             "--esm_model_name",
             type=str,
             action=set_nox_type("model"),
-            default="fair_esm",
+            default="fair_esm2",
             help="Name of esm encoder to use",
         )
+        parser.add_argument(
+            "--pool_type",
+            type=str,
+            choices=["none", "sum", "mul", "mean", "min", "max"],
+            default="sum",
+            help="Type of pooling to do to obtain graph features",
+        )
+        parser.add_argument(
+            "--neighbour_aggr",
+            type=str,
+            choices=["add", "sum", "mean", "max"],
+            default="sum",
+            help="Type of pooling to do to obtain graph features",
+        )
+        parser.add_argument(
+            "--edge_attr_dim",
+            type=int,
+            default=0,
+            help="",
+        )
+        parser.add_argument(
+            "--message_dim",
+            type=int,
+            default=16,
+            help="",
+        )
+        parser.add_argument(
+            "--soft_edge",
+            type=int,
+            default=0,
+            help="",
+        )
+        parser.add_argument(
+            "--norm_feats",
+            action="store_true",
+            default=False,
+            help="",
+        )
+        parser.add_argument(
+            "--norm_coors",
+            action="store_true",
+            default=False,
+            help="",
+        )
+        parser.add_argument(
+            "--update_feats",
+            action="store_true",
+            default=False,
+            help="",
+        )
+        parser.add_argument(
+            "--update_coors",
+            action="store_true",
+            default=False,
+            help="",
+        )
+        parser.add_argument(
+            "--norm_coors_scale_init",
+            type=float,
+            default=1e-2,
+            help="",
+        )
+        parser.add_argument(
+            "--coor_weights_clamp_value",
+            type=float,
+            default=None,
+            help="",
+        )
+        parser.add_argument(
+            "--egcl_layers",
+            type=int,
+            default=4,
+            help="",
+        )
+
+
+@register_object("egnn_active_site_classifier", "model")
+class EGNN_Active_Site_Classifier(EGNN_Classifier):
+    def __init__(self, args):
+        super(EGNN_Active_Site_Classifier, self).__init__(args)
+
+    def forward(self, batch=None):
+        output = {}
+        # run ESM and update node embeddings
+        batch = self.compute_embeddings(batch, self.args)
+        feats, coors = self.egnn(batch)
+        output["node_features"] = feats
+        output["node_coords"] = coors
+        # reshape to batch x nodes x features
+        output["graph_features"], mask = to_dense_batch(
+            output["node_features"], batch=batch["graph"]["receptor"].batch
+        )
+        output.update(
+            self.mlp({"x": output["graph_features"]})
+        )  # batch x nodes x features -> batch x nodes x 1
+
+        labels = batch["residue_mask"]
+        residue_mask = batch["mask_hiddens"][:, 1:-1]
+        # cross entropy will ignore the padded residues (ignore_index=-100)
+        labels[~residue_mask.squeeze(-1).bool()] = -100
+        batch["y"] = labels.unsqueeze(-1)
+
+        return output
+
+    @staticmethod
+    def set_args(args) -> None:
+        super(EGNN_Active_Site_Classifier, EGNN_Active_Site_Classifier).set_args(args)
+        args.num_classes = 2
+
+
+@register_object("egnn_active_site_conv_classifier", "model")
+class EGNN_Active_Site_Conv_Classifier(EGNN_Active_Site_Classifier):
+    def __init__(self, args):
+        super(EGNN_Active_Site_Conv_Classifier, self).__init__(args)
+
+    def forward(self, batch=None):
+        output = {}
+        # run ESM and update node embeddings
+        batch = self.compute_embeddings(batch, self.args)
+        feats, coors = self.egnn(batch)
+        output["node_features"] = feats
+        output["node_coords"] = coors
+        output.update(
+            self.mlp({"x": feats})
+        )  # nodes x 1
+        
+        # nodes x 1
+        aggr_logits = self.aggregate_neighborhood(output['logit'].squeeze(-1), batch['graph']["receptor", "contact", "receptor"].edge_index)
+        
+        # reshape to batch x nodes x 1
+        logit, mask = to_dense_batch(
+            aggr_logits, batch=batch["graph"]["receptor"].batch
+        )
+        
+        output["logit"] = logit.unsqueeze(-1)
+
+        labels = batch["residue_mask"] # .reshape(1, -1).squeeze(0) # flatten -> num nodes x 1
+        cropped_labels = []
+        for i, seq_label in enumerate(labels):
+            seq_len = len(batch['sequence'][i])
+            label_crop = seq_label[: seq_len]
+            cropped_labels.append(label_crop)
+        
+        cropped_labels = torch.cat(cropped_labels)
+        aggr_labels = self.aggregate_neighborhood(cropped_labels, batch['graph']["receptor", "contact", "receptor"].edge_index) # num nodes x 1
+        labels, labels_mask = to_dense_batch(aggr_labels.unsqueeze(-1), batch=batch["graph"]["receptor"].batch)  # batch x nodes x 1
+        
+        residue_mask = batch["mask_hiddens"][:, 1:-1]
+        # cross entropy will ignore the padded residues (ignore_index=-100)
+        labels[~residue_mask.squeeze(-1).bool()] = -100
+        batch["y"] = labels
+        return output
+
+    def aggregate_neighborhood(self, logits, edge_index, reduce='max'):
+        edge_idx_self_loops, edge_attr_self_loops = add_remaining_self_loops(edge_index)
+        aggr_logits = scatter(logits[edge_idx_self_loops[0]], edge_idx_self_loops[1], reduce=reduce)
+        return aggr_logits
