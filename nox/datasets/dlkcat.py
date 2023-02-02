@@ -72,12 +72,24 @@ class BrendaKCat(AbstractDataset):
 
         if float(sample["Value"]) <= 0:
             return True
+        
+        if self.args.generate_3d_graphs and not os.path.exists(os.path.join("/Mounts/rbg-storage1/datasets/Enzymes/DLKcat/DeeplearningApproach/Data/database/Kcat_combination_0918_wildtype_mutant_structures/", f"seq_id_{sample['seq_id']}.pdb")):
+            print("Skipped because missing structure")
+            return True
 
         # skip if sequence, smile pair has inconsistent values (across organisms, conditions)
         smi = sample["Smiles"]
         seq = sample["Sequence"]
         if any(i != seq_smi_2_y[f"{seq}{smi}"][0] for i in seq_smi_2_y[f"{seq}{smi}"]):
             return True
+
+        for char in ["B", "O", "Z", "J", "U", "X", "*"]:
+            if char in seq:
+                print(f"Skipped because sequence contains '{char}'")
+                return True
+        # seq_smi_2_y[f"{seq}{smi}"][0]
+        # if seq_smi_2_y[f"{seq}{smi}"][0] == 0:
+        #     return True
 
         return False
 
@@ -188,6 +200,10 @@ class BrendaKCat(AbstractDataset):
         sample = self.dataset[index]
         if self.args.generate_3d_graphs:
             sample, data_params = get_protein_graphs_from_path([sample], self.args)
+            del sample['receptor']
+            del sample['receptor_atom']
+            del sample['receptor_seq']
+            del sample['receptor_xyz']
         try:
             return sample
         except Exception:
