@@ -47,7 +47,14 @@ def read_files(data_to_load, args):
     )
     if args.debug:
         data_cache = data_cache.replace(".pkl", "_debug.pkl")
-    if not os.path.exists(data_cache):
+    
+    if not args.no_graph_cache and not os.path.exists(data_cache):
+        if not os.path.exists(os.path.dirname(data_cache)):
+            try:
+                os.makedirs(os.path.dirname(data_cache))
+            except OSError as exc:  # Guard against race condition
+                if exc.errno != exc.errno.EEXIST:
+                    raise
         with open(data_cache, "wb+") as f:
             pickle.dump(pdb_id2prot_dict, f)
     return pdb_id2prot_dict
@@ -69,7 +76,10 @@ def parse_pdb(pdb_id, pdb_path, models=None, chains=None):
     """
     all_res, all_atom, all_pos = [], [], []
     # biopython PDB parser
-    parser = Bio.PDB.PDBParser()
+    if pdb_path[-3:] == 'pdb':
+        parser = Bio.PDB.PDBParser()
+    elif pdb_path[-3:] == 'cif':
+        parser = Bio.PDB.MMCIFParser()
     structure = parser.get_structure(pdb_id, pdb_path)  # name, path
     # (optional) select subset of models
     if models is not None:
@@ -121,7 +131,7 @@ def process_data(pdb_id2prot_dict, args):
     if not args.no_graph_cache and os.path.exists(graph_cache):
         with open(graph_cache, "rb") as f:
             pdb_id2prot_dict = pickle.load(f)
-            print("Loaded processed data from cache")
+            # print("Loaded processed data from cache")
             return pdb_id2prot_dict
 
     # select subset of residues that match desired resolution (e.g. residue-level vs. atom-level)
@@ -130,6 +140,8 @@ def process_data(pdb_id2prot_dict, args):
         item["receptor_atom"] = subset[0]
         item["receptor_seq"] = subset[1]
         item["receptor_xyz"] = subset[2]
+        # if len(subset[2]) != len(item['sequence']):
+            # return None
 
     # convert to HeteroData graph objects
     for item in pdb_id2prot_dict.values():
@@ -159,9 +171,9 @@ def convert_pdb(all_res, all_atom, all_pos, args):
     if args.protein_resolution == "atom":
         atoms_to_keep = None
     elif args.protein_resolution == "backbone":
-        atoms_to_keep = ["N", "CA", "O", "CB"]
+        atoms_to_keep = {"N", "CA", "O", "CB"}
     elif args.protein_resolution == "residue":
-        atoms_to_keep = ["CA"]
+        atoms_to_keep = {"CA"}
     else:
         raise Exception(f"invalid resolution {args.protein_resolution}")
 
@@ -178,7 +190,9 @@ def convert_pdb(all_res, all_atom, all_pos, args):
         atom_names = all_atom
         seq = all_res
         pos = all_pos
+    
     assert pos.shape[0] == len(seq) == len(atom_names)
+        
     return atom_names, seq, pos
 
 
@@ -258,7 +272,7 @@ def compute_embeddings(pdb_id2prot_dict, args):
     if args.debug:
         esm_cache = esm_cache.replace(".pkl", "_debug.pkl")
     # check if we already computed embeddings
-    if os.path.exists(esm_cache):
+    if not args.no_graph_cache and os.path.exists(esm_cache):
         with open(esm_cache, "rb") as f:
             pdb_id2prot_graph_node_feat = pickle.load(f)
         _save_esm_rep(pdb_id2prot_dict, pdb_id2prot_graph_node_feat)
@@ -300,8 +314,10 @@ def compute_embeddings(pdb_id2prot_dict, args):
         else:
             rec_graph_x = torch.cat([rec_reps[idx][0], rec_reps[idx][1]], dim=1)
         pdb_id2prot_graph_node_feat[pdb] = rec_graph_x
-    with open(esm_cache, "wb+") as f:
-        pickle.dump(pdb_id2prot_graph_node_feat, f)
+    
+    if not args.no_graph_cache:
+        with open(esm_cache, "wb+") as f:
+            pickle.dump(pdb_id2prot_graph_node_feat, f)
 
     # overwrite graph.x for each element in batch
     _save_esm_rep(pdb_id2prot_dict, pdb_id2prot_graph_node_feat)
@@ -316,7 +332,11 @@ def _save_esm_rep(pdb_id2prot_dict, pdb_id2prot_graph_node_feat):
     for pdb_id, prot_graph_node_features in pdb_id2prot_graph_node_feat.items():
         rec_graph = pdb_id2prot_dict[pdb_id]["graph"]["receptor"]
         rec_graph.x = prot_graph_node_features
-        assert len(rec_graph.pos) == len(rec_graph.x)
+        # assert len(rec_graph.pos) == len(rec_graph.x)
+        if not len(rec_graph.pos) == len(rec_graph.x):
+            print(f"Sample's coords do not match sequence! {pdb_id2prot_dict}")
+            pdb_id2prot_dict = None
+            break
 
     return pdb_id2prot_dict
 
@@ -428,8 +448,9 @@ def get_protein_graphs_from_path(data_to_load, args):
     # filters resolution, generates graphs and caches pdb_id2prot_dict
     data_params = {}
     pdb_id2prot_dict = process_data(pdb_id2prot_dict, args)
-
+    if pdb_id2prot_dict is None:
+        return None, None
     # generate ESM embeddings and cache cat([one-hot, esm_embeddings])
     # pdb_id2prot_dict, data_params = process_embed(pdb_id2prot_dict, args)
-
-    return pdb_id2prot_dict.values(), data_params
+    sample = [pdb_id2prot_dict[key] for key in pdb_id2prot_dict][0]
+    return sample, data_params
