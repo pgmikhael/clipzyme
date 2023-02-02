@@ -77,6 +77,7 @@ import nox.models.longformer
 import nox.models.enzymenet
 import nox.models.seq2seq
 import nox.models.contrastive
+import nox.models.egnn
 
 # comet
 import nox.loggers.comet
