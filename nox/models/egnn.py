@@ -474,11 +474,12 @@ class EGNN_Active_Site_Classifier(EGNN_Classifier):
             self.mlp({"x": output["graph_features"]})
         )  # batch x nodes x features -> batch x nodes x 1
 
+        output['logit'] = output['logit'].squeeze(-1)
         labels = batch["residue_mask"]
         residue_mask = batch["mask_hiddens"][:, 1:-1]
         # cross entropy will ignore the padded residues (ignore_index=-100)
         labels[~residue_mask.squeeze(-1).bool()] = -100
-        batch["y"] = labels.unsqueeze(-1)
+        batch["y"] = labels
 
         return output
 
@@ -512,7 +513,7 @@ class EGNN_Active_Site_Conv_Classifier(EGNN_Active_Site_Classifier):
             aggr_logits, batch=batch["graph"]["receptor"].batch
         )
         
-        output["logit"] = logit.unsqueeze(-1)
+        output["logit"] = logit
 
         labels = batch["residue_mask"] # .reshape(1, -1).squeeze(0) # flatten -> num nodes x 1
         cropped_labels = []
@@ -528,10 +529,15 @@ class EGNN_Active_Site_Conv_Classifier(EGNN_Active_Site_Classifier):
         residue_mask = batch["mask_hiddens"][:, 1:-1]
         # cross entropy will ignore the padded residues (ignore_index=-100)
         labels[~residue_mask.squeeze(-1).bool()] = -100
-        batch["y"] = labels
+        batch["y"] = labels.squeeze(-1)
         return output
 
     def aggregate_neighborhood(self, logits, edge_index, reduce='max'):
         edge_idx_self_loops, edge_attr_self_loops = add_remaining_self_loops(edge_index)
         aggr_logits = scatter(logits[edge_idx_self_loops[0]], edge_idx_self_loops[1], reduce=reduce)
         return aggr_logits
+
+    @staticmethod
+    def set_args(args) -> None:
+        super(EGNN_Active_Site_Conv_Classifier, EGNN_Active_Site_Conv_Classifier).set_args(args)
+        args.num_classes = 1
