@@ -15,19 +15,22 @@ class CrossEntropyLoss(Nox):
     def __call__(self, model_output, batch, model, args):
         logging_dict, predictions = OrderedDict(), OrderedDict()
         logit = model_output["logit"]
-        if args.precomputed_loss:
-            loss = model_output["loss"]
-        else:
-            loss = F.cross_entropy(logit.view(-1, args.num_classes), batch["y"].view(-1).long()) * args.ce_loss_lambda
-        logging_dict["cross_entropy_loss"] = loss.detach()
-        predictions["probs"] = F.softmax(logit, dim=-1).detach()
-        predictions["preds"] = predictions["probs"].argmax(axis=-1)
+
         if "y" in batch:
             predictions["golds"] = batch["y"]
         elif "y" in model_output:
             predictions["golds"] = model_output["y"]
         else:
             raise KeyError("predictions_dict ERROR: y not found")
+        
+        target = predictions["golds"] 
+        if args.precomputed_loss:
+            loss = model_output["loss"]
+        else:
+            loss = F.cross_entropy(logit.view(-1, args.num_classes), target.view(-1).long()) * args.ce_loss_lambda
+        logging_dict["cross_entropy_loss"] = loss.detach()
+        predictions["probs"] = F.softmax(logit, dim=-1).detach()
+        predictions["preds"] = predictions["probs"].argmax(axis=-1)
         
         if not args.keep_preds_dim:
              predictions["golds"] =  predictions["golds"].view(-1)

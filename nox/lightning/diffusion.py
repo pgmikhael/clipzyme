@@ -7,8 +7,9 @@ from nox.utils.digress.visualization import MolecularVisualization
 class DiscreteDenoisingDiffusion(Base):
     def __init__(self, args):
         super().__init__(args)
-        self.sampling_metric_val = get_object(args.sampling_metric, "metric")(args)
-        self.sampling_metric_test = get_object(args.sampling_metric, "metric")(args)
+        if args.compute_sampling_metric:
+            self.sampling_metric_val = get_object(args.sampling_metric, "metric")(args)
+            self.sampling_metric_test = get_object(args.sampling_metric, "metric")(args)
         self.args.val_counter = 0
         self.visualization_tools = MolecularVisualization(
             args.remove_h, dataset_infos=args.dataset_statistics
@@ -85,17 +86,20 @@ class DiscreteDenoisingDiffusion(Base):
                 # Visualize samples
                 if self.args.val_counter % self.args.visualize_diffusion_samples_every_val == 0:
                     self.log_generated_samples(sampled_dict, num_to_log=to_save)
-
-                self.sampling_metric_val.update({"molecules": samples}, self.args)
-                sampling_metrics = self.sampling_metric_val.compute()
-                sampling_metrics = {k: torch.tensor([v], device=self.device).float() for k,v in sampling_metrics.items()}
-                outputs.update(sampling_metrics)
+                
+                if self.args.compute_sampling_metric:
+                    self.sampling_metric_val.update({"molecules": samples}, self.args)
+                    sampling_metrics = self.sampling_metric_val.compute()
+                    sampling_metrics = {k: torch.tensor([v], device=self.device).float() for k,v in sampling_metrics.items()}
+                    outputs.update(sampling_metrics)
                 
         self.log_outputs(outputs, "val")
 
         for metric_fn in self.metrics["val"]:
             metric_fn.reset()
-        self.sampling_metric_val.reset()
+
+        if self.args.compute_sampling_metric:
+            self.sampling_metric_val.reset()
 
     def test_epoch_end(self, outs) -> None:
         """Measure likelihood on a test set and compute stability metrics."""
@@ -135,7 +139,7 @@ class DiscreteDenoisingDiffusion(Base):
             if self.args.visualize_diffusion_samples:
                 self.log_generated_samples(sampled_dict, num_to_log=to_save)
 
-        if not self.args.predict:
+        if not self.args.predict and self.args.compute_sampling_metric:
             self.sampling_metric_test.update({"molecules": samples}, self.args)
             sampling_metrics = self.sampling_metric_val.compute()
             sampling_metrics = {k: torch.tensor([v], device=self.device).float() for k,v in sampling_metrics.items()}
@@ -145,7 +149,9 @@ class DiscreteDenoisingDiffusion(Base):
 
         for metric_fn in self.metrics["test"]:
             metric_fn.reset()
-        self.sampling_metric_test.reset()
+        
+        if self.args.compute_sampling_metric:
+            self.sampling_metric_test.reset()
 
     def log_generated_samples(self, sampled_dict, num_to_log):
         chain_X = sampled_dict["chain_X"]
@@ -245,6 +251,12 @@ class DiscreteDenoisingDiffusion(Base):
             type=int,
             default=100,
             help="how often to visualize samples during training",
+        )
+        parser.add_argument(
+            "--compute_sampling_metric",
+            action="store_true",
+            default=False,
+            help="whether to compute the `SamplingMolecularMetrics` metric",
         )
 
         

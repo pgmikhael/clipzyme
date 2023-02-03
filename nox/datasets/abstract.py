@@ -33,6 +33,8 @@ class AbstractDataset(data.Dataset, Nox):
         self.dataset = self.create_dataset(split_group)
         if len(self.dataset) == 0:
             return
+        
+        self.post_process(args)
 
         self.set_sample_weights(args)
 
@@ -52,6 +54,9 @@ class AbstractDataset(data.Dataset, Nox):
             self.assign_splits(self.metadata_json, args.split_probs, args.split_seed)
         else:
             rprint("[magenta]WARNING: `assign_splits` = False[/magenta]")
+
+    def post_process(self, args):
+        pass 
 
     def load_dataset(self, args: argparse.ArgumentParser) -> None:
         """Loads dataset file
