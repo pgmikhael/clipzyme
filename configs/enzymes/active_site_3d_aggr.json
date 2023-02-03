@@ -10,7 +10,7 @@
       "split_probs": ["0.8 0.1 0.1"],
       "mcsa_skip_unk_smiles": [true],
       "lightning_name": ["base"],
-      "model_name": ["egnn_active_site_classifier"],
+      "model_name": ["egnn_active_site_conv_classifier"],
       "freeze_esm": [true],
       "mlp_input_dim": [480],
       "mlp_layer_configuration": ["300 300"],

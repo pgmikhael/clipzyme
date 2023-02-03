@@ -18,7 +18,7 @@
       "max_epochs": [25],
       "lr_decay": [0.1],
       "lr": [3e-4],
-      "loss_names": ["binary_cross_entropy_logits"],
+      "loss_names": ["cross_entropy"],
       "ce_loss_lambda": [1.0],
       "metric_names": ["seq2seq_classification"],
       "checkpoint_save_last": [false],
@@ -54,7 +54,8 @@
       "update_coors": [true],
       "egcl_layers": [4],
       "structures_dir": ["/Mounts/rbg-storage1/datasets/Metabo/Brenda/pdb_structures/"],
-      "compute_metrics_every_step": [true]
+      "compute_metrics_every_step": [true],
+      "keep_preds_dim": [true]
     },
     "available_gpus": ["3,4,5,6"]
   }
