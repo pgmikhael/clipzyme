@@ -367,9 +367,13 @@ class AtomMetricsCE(MetricCollection):
             "Si": SiCE,
         }
 
-        metrics_list = []
+        # metrics_list = []
+        # for i, atom_type in enumerate(atom_decoder):
+        #     metrics_list.append(class_dict[atom_type](i))
+        metrics_list = {}
         for i, atom_type in enumerate(atom_decoder):
-            metrics_list.append(class_dict[atom_type](i))
+            metrics_list[f"{atom_type}_metric"] = CEPerClass(i)
+            
         super().__init__(metrics_list)
 
 
@@ -382,6 +386,52 @@ class BondMetricsCE(MetricCollection):
         ce_AR = AromaticCE(4)
         super().__init__([ce_no_bond, ce_SI, ce_DO, ce_TR, ce_AR])
 
+class MoleculeAccuracy(Metric):
+    def __init__(self):
+        super().__init__()
+        self.add_state("total_mol_correct", default=torch.tensor(0.0), dist_reduce_fx="sum")
+        self.add_state("total_edge_accuracy", default=torch.tensor(0.0), dist_reduce_fx="sum")
+        self.add_state("total_node_accuracy", default=torch.tensor(0.0), dist_reduce_fx="sum")
+        self.add_state("total_samples", default=torch.tensor(0.0), dist_reduce_fx="sum")
+    
+    def update(self, predictions_dict, args):
+        masked_pred_X = predictions_dict["masked_pred_X"]
+        masked_pred_E = predictions_dict["masked_pred_E"]
+        true_X = predictions_dict["true_X"] # batch size, num nodes, one-hot vector
+        true_E = predictions_dict["true_E"]
+
+        # nodes correct
+        x_mask = (true_X != 0.0).any(dim=-1)
+        x_label = torch.argmax(true_X, -1) 
+        x_pred = torch.softmax(masked_pred_X, -1).argmax(-1) 
+
+        node_accuracy = ((x_label == x_pred) * x_mask).sum(-1) / x_mask.sum(-1)
+        self.total_node_accuracy = node_accuracy.sum()
+        
+        # edges correct, NOTE: diagonals are all zero-vectors (no self-loop)
+        e_mask = (true_E != 0.0).any(dim=-1)
+        e_label = torch.argmax(true_E, -1) 
+        e_pred = torch.softmax(masked_pred_E, -1).argmax(-1)  # diagonals are masked, so no scores
+        
+        edge_accuracy = ((e_label == e_pred) * e_mask).sum((-1,-2)) / e_mask.sum((-1,-2))
+        self.total_edge_accuracy = edge_accuracy.sum()
+
+        # entire molecule correct
+        correct_nodes = torch.all( (x_label * x_mask) == (x_pred * x_mask),-1)
+        correct_edges = ( (e_label * e_mask) == (e_pred * e_mask)).all(-1).all(-1) 
+
+        # molecule accuracy         
+        self.total_mol_correct += torch.logical_and(correct_nodes, correct_edges).sum()
+        self.total_samples += len(masked_pred_X)
+
+    def compute(self):
+        stats_dict = {
+            "average_node_accuracy": self.total_node_accuracy  / self.total_samples,
+            "average_edge_accuracy": self.total_edge_accuracy  / self.total_samples,
+            "top1_molecule_accuracy": self.total_mol_correct /  self.total_samples
+        }
+        return stats_dict
+
 
 @register_object("molecule_classification_metrics", "metric")
 class TrainMolecularMetricsDiscrete(Metric, Nox):
@@ -389,15 +439,17 @@ class TrainMolecularMetricsDiscrete(Metric, Nox):
         super().__init__()
         self.train_atom_metrics = AtomMetricsCE(dataset_infos=args.dataset_statistics)
         self.train_bond_metrics = BondMetricsCE()
+        self.molecule_metrics = MoleculeAccuracy()
 
-    def update(self, predictions_dict, args) -> Dict:
+    def update(self, predictions_dict, args):
         masked_pred_X = predictions_dict["masked_pred_X"]
         masked_pred_E = predictions_dict["masked_pred_E"]
-        true_X = predictions_dict["true_X"]
+        true_X = predictions_dict["true_X"] # batch size, num nodes, one-hot vector
         true_E = predictions_dict["true_E"]
 
         self.train_atom_metrics(masked_pred_X, true_X)
         self.train_bond_metrics(masked_pred_E, true_E)
+        self.molecule_metrics(predictions_dict, args)
 
     def compute(self):
         stats_dict = {}
@@ -405,11 +457,12 @@ class TrainMolecularMetricsDiscrete(Metric, Nox):
             stats_dict[key] = val.item()
         for key, val in self.train_bond_metrics.compute().items():
             stats_dict[key] = val.item()
-
+        for key, val in self.molecule_metrics.compute().items():
+            stats_dict[key] = val.item()
         return stats_dict
 
     def reset(self):
-        for metric in [self.train_atom_metrics, self.train_bond_metrics]:
+        for metric in [self.train_atom_metrics, self.train_bond_metrics, self.molecule_metrics]:
             metric.reset()
         
     @property
