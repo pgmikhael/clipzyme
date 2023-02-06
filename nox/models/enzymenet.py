@@ -134,3 +134,92 @@ class EnzymeActiveSiteModel(AbstractModel):
             default="mlp_classifier",
             help="Name of encoder to use",
         )
+
+
+@register_object("enzyme_active_site_predictor_attention", "model")
+class EnzymeActiveSiteAttentionModel(EnzymeActiveSiteModel):
+    def forward(self, batch=None):
+        batch_size = len(batch["sequence"])
+        seq_len = [len(p) for p in batch["sequence"]]
+        sequence_dict = self.protein_encoder(batch["sequence"])
+        """
+        originally attentions = batch_size, layers, heads, seqlen, seqlen
+        if using contacts then:
+        then attentions = batch_size, layers * heads, seqlen, seqlen
+        then (permute) attentions = batch_size, seqlen, seqlen, layers * heads (0, 2, 3, 1)
+        then self.activation(self.regression(attentions).squeeze(3)) = batch_size, seqlen, seqlen
+        note sigmoid is applied in the activation function, so we have 0<=a_b,i,j<=1 for b batch, i,j tokens
+        """
+        attentions = sequence_dict["attentions"]  # B, layers, heads, seqlen, seqlen
+        tokens = sequence_dict["tokens"]
+        self.prepend_bos = self.protein_encoder.alphabet.prepend_bos
+        self.append_eos = self.protein_encoder.alphabet.append_eos
+        self.eos_idx = self.protein_encoder.alphabet.eos_idx
+        # remove eos token attentions
+        if self.append_eos:
+            eos_mask = tokens.ne(self.eos_idx).to(attentions)
+            eos_mask = eos_mask.unsqueeze(1) * eos_mask.unsqueeze(2)
+            attentions = attentions * eos_mask[:, None, None, :, :]
+            attentions = attentions[..., :-1, :-1]
+        # remove cls token attentions
+        if self.prepend_bos:
+            attentions = attentions[..., 1:, 1:]
+
+        batch_size, layers, heads, seqlen, _ = attentions.size()
+        attentions = attentions.view(
+            batch_size, layers * heads, seqlen, seqlen
+        )  # features: B x C x T x T
+        attentions = attentions.permute(0, 2, 3, 1)  # features: B x T x T x C
+        # aggregate across each token
+        attentions = attentions.sum(dim=2)  # features: B x T x C
+
+        output = self.mlp({"x": attentions})  # B x T x num_classes
+
+        residue_mask = sequence_dict["mask_hiddens"][:, 1:-1]
+        labels = batch["residue_mask"]
+        labels = labels[:, :residue_mask.shape[1]].contiguous() # if truncating protein, truncates labels
+        # cross entropy will ignore the padded residues (ignore_index=-100)
+        labels[~residue_mask.squeeze(-1).bool()] = -100
+        batch["y"] = labels
+
+        return output
+
+    @staticmethod
+    def set_args(args) -> None:
+        super(EnzymeActiveSiteModel, EnzymeActiveSiteModel).set_args(args)
+        args.mlp_input_dim = 20 * 12
+
+
+@register_object("enzyme_active_site_predictor_contact_maps", "model")
+class EnzymeActiveSiteAttentionModel(EnzymeActiveSiteModel):
+    def forward(self, batch=None):
+        batch_size = len(batch["sequence"])
+        seq_len = [len(p) for p in batch["sequence"]]
+        sequence_dict = self.protein_encoder(batch["sequence"])
+        """
+        originally attentions = batch_size, layers, heads, seqlen, seqlen
+        if using contacts then:
+        then attentions = batch_size, layers * heads, seqlen, seqlen
+        then (permute) attentions = batch_size, seqlen, seqlen, layers * heads (0, 2, 3, 1)
+        then self.activation(self.regression(attentions).squeeze(3)) = batch_size, seqlen, seqlen
+        note sigmoid is applied in the activation function, so we have 0<=a_b,i,j<=1 for b batch, i,j tokens
+        """
+        contacts = sequence_dict["contacts"] # B, (batch_tokens - 2), (batch_tokens - 2)
+
+        contacts = contacts.sum(dim=2)  # features: B x T
+
+        output = self.mlp({"x": attentions})  # B x T x num_classes
+
+        residue_mask = sequence_dict["mask_hiddens"][:, 1:-1]
+        labels = batch["residue_mask"]
+        labels = labels[:, :residue_mask.shape[1]].contiguous() # if truncating protein, truncates labels
+        # cross entropy will ignore the padded residues (ignore_index=-100)
+        labels[~residue_mask.squeeze(-1).bool()] = -100
+        batch["y"] = labels
+
+        return output
+
+    @staticmethod
+    def set_args(args) -> None:
+        super(EnzymeActiveSiteModel, EnzymeActiveSiteModel).set_args(args)
+        args.mlp_input_dim = 20 * 12

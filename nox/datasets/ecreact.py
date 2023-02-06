@@ -67,6 +67,7 @@ class ECReact(BrendaReaction):
                 "ec": ec,
                 "reaction_string":reaction_string,
                 "sample_id": sample_id,
+                "split": reaction.get("split", None)
             }
 
             if hasattr(self, "to_split"):
@@ -102,6 +103,10 @@ class ECReact(BrendaReaction):
             if self.args.split_type == "product":
                 if any(self.to_split[p] != split_group for p in sample["products"]):
                     return True
+        
+        elif sample["split"] is not None:
+            if sample["split"] != split_group:
+                return True
 
         # if sequence is unknown
         if (sample["sequence"] is None) or (len(sample["sequence"]) == 0):
@@ -318,7 +323,7 @@ class ECReact_RXNS(ECReact):
 
             samples = sorted(list(set(samples)))
             np.random.shuffle(samples)
-            split_indices = np.cumsum(np.array(split_probs) * len(samples)).astype(int)
+            split_indices = np.ceil( np.cumsum(np.array(split_probs) * len(samples)) ).astype(int)
             split_indices = np.concatenate([[0], split_indices])
             
             for i in range(len(split_indices) - 1):
@@ -349,7 +354,7 @@ class ECReact_RXNS(ECReact):
 
         dataset = []
         
-        for reaction in tqdm(self.metadata_json, desc="Building dataset"):
+        for rowid, reaction in tqdm(enumerate(self.metadata_json), desc="Building dataset"):
             
             ec = reaction["ec"]
             reactants = reaction["reactants"]
@@ -364,7 +369,8 @@ class ECReact_RXNS(ECReact):
                     "ec": ec,
                     "reaction_string":reaction_string,
                     "protein_id": uniprot,
-                    "sequence": self.uniprot2sequence[uniprot]
+                    "sequence": self.uniprot2sequence[uniprot],
+                    "split": reaction.get("split", None)
 
                 }
                 if self.skip_sample(temp_sample, split_group):
@@ -383,6 +389,7 @@ class ECReact_RXNS(ECReact):
                     "products": products,
                     "ec": ec,
                     "reaction_string":reaction_string,
+                    "rowid": rowid
                 }
             
             # add reaction sample to dataset
@@ -399,14 +406,18 @@ class ECReact_RXNS(ECReact):
             if self.to_split[split_ec] != split_group:
                 return True
         
-        if self.args.split_type == "product":
+        elif self.args.split_type == "product":
             products = sample['products']
             if any(self.to_split[p] != split_group for p in products):
                 return True
 
-        if self.args.split_type == "sequence":
+        elif self.args.split_type == "sequence":
             uniprot = sample['protein_id']
             if self.to_split[uniprot] != split_group:
+                return True
+        
+        elif sample["split"] is not None:
+            if sample["split"] != split_group:
                 return True
 
         # if sequence is unknown
@@ -421,7 +432,7 @@ class ECReact_RXNS(ECReact):
 
     @staticmethod
     def set_args(args):
-        args.dataset_file_path = '/Mounts/rbg-storage1/datasets/Enzymes/ECReact/ecreact-1.0.json'
+        args.dataset_file_path = '/Mounts/rbg-storage1/datasets/Enzymes/ECReact/ecreact_ibm_splits.json'
     
     def __getitem__(self, index):
         sample = self.dataset[index]
@@ -464,8 +475,8 @@ class ECReact_RXNS(ECReact):
                     pass
             
 
-            sample_id = hashlib.md5(f"{uniprot_id}_{sample['reaction_string']}".encode()).hexdigest()
-                
+            # sample_id = hashlib.md5(f"{uniprot_id}_{sample['reaction_string']}".encode()).hexdigest()
+            sample_id = sample['rowid']    
             item = {
                 "reaction": reaction,
                 "reactants": ".".join(reactants),
@@ -475,11 +486,11 @@ class ECReact_RXNS(ECReact):
                 "organism": sample.get("organism", "none"),
                 "protein_id": uniprot_id,
                 "sample_id": sample_id,
-                "residues": ".".join(residues),
-                "has_residues": has_residues,
-                "residue_positions": ".".join(
-                    [str(s) for s in residue_positions]
-                ),
+                # "residues": ".".join(residues),
+                # "has_residues": has_residues,
+                # "residue_positions": ".".join(
+                #     [str(s) for s in residue_positions]
+                # ),
             }
 
             if self.args.precomputed_esm_features_dir is not None:
@@ -515,3 +526,20 @@ class ECReact_RXNS(ECReact):
         * Number of ECs: {len(set(ecs))}
         """
         return statement
+
+
+@register_object("ecreact_multiproduct_reactions", "dataset")
+class ECReact_MultiProduct_RXNS(ECReact_RXNS):
+
+    @staticmethod
+    def set_args(args):
+        args.dataset_file_path = '/Mounts/rbg-storage1/datasets/Enzymes/ECReact/ecreact_multiproduct.json'
+    
+    def skip_sample(self, sample, split_group) -> bool:
+        if super().skip_sample(sample, split_group):
+            return True
+        
+        if len(sample['reaction_string']) > 2000:
+            return True 
+        
+        return False 
