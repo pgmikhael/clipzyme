@@ -151,8 +151,6 @@ class DatasetInfo:
 
 @register_object("ecreact_graph", "dataset")
 class ECReactGraph(ECReact_RXNS):
-    # def __init__(self, args, split_group) -> None:
-    #     super(ECReactGraph,ECReactGraph).__init__(self, args, split_group)
 
     def post_process(self, args):
         split_group = self.split_group
@@ -167,7 +165,7 @@ class ECReactGraph(ECReact_RXNS):
 
         data_info = DatasetInfo(smiles, args) 
 
-        extra_features = ExtraFeatures(args.extra_features_type, dataset_info=data_info) # TODO: should be done
+        extra_features = ExtraFeatures(args.extra_features_type, dataset_info=data_info) 
 
         example_batch = [from_smiles(smiles[0]), from_smiles(smiles[1])]
         example_batch = Batch.from_data_list(example_batch, None, None)
@@ -365,6 +363,12 @@ class ECReactGraph(ECReact_RXNS):
             default=None,
             help="extra features to use",
         )
+        parser.add_argument(
+            "--protein_feature_dim",
+            type=int,
+            default=480,
+            help="size of protein residue features from ESM models",
+        )
 
 @register_object("ecreact_multiproduct_graph", "dataset")
 class ECReact_MultiProduct_Graph(ECReact_MultiProduct_RXNS):
@@ -372,3 +376,130 @@ class ECReact_MultiProduct_Graph(ECReact_MultiProduct_RXNS):
     @staticmethod
     def set_args(args):
         args.dataset_file_path = '/Mounts/rbg-storage1/datasets/Enzymes/ECReact/ecreact_multiproduct.json'
+
+
+@register_object("ecreact_substrates", "dataset")
+class ECReactSubstrate(ECReactGraph):
+
+    def post_process(self, args):
+        split_group = self.split_group
+        
+        # get data info (input / output dimensions)
+        train_dataset = [d for d in self.dataset if d['split'] == 'train']
+        
+        smiles = set()
+        for d in train_dataset:
+            smiles.add(d['reactant'])
+        smiles = list(smiles)
+
+        data_info = DatasetInfo(smiles, args) 
+
+        extra_features = ExtraFeatures(args.extra_features_type, dataset_info=data_info) 
+
+        example_batch = [from_smiles(smiles[0]), from_smiles(smiles[1])]
+        example_batch = Batch.from_data_list(example_batch, None, None)
+        
+        data_info.compute_input_output_dims(
+            example_batch=example_batch,
+            extra_features=extra_features,
+            domain_features=None,
+        )
+        data_info.input_dims["y"] += args.protein_feature_dim
+
+        args.dataset_statistics = data_info
+        args.extra_features = extra_features
+        args.domain_features = None
+
+        # check right split
+        self.dataset = [d for d in self.dataset if d['split'] == split_group]
+        
+
+    def create_dataset(
+        self, split_group: Literal["train", "dev", "test"]
+    ) -> List[dict]:
+
+        dataset = []
+        
+        for rowid, reaction in tqdm(enumerate(self.metadata_json), total=len(self.metadata_json), desc="Building dataset"):
+            
+            ec = reaction["ec"]
+            reactants = reaction["reactants"]
+            products = reaction["products"]
+            reaction_string = ".".join(reactants)+ ">>" + ".".join(products)
+            
+            valid_uniprots = []
+            for uniprot in self.ec2uniprot.get(ec, []):
+                temp_sample = {
+                    "reactants": reactants,
+                    "products": products,
+                    "ec": ec,
+                    "reaction_string":reaction_string,
+                    "protein_id": uniprot,
+                    "sequence": self.uniprot2sequence[uniprot],
+                    "split": reaction.get("split", None)
+
+                }
+                if self.skip_sample(temp_sample, split_group):
+                    continue
+                
+                valid_uniprots.append(uniprot)
+            
+            if len(valid_uniprots) == 0:
+                continue 
+
+            if ec not in self.valid_ec2uniprot:
+                self.valid_ec2uniprot[ec] = valid_uniprots
+
+            for rid, reactant in enumerate(reactants):
+                sample = {
+                        "reactant": reactant,
+                        "ec": ec,
+                        "reaction_string":reaction_string,
+                        "rowid": f"{rid}{rowid}",
+                        "split": reaction["split"]
+                    }
+                
+                dataset.append(sample)
+        
+        return dataset
+    
+
+    def __getitem__(self, index):
+        sample = self.dataset[index]
+
+        try:
+            reactant = sample["reactant"]
+
+            ec = sample["ec"]
+            valid_uniprots = self.valid_ec2uniprot[ec]
+            uniprot_id = random.sample(valid_uniprots, 1)[0]
+            sequence = self.uniprot2sequence[uniprot_id]
+            
+            residue_dict = self.get_uniprot_residues(self.mcsa_data, sequence, ec)
+            residues = residue_dict["residues"]
+            residue_mask = residue_dict["residue_mask"]
+            has_residues = residue_dict["has_residues"]
+            residue_positions = residue_dict["residue_positions"]
+
+            # first feature is atomic number
+            reactant.x = F.one_hot(reactant.x[:,0], len(x_map["atomic_num"]) ).to(torch.float)
+            # first feature is bond type
+            reactant.edge_attr = F.one_hot(reactant.edge_attr[:,0], len(e_map["bond_type"]) ).to(torch.float)
+
+            reactant.y = []
+            reactant.sample_id = sample['rowid']  
+            sample_id.sequence =  sequence
+            
+            esm_features = pickle.load(open(
+                os.path.join(self.args.precomputed_esm_features_dir, f"sample_{uniprot_id}.predictions"), 'rb'
+            ))
+            
+            mask_hiddens = esm_features["mask_hiddens"] # sequence len, 1
+            protein_hidden = esm_features["hidden"] 
+            # token_hiddens = esm_features["token_hiddens"][mask_hiddens[:,0].bool()]
+            reactant.y = protein_hidden
+
+            return reactant
+
+        except Exception:
+            warnings.warn(f"Could not load sample: {sample['rowid']}")

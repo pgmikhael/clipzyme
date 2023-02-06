@@ -335,11 +335,12 @@ class GraphTransformer(AbstractModel):
             nn.Linear(hidden_mlp_dims["E"], output_dims["E"]),
         )
 
-        self.mlp_out_y = nn.Sequential(
-            nn.Linear(hidden_dims["dy"], hidden_mlp_dims["y"]),
-            nn.ReLU(),
-            nn.Linear(hidden_mlp_dims["y"], output_dims["y"]),
-        )
+        if output_dims["y"] > 0:
+            self.mlp_out_y = nn.Sequential(
+                nn.Linear(hidden_dims["dy"], hidden_mlp_dims["y"]),
+                nn.ReLU(),
+                nn.Linear(hidden_mlp_dims["y"], output_dims["y"]),
+            )
 
     def forward(self, batch):
         X, E, y, node_mask = (
@@ -371,11 +372,15 @@ class GraphTransformer(AbstractModel):
 
         X = self.mlp_out_X(X)
         E = self.mlp_out_E(E)
-        y = self.mlp_out_y(y)
 
         X = X + X_to_out
         E = (E + E_to_out) * diag_mask
-        y = y + y_to_out
+
+        if hasattr(self, "mlp_out_y"):
+            y = self.mlp_out_y(y)
+            y = y + y_to_out
+        else:
+            y = y_to_out
 
         E = 1 / 2 * (E + torch.transpose(E, 1, 2))
 

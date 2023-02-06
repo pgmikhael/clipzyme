@@ -629,3 +629,113 @@ class DigressReactants(Digress):
             "chain_E": chain_E,
             "molecules": molecule_list
         }
+
+@register_object("digress_substrate", "model")
+class DigressSubstrate(Digress):
+    def __init__(self, args):
+        super(DigressSubstrate, self).__init__(args)
+        max_num_nodes = self.dataset_info.max_n_nodes  
+        self.substrate_size_predictor = nn.Linear(args.protein_feature_dim, max_num_nodes)
+
+    def forward(self, data):
+        output = super().forward(data)
+        # use protein embeddings to predict number of substrate nodes
+        protein_embed = data.y[:,:self.args.protein_feature_dim]
+        output["logit"] = self.product_size_predictor(protein_embed)
+        output["y"] = output["node_mask"].sum(1) - 1 # subtract 1 so that 1st class corresponds to size of 1
+        return output
+    
+    @torch.no_grad()
+    def sample_batch(
+        self,
+        batch_id: int,
+        batch_size: int,
+        keep_chain: int,
+        number_chain_steps: int,
+        num_nodes=None,
+    ):
+        """
+        :param batch_id: int
+        :param batch_size: int
+        :param num_nodes: int, <int>tensor (batch_size) (optional) for specifying number of nodes
+        :param keep_chain: int: number of chains to save to file
+        :param keep_chain_steps: number of timesteps to save for each chain
+        :return: molecule_list. Each element of this list is a tuple (atom_types, charges, positions)
+        """
+
+        protein_embed = data.y[:,:self.args.protein_feature_dim]
+        scores = torch.softmax(self.product_size_predictor(protein_embed),-1)
+        n_nodes = torch.multinomial(scores, 1).view(-1)
+        
+        n_max = torch.max(n_nodes).item()
+        # Build the masks
+        arange = (
+            torch.arange(n_max, device=self.devicevar.device).unsqueeze(0).expand(batch_size, -1)
+        )
+        node_mask = arange < n_nodes.unsqueeze(1)
+        # Sample noise  -- z has size (n_samples, n_nodes, n_features)
+        z_T = diffusion_utils.sample_discrete_feature_noise(
+            limit_dist=self.limit_dist, node_mask=node_mask
+        )
+        X, E, y = z_T.X, z_T.E, z_T.y
+
+        assert (E == torch.transpose(E, 1, 2)).all()
+        assert number_chain_steps < self.T
+        chain_X_size = torch.Size((number_chain_steps, keep_chain, X.size(1)))
+        chain_E_size = torch.Size(
+            (number_chain_steps, keep_chain, E.size(1), E.size(2))
+        )
+
+        chain_X = torch.zeros(chain_X_size) # chain length, batch size, max num nodes 
+        chain_E = torch.zeros(chain_E_size) # chain length, batch size, max num nodes x max num nodes
+
+        # Iteratively sample p(z_s | z_t) for t = 1, ..., T, with s = t - 1.
+        for s_int in reversed(range(0, self.T)):
+            s_array = s_int * torch.ones((batch_size, 1)).type_as(y)
+            t_array = s_array + 1
+            s_norm = s_array / self.T
+            t_norm = t_array / self.T
+
+            # Sample z_s
+            sampled_s, discrete_sampled_s = self.sample_p_zs_given_zt(
+                s_norm, t_norm, X, E, y, node_mask
+            )
+            X, E, y = sampled_s.X, sampled_s.E, sampled_s.y
+
+            # Save the first keep_chain graphs
+            write_index = (s_int * number_chain_steps) // self.T
+            chain_X[write_index] = discrete_sampled_s.X[:keep_chain]
+            chain_E[write_index] = discrete_sampled_s.E[:keep_chain]
+
+        # Sample
+        sampled_s = sampled_s.mask(node_mask, collapse=True)
+        X, E, y = sampled_s.X, sampled_s.E, sampled_s.y
+
+        # Prepare the chain for saving
+        if keep_chain > 0:
+            final_X_chain = X[:keep_chain]
+            final_E_chain = E[:keep_chain]
+
+            chain_X[0] = final_X_chain  # Overwrite last frame with the resulting X, E
+            chain_E[0] = final_E_chain
+
+            chain_X = diffusion_utils.reverse_tensor(chain_X)
+            chain_E = diffusion_utils.reverse_tensor(chain_E)
+
+            # Repeat last frame to see final sample better
+            chain_X = torch.cat([chain_X, chain_X[-1:].repeat(10, 1, 1)], dim=0)
+            chain_E = torch.cat([chain_E, chain_E[-1:].repeat(10, 1, 1, 1)], dim=0)
+            assert chain_X.size(0) == (number_chain_steps + 10)
+
+        molecule_list = []
+        for i in range(batch_size):
+            n = n_nodes[i]
+            atom_types = X[i, :n].cpu()
+            edge_types = E[i, :n, :n].cpu()
+            molecule_list.append([atom_types, edge_types])
+
+        return {
+            "chain_X": chain_X,
+            "chain_E": chain_E,
+            "molecules": molecule_list
+        }
