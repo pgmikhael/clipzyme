@@ -13,6 +13,7 @@ import os
 from nox.utils.classes import set_nox_type
 from rich import print 
 import copy 
+import numpy as np 
 
 @register_object("digress", "model")
 class Digress(AbstractModel):
@@ -214,6 +215,7 @@ class Digress(AbstractModel):
         keep_chain: int,
         number_chain_steps: int,
         num_nodes=None,
+        dataset=None
     ):
         """
         :param batch_id: int
@@ -537,6 +539,7 @@ class DigressReactants(Digress):
         keep_chain: int,
         number_chain_steps: int,
         num_nodes=None,
+        dataset=None
     ):
         """
         :param batch_id: int
@@ -641,7 +644,7 @@ class DigressSubstrate(Digress):
         output = super().forward(data)
         # use protein embeddings to predict number of substrate nodes
         protein_embed = data.y[:,:self.args.protein_feature_dim]
-        output["logit"] = self.product_size_predictor(protein_embed)
+        output["logit"] = self.substrate_size_predictor(protein_embed)
         output["y"] = output["node_mask"].sum(1) - 1 # subtract 1 so that 1st class corresponds to size of 1
         return output
     
@@ -653,6 +656,7 @@ class DigressSubstrate(Digress):
         keep_chain: int,
         number_chain_steps: int,
         num_nodes=None,
+        dataset=None
     ):
         """
         :param batch_id: int
@@ -662,9 +666,9 @@ class DigressSubstrate(Digress):
         :param keep_chain_steps: number of timesteps to save for each chain
         :return: molecule_list. Each element of this list is a tuple (atom_types, charges, positions)
         """
-
-        protein_embed = data.y[:,:self.args.protein_feature_dim]
-        scores = torch.softmax(self.product_size_predictor(protein_embed),-1)
+        rand_batch = np.random.choice(range(len(dataset)), batch_size)
+        protein_embed = torch.vstack([dataset[i].y for i in rand_batch]).to(self.devicevar.device)
+        scores = torch.softmax(self.substrate_size_predictor(protein_embed),-1)
         n_nodes = torch.multinomial(scores, 1).view(-1)
         
         n_max = torch.max(n_nodes).item()
@@ -678,6 +682,8 @@ class DigressSubstrate(Digress):
             limit_dist=self.limit_dist, node_mask=node_mask
         )
         X, E, y = z_T.X, z_T.E, z_T.y
+
+        y = torch.hstack([protein_embed, y])
 
         assert (E == torch.transpose(E, 1, 2)).all()
         assert number_chain_steps < self.T
@@ -701,6 +707,7 @@ class DigressSubstrate(Digress):
                 s_norm, t_norm, X, E, y, node_mask
             )
             X, E, y = sampled_s.X, sampled_s.E, sampled_s.y
+            y = torch.hstack([protein_embed, y])
 
             # Save the first keep_chain graphs
             write_index = (s_int * number_chain_steps) // self.T

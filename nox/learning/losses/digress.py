@@ -64,7 +64,7 @@ class DigressLoss(Nox):
         else:
             loss_E = 0.0
 
-        if true_y.numel() > 0:
+        if pred_y.numel() > 0:
             target = torch.argmax(true_y, dim=-1)
             loss_y = F.cross_entropy(
                 pred_y, target, reduction="sum"

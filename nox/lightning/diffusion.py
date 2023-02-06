@@ -74,6 +74,7 @@ class DiscreteDenoisingDiffusion(Base):
                         num_nodes=None,
                         keep_chain=chains_save,
                         number_chain_steps=self.args.number_chain_steps,
+                        dataset=self.trainer.val_dataloaders[0].dataset,
                     )
                 
                 ident += to_generate
@@ -87,11 +88,11 @@ class DiscreteDenoisingDiffusion(Base):
                 if self.args.val_counter % self.args.visualize_diffusion_samples_every_val == 0:
                     self.log_generated_samples(sampled_dict, num_to_log=to_save)
                 
-                if self.args.compute_sampling_metric:
-                    self.sampling_metric_val.update({"molecules": samples}, self.args)
-                    sampling_metrics = self.sampling_metric_val.compute()
-                    sampling_metrics = {k: torch.tensor([v], device=self.device).float() for k,v in sampling_metrics.items()}
-                    outputs.update(sampling_metrics)
+            if self.args.compute_sampling_metric:
+                self.sampling_metric_val.update({"molecules": samples}, self.args)
+                sampling_metrics = self.sampling_metric_val.compute()
+                sampling_metrics = {k: torch.tensor([v], device=self.device).float() for k,v in sampling_metrics.items()}
+                outputs.update(sampling_metrics)
                 
         self.log_outputs(outputs, "val")
 
@@ -128,6 +129,7 @@ class DiscreteDenoisingDiffusion(Base):
                     num_nodes=None,
                     keep_chain=chains_save,
                     number_chain_steps=self.args.number_chain_steps,
+                    dataset=self.trainer.test_dataloaders[0].dataset,
                 )
             ident += to_generate
             samples_left_to_save -= to_save

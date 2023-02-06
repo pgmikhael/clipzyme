@@ -16,10 +16,10 @@ class CrossEntropyLoss(Nox):
         logging_dict, predictions = OrderedDict(), OrderedDict()
         logit = model_output["logit"]
 
-        if "y" in batch:
-            predictions["golds"] = batch["y"]
-        elif "y" in model_output:
+        if "y" in model_output:
             predictions["golds"] = model_output["y"]
+        elif "y" in batch:
+            predictions["golds"] = batch["y"]
         else:
             raise KeyError("predictions_dict ERROR: y not found")
         

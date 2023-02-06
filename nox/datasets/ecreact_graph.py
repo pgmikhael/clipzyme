@@ -409,6 +409,7 @@ class ECReactSubstrate(ECReactGraph):
         args.dataset_statistics = data_info
         args.extra_features = extra_features
         args.domain_features = None
+        args.num_classes = data_info.max_n_nodes
 
         # check right split
         self.dataset = [d for d in self.dataset if d['split'] == split_group]
@@ -496,7 +497,7 @@ class ECReactSubstrate(ECReactGraph):
             mask_hiddens = esm_features["mask_hiddens"] # sequence len, 1
             protein_hidden = esm_features["hidden"] 
             # token_hiddens = esm_features["token_hiddens"][mask_hiddens[:,0].bool()]
-            reactant.y = protein_hidden
+            reactant.y = protein_hidden.view(1,-1)
 
             return reactant
 
