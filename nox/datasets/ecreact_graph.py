@@ -468,7 +468,7 @@ class ECReactSubstrate(ECReactGraph):
         sample = self.dataset[index]
 
         try:
-            reactant = sample["reactant"]
+            reactant = from_smiles(sample["reactant"])
 
             ec = sample["ec"]
             valid_uniprots = self.valid_ec2uniprot[ec]
@@ -486,9 +486,8 @@ class ECReactSubstrate(ECReactGraph):
             # first feature is bond type
             reactant.edge_attr = F.one_hot(reactant.edge_attr[:,0], len(e_map["bond_type"]) ).to(torch.float)
 
-            reactant.y = []
             reactant.sample_id = sample['rowid']  
-            sample_id.sequence =  sequence
+            reactant.sequence =  sequence
             
             esm_features = pickle.load(open(
                 os.path.join(self.args.precomputed_esm_features_dir, f"sample_{uniprot_id}.predictions"), 'rb'
