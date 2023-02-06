@@ -4,6 +4,7 @@ from nox.datasets.abstract import AbstractDataset
 from nox.utils.pyg import from_smiles
 from nox.utils.smiles import get_rdkit_feature
 from nox.utils.amino_acids import AA_TO_SMILES
+from nox.utils.proteins import get_protein_graphs_from_path
 from tqdm import tqdm
 import torch
 import numpy as np
@@ -12,11 +13,12 @@ import argparse
 import json
 import os
 from rxn.chemutils.smiles_randomization import randomize_smiles_rotated
-import warnings
+import traceback, warnings
 import hashlib
 from frozendict import frozendict
 import copy
 from rich import print as rprint
+from nox.utils.messages import METAFILE_NOTFOUND_ERR, LOAD_FAIL_MSG
 
 CHEBI_DB = json.load(open("/Mounts/rbg-storage1/datasets/Metabo/chebi_db.json", "r"))
 
@@ -725,6 +727,26 @@ class BrendaConstants(Brenda):
 
         return False
 
+    def __getitem__(self, index):
+        """
+        Fetch single sample from dataset
+
+        Args:
+            index (int): random index of sample from dataset
+
+        Returns:
+            sample (dict): a sample
+        """
+        sample = self.dataset[index]
+        if self.args.generate_3d_graphs:
+            sample, data_params = get_protein_graphs_from_path([sample], self.args)
+        try:
+            return sample
+        except Exception:
+            warnings.warn(
+                LOAD_FAIL_MSG.format(sample["sample_id"], traceback.print_exc())
+            )
+
     @staticmethod
     def set_args(args) -> None:
         super(BrendaConstants, BrendaConstants).set_args(args)
@@ -814,6 +836,42 @@ class BrendaConstants(Brenda):
             action="store_true",
             default=False,
             help="If labels have more than one value, or multiple samples have different labels, use the mean",
+        )
+        parser.add_argument(
+            "--generate_3d_graphs",
+            action="store_true",
+            default=False,
+            help="Generate 3D graphs from protein sequences",
+        )
+        parser.add_argument(
+            "--protein_cache_path",
+            type=str,
+            default="/Mounts/rbg-storage1/datasets/Metabo/Brenda/cache",
+            help="Path to cache protein graphs",
+        )
+        parser.add_argument(
+            "--protein_resolution",
+            type=str,
+            default="residue",
+            help="Resolution of protein graphs",
+        )
+        parser.add_argument(
+            "--debug",
+            action="store_true",
+            default=False,
+            help="For debugging purposes, appends debug to cache paths",
+        )
+        parser.add_argument(
+            "--no_graph_cache",
+            action="store_true",
+            default=False,
+            help="Skip caching graphs",
+        )
+        parser.add_argument(
+            "--knn_size",
+            type=int,
+            default=20,
+            help="Number of nearest neighbors to use for graph construction",
         )
 
 
@@ -1158,6 +1216,9 @@ class BrendaReaction(Brenda):
                 ),
             }
 
+            if self.args.generate_3d_graphs:
+                item["path"] = sample["path"]
+
             return item
 
         except Exception as e:
@@ -1181,6 +1242,8 @@ class BrendaReaction(Brenda):
         return statement
 
 
+MISSING_STRUCT = set()
+
 @register_object("mcsa", "dataset")
 class MCSA(BrendaReaction):
     def create_dataset(
@@ -1193,7 +1256,6 @@ class MCSA(BrendaReaction):
         for sequence, uniprot_dict in tqdm(
             mcsa_data.items(), desc="Making M-CSA dataset"
         ):
-
             uniprotid = uniprot_dict["uniprot"]
 
             for ec, ec_dict in uniprot_dict.items():
@@ -1222,8 +1284,20 @@ class MCSA(BrendaReaction):
         dataset = []
         for uniprot, reaction_list in uniprot2reactions.items():
             for reaction in reaction_list:
+                if self.args.generate_3d_graphs:
+                    exists = False
+                    for d in ["00", "01", "02"]:
+                        path = os.path.join(self.args.structures_dir, f"{d}/AF-{reaction['protein_id']}-F1-model_v4.cif")
+                        if os.path.exists(path):
+                            reaction["path"] = path
+                            exists = True
+                            break
+                    if not exists:
+                        reaction['path'] = None
+
                 if self.skip_sample(reaction, split_group):
                     continue
+
                 reaction_string = (
                     ".".join(reaction["reactants"])
                     + ">>"
@@ -1236,6 +1310,34 @@ class MCSA(BrendaReaction):
                 dataset.append(reaction)
 
         return dataset
+
+    def __getitem__(self, index):
+        """
+        Fetch single sample from dataset
+
+        Args:
+            index (int): random index of sample from dataset
+
+        Returns:
+            sample (dict): a sample
+        """
+        sample = super(BrendaReaction, self).__getitem__(index)
+        if self.args.generate_3d_graphs:
+            sample, data_params = get_protein_graphs_from_path([sample], self.args)
+            if len(sample['receptor_xyz']) != len(sample['sequence']):
+                return None
+                
+            if sample is not None:
+                del sample['receptor']
+                del sample['receptor_atom']
+                del sample['receptor_seq']
+                del sample['receptor_xyz']
+        try:
+            return sample
+        except Exception:
+            warnings.warn(
+                LOAD_FAIL_MSG.format(sample["sample_id"], traceback.print_exc())
+            )
 
     def skip_sample(self, sample, split_group) -> bool:
         # check if sample has mol
@@ -1255,6 +1357,17 @@ class MCSA(BrendaReaction):
         ) > self.args.max_protein_length:
             return True
 
+        if self.args.generate_3d_graphs and sample['path'] is None:
+            MISSING_STRUCT.add(sample["protein_id"])
+            print(f"Skipped because missing structure: {sample['protein_id']}, num missing structs: {len(MISSING_STRUCT)}")
+            return True
+
+        if self.args.generate_3d_graphs:
+            for char in ["B", "O", "Z", "J", "U", "X", "*"]:
+                if char in sample["sequence"]:
+                    print(f"Skipped because {sample['protein_id']}'s sequence contains '{char}'")
+                    return True
+
         # check right split
         if hasattr(self, "to_split"):
             if self.args.split_type == "sequence":
@@ -1266,4 +1379,62 @@ class MCSA(BrendaReaction):
                 if self.to_split[ec] != split_group:
                     return True
 
+
         return False
+    
+    @staticmethod
+    def add_args(parser) -> None:
+        """Add class specific args
+
+        Args:
+            parser (argparse.ArgumentParser): argument parser
+        """
+        super(MCSA, MCSA).add_args(parser)
+        parser.add_argument(
+            "--generate_3d_graphs",
+            action="store_true",
+            default=False,
+            help="Generate 3D graphs from protein sequences",
+        )
+        parser.add_argument(
+            "--structures_dir",
+            type=str,
+            default="/Mounts/rbg-storage1/datasets/Metabo/Brenda/pdb_structures/",
+            help="Path to cache protein graphs",
+        )
+        parser.add_argument(
+            "--protein_cache_path",
+            type=str,
+            default="/Mounts/rbg-storage1/datasets/Metabo/Brenda/cache",
+            help="Path to cache protein graphs",
+        )
+        parser.add_argument(
+            "--protein_resolution",
+            type=str,
+            default="residue",
+            help="Resolution of protein graphs",
+        )
+        parser.add_argument(
+            "--debug",
+            action="store_true",
+            default=False,
+            help="For debugging purposes, appends debug to cache paths",
+        )
+        parser.add_argument(
+            "--no_graph_cache",
+            action="store_true",
+            default=False,
+            help="Skip caching graphs",
+        )
+        parser.add_argument(
+            "--knn_size",
+            type=int,
+            default=20,
+            help="Number of nearest neighbors to use for graph construction",
+        )
+        parser.add_argument(
+            "--protein_dim",
+            type=int,
+            default=1280,
+            help="Hidden ESM dimension",
+        )

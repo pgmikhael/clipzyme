@@ -58,9 +58,9 @@ class BaseClassification(Nox):
         preds = predictions_dict["preds"]  # B
         golds = predictions_dict["golds"].int()  # B
         stats_dict["accuracy"] = accuracy(golds, preds)
-        stats_dict["confusion_matrix"] = confusion_matrix(
-            preds, golds, args.num_classes
-        )
+        # stats_dict["confusion_matrix"] = confusion_matrix(
+        #     preds, golds, args.num_classes
+        # )
         if args.num_classes == 2:
             if len(probs.shape) == 1:
                 stats_dict["precision"], stats_dict["recall"] = precision_recall(
