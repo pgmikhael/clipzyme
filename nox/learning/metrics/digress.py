@@ -434,7 +434,7 @@ class MoleculeAccuracy(Metric):
     def compute(self):
         stats_dict = {
             "average_node_accuracy": torch.tensor([self.total_node_accuracy  / self.total_samples], device = self.device),
-            "average_edge_accuracy": torch.tensor([self.total_edge_accuracy  / self.total_samples], device = self.device),
+            "average_edge_accuracy": torch.tensor([self.total_edge_accuracy  / self.total_edge_samples], device = self.device),
             "top1_molecule_accuracy": torch.tensor([self.total_mol_correct /  self.total_samples], device = self.device)
         }
         return stats_dict
