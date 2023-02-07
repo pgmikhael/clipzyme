@@ -52,6 +52,7 @@ class DiscreteDenoisingDiffusion(Base):
             return
         outputs = gather_step_outputs(outputs)
         outputs["loss"] = outputs["loss"].mean()
+        outputs.update(self.call_metric({}, "compute"))
 
         self.args.val_counter += 1
         
@@ -112,6 +113,10 @@ class DiscreteDenoisingDiffusion(Base):
         if isinstance(outputs.get("loss", 0), torch.Tensor):
             outputs["loss"] = outputs["loss"].mean()
 
+        if not self.args.predict:
+            outputs.update(self.call_metric({}, "compute"))
+
+
         samples_left_to_generate = self.args.final_model_samples_to_generate
         samples_left_to_save = self.args.final_model_samples_to_save
         chains_left_to_save = self.args.final_model_chains_to_save
@@ -147,7 +152,7 @@ class DiscreteDenoisingDiffusion(Base):
             sampling_metrics = {k: torch.tensor([v], device=self.device).float() for k,v in sampling_metrics.items()}
             outputs.update(sampling_metrics)
 
-            self.log_outputs(outputs, "test")
+        self.log_outputs(outputs, "test")
 
         for metric_fn in self.metrics["test"]:
             metric_fn.reset()

@@ -254,7 +254,7 @@ class CEPerClass(Metric):
         self.total_samples += prob.numel()
 
     def compute(self):
-        return self.total_ce / self.total_samples
+        return torch.tensor([self.total_ce / self.total_samples], device=self.device)
 
 
 class HydrogenCE(CEPerClass):
@@ -387,11 +387,14 @@ class BondMetricsCE(MetricCollection):
         super().__init__([ce_no_bond, ce_SI, ce_DO, ce_TR, ce_AR])
 
 class MoleculeAccuracy(Metric):
+    full_state_update=False
+
     def __init__(self):
         super().__init__()
         self.add_state("total_mol_correct", default=torch.tensor(0.0), dist_reduce_fx="sum")
         self.add_state("total_edge_accuracy", default=torch.tensor(0.0), dist_reduce_fx="sum")
         self.add_state("total_node_accuracy", default=torch.tensor(0.0), dist_reduce_fx="sum")
+        self.add_state("total_edge_samples", default=torch.tensor(0.0), dist_reduce_fx="sum")
         self.add_state("total_samples", default=torch.tensor(0.0), dist_reduce_fx="sum")
     
     def update(self, predictions_dict, args):
@@ -414,7 +417,11 @@ class MoleculeAccuracy(Metric):
         e_pred = torch.softmax(masked_pred_E, -1).argmax(-1)  # diagonals are masked, so no scores
         
         edge_accuracy = ((e_label == e_pred) * e_mask).sum((-1,-2)) / e_mask.sum((-1,-2))
+        # if single node then there is no edge, so remove
+        multi_node_graphs = e_mask.sum((-1,-2)) != 0
+        edge_accuracy = edge_accuracy[multi_node_graphs]
         self.total_edge_accuracy = edge_accuracy.sum()
+        self.total_edge_samples += multi_node_graphs.sum()
 
         # entire molecule correct
         correct_nodes = torch.all( (x_label * x_mask) == (x_pred * x_mask),-1)
@@ -426,9 +433,9 @@ class MoleculeAccuracy(Metric):
 
     def compute(self):
         stats_dict = {
-            "average_node_accuracy": self.total_node_accuracy  / self.total_samples,
-            "average_edge_accuracy": self.total_edge_accuracy  / self.total_samples,
-            "top1_molecule_accuracy": self.total_mol_correct /  self.total_samples
+            "average_node_accuracy": torch.tensor([self.total_node_accuracy  / self.total_samples], device = self.device),
+            "average_edge_accuracy": torch.tensor([self.total_edge_accuracy  / self.total_samples], device = self.device),
+            "top1_molecule_accuracy": torch.tensor([self.total_mol_correct /  self.total_samples], device = self.device)
         }
         return stats_dict
 
@@ -454,11 +461,11 @@ class TrainMolecularMetricsDiscrete(Metric, Nox):
     def compute(self):
         stats_dict = {}
         for key, val in self.train_atom_metrics.compute().items():
-            stats_dict[key] = val.item()
+            stats_dict[key] = val
         for key, val in self.train_bond_metrics.compute().items():
-            stats_dict[key] = val.item()
+            stats_dict[key] = val
         for key, val in self.molecule_metrics.compute().items():
-            stats_dict[key] = val.item()
+            stats_dict[key] = val
         return stats_dict
 
     def reset(self):
