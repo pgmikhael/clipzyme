@@ -51,10 +51,7 @@ class DatasetInfo:
         self.max_weight = max(mol_weights) # max molecule weight
         num_nodes_dist = Counter(num_nodes)
 
-        if 0 not in num_nodes_dist:
-            num_nodes_dist = [0] + [num_nodes_dist[k] for k in sorted(num_nodes_dist)]
-        else:
-            num_nodes_dist = [num_nodes_dist[k] for k in sorted(num_nodes_dist)]
+        num_nodes_dist = [num_nodes_dist.get(k,0) for k in range(1,self.max_n_nodes+1)]
 
         self.n_nodes = torch.Tensor(num_nodes_dist)/sum(num_nodes_dist) # distribution over number of nodes in molecule
 
@@ -83,7 +80,7 @@ class DatasetInfo:
         self.input_dims = None
         self.output_dims = None
         self.num_classes = len(node_types)
-        self.max_n_nodes = len(n_nodes) - 1
+        self.max_n_nodes = len(n_nodes) 
         self.nodes_dist = DistributionNodes(n_nodes)
 
     def compute_input_output_dims(self, example_batch, extra_features=None, domain_features=None):
