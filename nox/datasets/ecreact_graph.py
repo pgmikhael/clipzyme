@@ -380,7 +380,7 @@ class ECReactSubstrate(ECReactGraph):
 
     def post_process(self, args):
         split_group = self.split_group
-        
+
         # get data info (input / output dimensions)
         train_dataset = [d for d in self.dataset if d['split'] == 'train']
         
@@ -449,6 +449,10 @@ class ECReactSubstrate(ECReactGraph):
                 self.valid_ec2uniprot[ec] = valid_uniprots
 
             for rid, reactant in enumerate(reactants):
+                # skip graphs of size 1
+                if rdkit.Chem.MolFromSmiles(reactant).GetNumAtoms() <= 1:
+                    continue 
+
                 sample = {
                         "reactant": reactant,
                         "ec": ec,

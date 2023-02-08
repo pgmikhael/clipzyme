@@ -26,7 +26,7 @@ class Xtoy(nn.Module):
         m = X.mean(dim=1)
         mi = X.min(dim=1)[0]
         ma = X.max(dim=1)[0]
-        std = X.std(dim=1)
+        std = X.std(dim=1) # ! cannot have one node in graph
         z = torch.hstack((m, mi, ma, std))
         out = self.lin(z)
         return out
@@ -45,7 +45,7 @@ class Etoy(nn.Module):
         m = E.mean(dim=(1, 2))
         mi = E.min(dim=2)[0].min(dim=1)[0]
         ma = E.max(dim=2)[0].max(dim=1)[0]
-        std = torch.std(E, dim=(1, 2))
+        std = torch.std(E, dim=(1, 2)) # ! cannot have one node in graph
         z = torch.hstack((m, mi, ma, std))
         out = self.lin(z)
         return out
