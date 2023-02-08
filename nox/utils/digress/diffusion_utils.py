@@ -20,7 +20,7 @@ class PlaceHolder:
         """Changes the device and dtype of X, E, y."""
         self.X = self.X.type_as(x)
         self.E = self.E.type_as(x)
-        self.y = self.y.type_as(x)
+        self.y = self.y.to(x.device) #type_as(x)
         return self
 
     def mask(self, node_mask, collapse=False):
