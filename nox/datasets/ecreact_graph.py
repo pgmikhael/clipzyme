@@ -366,6 +366,18 @@ class ECReactGraph(ECReact_RXNS):
             default=480,
             help="size of protein residue features from ESM models",
         )
+        parser.add_argument(
+            "--max_reactant_size",
+            type=int,
+            default=None,
+            help="maximum reactant size",
+        )
+        parser.add_argument(
+            "--max_product_size",
+            type=int,
+            default=None,
+            help="maximum product size",
+        )
 
 @register_object("ecreact_multiproduct_graph", "dataset")
 class ECReact_MultiProduct_Graph(ECReact_MultiProduct_RXNS):
@@ -390,8 +402,11 @@ class ECReactSubstrate(ECReactGraph):
         smiles = list(smiles)
 
         data_info = DatasetInfo(smiles, args) 
-
-        extra_features = ExtraFeatures(args.extra_features_type, dataset_info=data_info) 
+        
+        if args.extra_features_type is not None:
+            extra_features = ExtraFeatures(args.extra_features_type, dataset_info=data_info) 
+        else:
+            extra_features = None
 
         example_batch = [from_smiles(smiles[0]), from_smiles(smiles[1])]
         example_batch = Batch.from_data_list(example_batch, None, None)
@@ -449,10 +464,18 @@ class ECReactSubstrate(ECReactGraph):
                 self.valid_ec2uniprot[ec] = valid_uniprots
 
             for rid, reactant in enumerate(reactants):
-                # skip graphs of size 1
-                if rdkit.Chem.MolFromSmiles(reactant).GetNumAtoms() <= 1:
-                    continue 
-
+                sample_to_check = {
+                    "reactants": reactant,
+                    "products": products,
+                    "ec": ec,
+                    "reaction_string":reaction_string,
+                    "protein_id": uniprot,
+                    "sequence": self.uniprot2sequence[uniprot],
+                    "split": reaction.get("split", None)
+                    }
+                if self.skip_sample(sample_to_check, split_group):
+                    continue
+                
                 sample = {
                         "reactant": reactant,
                         "ec": ec,
@@ -465,6 +488,19 @@ class ECReactSubstrate(ECReactGraph):
         
         return dataset
     
+    def skip_sample(self, sample, split_group) -> bool:
+        if super(ECReactSubstrate,ECReactSubstrate).skip_sample(sample, split_group):
+            return True 
+        
+        # skip graphs of size 1
+        reactant_size = rdkit.Chem.MolFromSmiles(sample["reactant"]).GetNumAtoms()
+        if reactant_size <= 1:
+            return True 
+
+        if (self.args.max_reactant_size is not None) and (reactant_size > self.args.max_reactant_size):
+            return True 
+
+        return False
 
     def __getitem__(self, index):
         sample = self.dataset[index]
