@@ -450,9 +450,8 @@ class ECReactSubstrate(ECReactGraph):
                     "protein_id": uniprot,
                     "sequence": self.uniprot2sequence[uniprot],
                     "split": reaction.get("split", None)
-
                 }
-                if self.skip_sample(temp_sample, split_group):
+                if super().skip_sample(temp_sample, split_group):
                     continue
                 
                 valid_uniprots.append(uniprot)
@@ -465,7 +464,7 @@ class ECReactSubstrate(ECReactGraph):
 
             for rid, reactant in enumerate(reactants):
                 sample_to_check = {
-                    "reactants": reactant,
+                    "reactant": reactant,
                     "products": products,
                     "ec": ec,
                     "reaction_string":reaction_string,
@@ -489,7 +488,7 @@ class ECReactSubstrate(ECReactGraph):
         return dataset
     
     def skip_sample(self, sample, split_group) -> bool:
-        if super(ECReactSubstrate,ECReactSubstrate).skip_sample(sample, split_group):
+        if super().skip_sample(sample, split_group):
             return True 
         
         # skip graphs of size 1
