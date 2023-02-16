@@ -43,6 +43,9 @@ class DiscreteDenoisingDiffusion(Base):
             "validity",
             "uniqueness",
             "novelty",
+            "nll",
+            "kl",
+            "log_pn",
         ]
 
     def validation_epoch_end(self, outputs) -> None:
