@@ -108,7 +108,8 @@ class DigressLoss(Nox):
 class DigressSimpleVLBLoss(Nox):
     def __init__(self) -> None:
         super().__init__()
-
+    
+    @torch.no_grad()
     def __call__(self, model_output, batch, model, args):
         """Computes an estimator for the variational lower bound, or the simple loss (MSE).
         pred: (batch_size, n, total_features)
@@ -137,7 +138,7 @@ class DigressSimpleVLBLoss(Nox):
         kl_prior = self.kl_prior(X, E, y, node_mask, model, args)
 
         # 3. Diffusion loss
-        loss_all_t = self.compute_Lt(X, E, y, pred, noisy_data, node_mask, test, model)
+        loss_all_t = self.compute_Lt(X, E, y, pred, noisy_data, node_mask, test, model) * model.model.T
 
         # 4. Reconstruction loss
         # Compute L0 term : -log p (X, E, y | z_0) = reconstruction loss
@@ -159,14 +160,15 @@ class DigressSimpleVLBLoss(Nox):
         # Update NLL metric object and return batch nll
         nll = torch.sum(nlls) / nlls.numel()  # Average over the batch
 
+        nll = nll.detach()
+
         loss = nll 
         logging_dict= {
             "nll": nll,
-            "kl prior": kl_prior.mean(),
-            "Estimator loss terms": loss_all_t.mean(),
+            "kl_prior": kl_prior.mean(),
+            "estimator_loss_terms": loss_all_t.mean(),
             "log_pn": log_pN.mean(),
             "loss_term_0": loss_term_0,
-            "test_nll" if test else "val_nll": nll,
         }
         pred_dict = {}
         return loss, logging_dict, pred_dict
@@ -270,10 +272,10 @@ class DigressSimpleVLBLoss(Nox):
             pred_E=prob_pred.E,
             node_mask=node_mask,
         )
-        kl_x = F.kl_div(prob_true.X, torch.log(prob_pred.X))
-        kl_e = F.kl_div(prob_true.E, torch.log(prob_pred.E))
+        kl_x = F.kl_div(prob_true.X, torch.log(prob_pred.X)) * model.model.T
+        kl_e = F.kl_div(prob_true.E, torch.log(prob_pred.E)) * model.model.T
         kl_y = (
-            F.kl_div(prob_true.y, torch.log(prob_pred.y))
+            F.kl_div(prob_true.y, torch.log(prob_pred.y)) * model.model.T
             if pred_probs_y.numel() != 0
             else 0
         )
