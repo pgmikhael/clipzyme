@@ -30,7 +30,7 @@
     "lr_decay": [0.1],
     "lr": [2e-4],
     "weight_decay": [1e-12],
-    "loss_names": ["digress_cross_entropy"], 
+    "loss_names": ["digress_cross_entropy digress_simple_vlb"], 
     "lambda_edge_loss": [5.0],
     "lambda_y_loss": [0.0],
     "metric_names": ["molecule_classification_metrics"], 
@@ -58,5 +58,5 @@
     "project_name": ["sanity-checks"],
     "logger_tags": ["digress"]
   },
-  "available_gpus": ["1"]
+  "available_gpus": ["7"]
 }
