@@ -81,15 +81,13 @@ class Brenda(AbstractDataset):
             open(f"{os.path.dirname(args.dataset_file_path)}/brenda_proteins.json", "r")
         )
 
-    def assign_splits(self, metadata_json, split_probs, seed=0) -> None:
+    def assign_splits(self, dataset, split_probs, seed=0) -> None:
         """
         Assigns each sample to a split group based on split_probs
         """
         # get all samples
         rprint("Generating dataset in order to assign splits...")
-        dataset = self.create_dataset(
-            "train"
-        )  # must not skip samples by using split in dataset
+
         self.to_split = {}
 
         # set seed
@@ -707,23 +705,29 @@ class BrendaConstants(Brenda):
                 print("Skipped sample because of contradictory values")
                 return True
 
-        # check right split
-        if hasattr(self, "to_split"):
+        return False
+
+    def get_split_group_dataset(self, processed_dataset, split_group: str):
+        dataset = []
+        for sample in processed_dataset:
+            # check right split
             if self.args.split_type == "sequence":
                 if self.to_split[sample["protein_id"]] != split_group:
-                    return True
+                    continue
 
             if self.args.split_type == "ec":
                 if self.to_split[sample["ec"]] != split_group:
-                    return True
+                    continue
 
             if self.args.split_type == "random":
                 seq = sample["sequence"]
                 smi = sample["smiles"]
                 if self.to_split[f"{seq}{smi}"] != split_group:
-                    return True
+                    continue
 
-        return False
+            dataset.append(sample)
+
+        return dataset
 
     @staticmethod
     def set_args(args) -> None:
@@ -874,12 +878,18 @@ class BrendaEC(Brenda):
         if sample["sequence"] is None:
             return True
 
-        # check right split
-        if hasattr(self, "to_split"):
-            if self.to_split[sample["protein_id"]] != split_group:
-                return True
-
         return False
+
+    def get_split_group_dataset(self, processed_dataset, split_group: str):
+        dataset = []
+        for sample in processed_dataset:
+            # check right split
+            if self.to_split[sample["protein_id"]] != split_group:
+                continue
+
+            dataset.append(sample)
+
+        return dataset
 
 
 @register_object("brenda_reaction", "dataset")
@@ -1056,17 +1066,25 @@ class BrendaReaction(Brenda):
         if sample["sequence"] is None:
             return True
 
-        # check right split
-        if hasattr(self, "to_split"):
+        return False
+
+    def get_split_group_dataset(
+        self, processed_dataset, split_group: Literal["train", "dev", "test"]
+    ) -> List[dict]:
+        dataset = []
+        for sample in processed_dataset:
             if self.args.split_type == "sequence":
                 if self.to_split[sample["protein_id"]] != split_group:
-                    return True
+                    continue
 
             if self.args.split_type == "ec":
                 ec = ".".join(sample["ec"].split(".")[: self.args.ec_level + 1])
                 if self.to_split[ec] != split_group:
-                    return True
-        return False
+                    continue
+
+            dataset.append(sample)
+
+        return dataset
 
     def get_uniprot_residues(self, mcsa_data, sequence, ec):
         """Get residues from MCSA data
@@ -1255,15 +1273,22 @@ class MCSA(BrendaReaction):
         ) > self.args.max_protein_length:
             return True
 
-        # check right split
-        if hasattr(self, "to_split"):
+        return False
+
+    def get_split_group_dataset(
+        self, processed_dataset, split_group: Literal["train", "dev", "test"]
+    ) -> List[dict]:
+        dataset = []
+        for sample in processed_dataset:
             if self.args.split_type == "sequence":
                 if self.to_split[sample["protein_id"]] != split_group:
-                    return True
+                    continue
 
             if self.args.split_type == "ec":
                 ec = ".".join(sample["ec"].split(".")[: self.args.ec_level + 1])
                 if self.to_split[ec] != split_group:
-                    return True
+                    continue
 
-        return False
+            dataset.append(sample)
+
+        return dataset

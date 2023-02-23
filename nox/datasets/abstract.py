@@ -20,6 +20,14 @@ class AbstractDataset(data.Dataset, Nox):
         params: split_group - ['train'|'dev'|'test'].
 
         constructs: standard pytorch Dataset obj, which can be fed in a DataLoader for batching
+
+        # 1. Load dataset and optionally item loaders
+        # 2. Create dataset
+        # 3. Assign splits based on processed data
+        # 4. Post-process dataset
+        # 5. Create dataset for specific split group
+        # 6. Optionally set sample weights
+        # 7. Print summary statement
         """
         __metaclass__ = ABCMeta
 
@@ -33,8 +41,15 @@ class AbstractDataset(data.Dataset, Nox):
         self.dataset = self.create_dataset(split_group)
         if len(self.dataset) == 0:
             return
-        
+
+        if args.assign_splits:
+            self.assign_splits(self.dataset, args.split_probs, args.split_seed)
+        else:
+            rprint("[magenta]WARNING: `assign_splits` = False[/magenta]")
+
         self.post_process(args)
+
+        self.dataset = self.get_split_group_dataset(self.dataset, split_group)
 
         self.set_sample_weights(args)
 
@@ -50,13 +65,15 @@ class AbstractDataset(data.Dataset, Nox):
         """
         self.input_loader = get_sample_loader(split_group, args)
         self.load_dataset(args)
-        if args.assign_splits:
-            self.assign_splits(self.metadata_json, args.split_probs, args.split_seed)
-        else:
-            rprint("[magenta]WARNING: `assign_splits` = False[/magenta]")
 
     def post_process(self, args):
-        pass 
+        """Perform post-processing on dataset
+        This may include computing statistics based on training set
+
+        Args:
+            args (argparse.ArgumentParser)
+        """
+        pass
 
     def load_dataset(self, args: argparse.ArgumentParser) -> None:
         """Loads dataset file
@@ -80,6 +97,12 @@ class AbstractDataset(data.Dataset, Nox):
         Creates the dataset of samples from json metadata file.
         """
         pass
+
+    def get_split_group_dataset(
+        self, processed_dataset, split_group: Literal["train", "dev", "test"]
+    ) -> List[dict]:
+        """Get split group dataset"""
+        return processed_dataset
 
     @abstractmethod
     def skip_sample(self, sample) -> bool:
