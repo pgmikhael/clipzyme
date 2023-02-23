@@ -707,7 +707,7 @@ class BrendaConstants(Brenda):
 
         return False
 
-    def make_split_group_dataset(self, processed_dataset, split_group: str):
+    def get_split_group_dataset(self, processed_dataset, split_group: str):
         dataset = []
         for sample in processed_dataset:
             # check right split
@@ -880,7 +880,7 @@ class BrendaEC(Brenda):
 
         return False
 
-    def make_split_group_dataset(self, processed_dataset, split_group: str):
+    def get_split_group_dataset(self, processed_dataset, split_group: str):
         dataset = []
         for sample in processed_dataset:
             # check right split
@@ -1068,7 +1068,7 @@ class BrendaReaction(Brenda):
 
         return False
 
-    def make_split_group_dataset(
+    def get_split_group_dataset(
         self, processed_dataset, split_group: Literal["train", "dev", "test"]
     ) -> List[dict]:
         dataset = []
@@ -1275,7 +1275,7 @@ class MCSA(BrendaReaction):
 
         return False
 
-    def make_split_group_dataset(
+    def get_split_group_dataset(
         self, processed_dataset, split_group: Literal["train", "dev", "test"]
     ) -> List[dict]:
         dataset = []

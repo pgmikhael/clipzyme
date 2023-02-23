@@ -204,7 +204,7 @@ class ECReactGraph(ECReact_RXNS):
         args.extra_features = extra_features
         args.domain_features = None
 
-    def make_split_group_dataset(
+    def get_split_group_dataset(
         self, processed_dataset, split_group: Literal["train", "dev", "test"]
     ) -> List[dict]:
         # check right split

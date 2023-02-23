@@ -73,7 +73,7 @@ class BrendaKCat(AbstractDataset):
 
         return False
 
-    def make_split_group_dataset(self, processed_dataset, split_group):
+    def get_split_group_dataset(self, processed_dataset, split_group):
         return [
             sample for sample in processed_dataset if sample["split"] == split_group
         ]

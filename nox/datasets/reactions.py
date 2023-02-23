@@ -23,7 +23,7 @@ class ChemRXN(AbstractDataset):
             dataset.append({"x": rxn_dict["reaction"], "sample_id": rxn_dict["rxnid"]})
         return dataset
 
-    def make_split_group_dataset(
+    def get_split_group_dataset(
         self, processed_dataset, split_group: Literal["train", "dev", "test"]
     ):
         return [d for d in processed_dataset if d["split"] == split_group]

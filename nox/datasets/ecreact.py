@@ -108,7 +108,7 @@ class ECReact(BrendaReaction):
 
         return False
 
-    def make_split_group_dataset(
+    def get_split_group_dataset(
         self, processed_dataset, split_group: Literal["train", "dev", "test"]
     ) -> List[dict]:
         # check right split
@@ -450,7 +450,7 @@ class ECReact_RXNS(ECReact):
 
         return False
 
-    def make_split_group_dataset(
+    def get_split_group_dataset(
         self, processed_dataset, split_group: Literal["train", "dev", "test"]
     ) -> List[dict]:
         dataset = []
