@@ -49,7 +49,7 @@ class AbstractDataset(data.Dataset, Nox):
 
         self.post_process(args)
 
-        self.make_split_group_dataset(split_group)
+        self.dataset = self.make_split_group_dataset(self.dataset, split_group)
 
         self.set_sample_weights(args)
 
@@ -99,10 +99,10 @@ class AbstractDataset(data.Dataset, Nox):
         pass
 
     def make_split_group_dataset(
-        self, split_group: Literal["train", "dev", "test"]
+        self, processed_dataset, split_group: Literal["train", "dev", "test"]
     ) -> List[dict]:
         """Get split group dataset"""
-        pass
+        return processed_dataset
 
     @abstractmethod
     def skip_sample(self, sample) -> bool:

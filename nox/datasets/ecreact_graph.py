@@ -3,8 +3,8 @@ from tqdm import tqdm
 import pickle
 import warnings
 import copy, os
-import numpy as np 
-import random 
+import numpy as np
+import random
 from rxn.chemutils.smiles_randomization import randomize_smiles_rotated
 from nox.utils.registry import register_object, get_object
 from nox.datasets.ecreact import ECReact_RXNS, ECReact_MultiProduct_RXNS
@@ -16,61 +16,81 @@ from nox.utils.pyg import x_map, e_map
 import nox.utils.digress.diffusion_utils as diff_utils
 import torch.nn.functional as F
 from collections import Counter
-import rdkit 
-import torch 
+import rdkit
+import torch
+
 
 class DatasetInfo:
     def __init__(self, smiles, args):
 
-        pyg_molecules = [from_smiles(s) for s in smiles]        
+        pyg_molecules = [from_smiles(s) for s in smiles]
         rdkit_molecules = [rdkit.Chem.MolFromSmiles(s) for s in smiles]
 
-        self.dataset = pyg_molecules # list of PyG data items 
+        self.dataset = pyg_molecules  # list of PyG data items
         self.remove_h = args.remove_h
-        periodic_table = rdkit.Chem.GetPeriodicTable() 
+        periodic_table = rdkit.Chem.GetPeriodicTable()
 
         self.name = "react"
-        
-        self.atom_encoder = {periodic_table.GetElementSymbol(i): i for i in x_map["atomic_num"] }
-        self.atom_decoder = [k for k in self.atom_encoder ]
+
+        self.atom_encoder = {
+            periodic_table.GetElementSymbol(i): i for i in x_map["atomic_num"]
+        }
+        self.atom_decoder = [k for k in self.atom_encoder]
         self.num_atom_types = len(self.atom_decoder)
-        self.valencies = [ periodic_table.GetValenceList(i)[0] for i in x_map["atomic_num"] ]
-        
-        self.atom_weights = { i: round(periodic_table.GetAtomicWeight(i)) for i in x_map["atomic_num"] }
-        
+        self.valencies = [
+            periodic_table.GetValenceList(i)[0] for i in x_map["atomic_num"]
+        ]
+
+        self.atom_weights = {
+            i: round(periodic_table.GetAtomicWeight(i)) for i in x_map["atomic_num"]
+        }
+
         num_nodes = []
         mol_weights = []
         train_atoms = []
         for m in rdkit_molecules:
             num_nodes.append(m.GetNumAtoms())
             atom_list = [a for a in m.GetAtoms()]
-            mol_weights.append( sum( self.atom_weights[a.GetAtomicNum()] for a in atom_list) )
+            mol_weights.append(
+                sum(self.atom_weights[a.GetAtomicNum()] for a in atom_list)
+            )
             train_atoms.extend(atom_list)
-        
-        self.max_n_nodes = max(num_nodes) # max number of nodes in a molecule
-        self.max_weight = max(mol_weights) # max molecule weight
+
+        self.max_n_nodes = max(num_nodes)  # max number of nodes in a molecule
+        self.max_weight = max(mol_weights)  # max molecule weight
         num_nodes_dist = Counter(num_nodes)
 
-        num_nodes_dist = [num_nodes_dist.get(k,0) for k in range(1,self.max_n_nodes+1)]
+        num_nodes_dist = [
+            num_nodes_dist.get(k, 0) for k in range(1, self.max_n_nodes + 1)
+        ]
 
-        self.n_nodes = torch.Tensor(num_nodes_dist)/sum(num_nodes_dist) # distribution over number of nodes in molecule
+        self.n_nodes = torch.Tensor(num_nodes_dist) / sum(
+            num_nodes_dist
+        )  # distribution over number of nodes in molecule
 
         train_atom_types = Counter([a.GetAtomicNum() for a in train_atoms])
         train_atom_types = [train_atom_types.get(i, 0) for i in x_map["atomic_num"]]
-    
-        self.node_types = torch.Tensor(train_atom_types)/sum(train_atom_types) # distribution over nodes types in molecule
-    
+
+        self.node_types = torch.Tensor(train_atom_types) / sum(
+            train_atom_types
+        )  # distribution over nodes types in molecule
+
         # get distribution over edge types
         # add no-bond to 0th edge type used in from_smiles ("misc")
-        all_pairs_minus_connected = sum( m.x.shape[0] * (m.x.shape[0]-1) - m.edge_index.shape[1] for m in pyg_molecules )
-        edge_types = torch.hstack([m.edge_attr[:,0] for m in pyg_molecules ]).tolist()
+        all_pairs_minus_connected = sum(
+            m.x.shape[0] * (m.x.shape[0] - 1) - m.edge_index.shape[1]
+            for m in pyg_molecules
+        )
+        edge_types = torch.hstack([m.edge_attr[:, 0] for m in pyg_molecules]).tolist()
         edge_types_dist = Counter(edge_types)
         if 0 not in edge_types_dist:
             edge_types_dist[0] = all_pairs_minus_connected
         else:
             edge_types_dist[0] += all_pairs_minus_connected
-        edge_types_dist =[edge_types_dist[k] for k in sorted(edge_types_dist)]
-        self.edge_types = torch.Tensor(edge_types_dist) / sum(edge_types_dist) # distribution over edge types in molecule, including a no-bond cateogry
+        edge_types_dist = [edge_types_dist[k] for k in sorted(edge_types_dist)]
+        self.edge_types = torch.Tensor(edge_types_dist) / sum(
+            edge_types_dist
+        )  # distribution over edge types in molecule, including a no-bond cateogry
 
         self.complete_infos(n_nodes=self.n_nodes, node_types=self.node_types)
 
@@ -80,14 +100,20 @@ class DatasetInfo:
         self.input_dims = None
         self.output_dims = None
         self.num_classes = len(node_types)
-        self.max_n_nodes = len(n_nodes) 
+        self.max_n_nodes = len(n_nodes)
         self.nodes_dist = DistributionNodes(n_nodes)
 
-    def compute_input_output_dims(self, example_batch, extra_features=None, domain_features=None):
+    def compute_input_output_dims(
+        self, example_batch, extra_features=None, domain_features=None
+    ):
         # first feature is atomic number
-        example_batch.x = F.one_hot(example_batch.x[:,0], len(x_map["atomic_num"]) ).to(torch.float)
+        example_batch.x = F.one_hot(example_batch.x[:, 0], len(x_map["atomic_num"])).to(
+            torch.float
+        )
         # first feature is bond type
-        example_batch.edge_attr = F.one_hot(example_batch.edge_attr[:,0], len(e_map["bond_type"]) ).to(torch.float)
+        example_batch.edge_attr = F.one_hot(
+            example_batch.edge_attr[:, 0], len(e_map["bond_type"])
+        ).to(torch.float)
 
         ex_dense, node_mask = diff_utils.to_dense(
             example_batch.x,
@@ -98,7 +124,7 @@ class DatasetInfo:
         example_data = {
             "X_t": ex_dense.X,
             "E_t": ex_dense.E,
-            "y_t": torch.zeros((2,1)),
+            "y_t": torch.zeros((2, 1)),
             "node_mask": node_mask,
         }
 
@@ -124,8 +150,8 @@ class DatasetInfo:
             "X": len(x_map["atomic_num"]),
             "E": len(e_map["bond_type"]),
             "y": 0,
-        } 
-    
+        }
+
     def valency_count(self, max_n_nodes):
         valencies = torch.zeros(
             3 * max_n_nodes - 2
@@ -135,7 +161,9 @@ class DatasetInfo:
 
         for i, data in enumerate(self.dataset):
             n = data.x.shape[0]
-            edge_attr = F.one_hot(data.edge_attr[:,0], len(e_map["bond_type"]) ).to(torch.float)
+            edge_attr = F.one_hot(data.edge_attr[:, 0], len(e_map["bond_type"])).to(
+                torch.float
+            )
 
             for atom in range(n):
                 edges = edge_attr[data.edge_index[0] == atom]
@@ -148,25 +176,24 @@ class DatasetInfo:
 
 @register_object("ecreact_graph", "dataset")
 class ECReactGraph(ECReact_RXNS):
-
     def post_process(self, args):
         split_group = self.split_group
-        
+
         # get data info (input / output dimensions)
-        train_dataset = [d for d in self.dataset if d['split'] == 'train']
-        
+        train_dataset = [d for d in self.dataset if d["split"] == "train"]
+
         smiles = set()
         for d in train_dataset:
-            smiles.update(['.'.join(d['reactants']), '.'.join(d['products'])])
+            smiles.update([".".join(d["reactants"]), ".".join(d["products"])])
         smiles = list(smiles)
 
-        data_info = DatasetInfo(smiles, args) 
+        data_info = DatasetInfo(smiles, args)
 
-        extra_features = ExtraFeatures(args.extra_features_type, dataset_info=data_info) 
+        extra_features = ExtraFeatures(args.extra_features_type, dataset_info=data_info)
 
         example_batch = [from_smiles(smiles[0]), from_smiles(smiles[1])]
         example_batch = Batch.from_data_list(example_batch, None, None)
-        
+
         data_info.compute_input_output_dims(
             example_batch=example_batch,
             extra_features=extra_features,
@@ -177,58 +204,94 @@ class ECReactGraph(ECReact_RXNS):
         args.extra_features = extra_features
         args.domain_features = None
 
+    def make_split_group_dataset(
+        self, processed_dataset, split_group: Literal["train", "dev", "test"]
+    ) -> List[dict]:
         # check right split
-        self.dataset = [d for d in self.dataset if d['split'] == split_group]
-        
+        parse_ec = lambda ec: ".".join(ec.split(".")[: self.args.ec_level + 1])
+        dataset = []
+        if self.assign_splits:
+            if self.args.split_type in ["sequence", "ec", "product"]:
+                for sample in processed_dataset:
+                    if self.args.split_type == "sequence":
+                        if self.to_split[sample["protein_id"]] != split_group:
+                            continue
+                    elif self.args.split_type == "ec":
+                        ec = parse_ec(sample["ec"])
+                        if self.to_split[ec] != split_group:
+                            continue
+                    elif self.args.split_type == "product":
+                        if self.to_split[sample["products"][0]] != split_group:
+                            continue
+                    dataset.append(sample)
+
+            elif self.args.split_type == "random":
+                for sample in processed_dataset:
+                    reaction_string = (
+                        ".".join(sample["reactants"])
+                        + ">>"
+                        + ".".join(sample["products"])
+                    )
+                    if self.to_split[reaction_string] != split_group:
+                        continue
+                dataset.append(sample)
+
+        else:
+            dataset = [d for d in processed_dataset if d["split"] == split_group]
+
+        return dataset
 
     def create_dataset(
         self, split_group: Literal["train", "dev", "test"]
     ) -> List[dict]:
 
         dataset = []
-        
-        for rowid, reaction in tqdm(enumerate(self.metadata_json), total=len(self.metadata_json), desc="Building dataset"):
-            
+
+        for rowid, reaction in tqdm(
+            enumerate(self.metadata_json),
+            total=len(self.metadata_json),
+            desc="Building dataset",
+        ):
+
             ec = reaction["ec"]
             reactants = reaction["reactants"]
             products = reaction["products"]
-            reaction_string = ".".join(reactants)+ ">>" + ".".join(products)
-            
+            reaction_string = ".".join(reactants) + ">>" + ".".join(products)
+
             valid_uniprots = []
             for uniprot in self.ec2uniprot.get(ec, []):
                 temp_sample = {
                     "reactants": reactants,
                     "products": products,
                     "ec": ec,
-                    "reaction_string":reaction_string,
+                    "reaction_string": reaction_string,
                     "protein_id": uniprot,
                     "sequence": self.uniprot2sequence[uniprot],
-                    "split": reaction.get("split", None)
-
+                    "split": reaction.get("split", None),
                 }
                 if self.skip_sample(temp_sample, split_group):
                     continue
-                
+
                 valid_uniprots.append(uniprot)
-            
+
             if len(valid_uniprots) == 0:
-                continue 
+                continue
 
             if ec not in self.valid_ec2uniprot:
                 self.valid_ec2uniprot[ec] = valid_uniprots
 
             sample = {
-                    "reactants": reactants,
-                    "products": products,
-                    "ec": ec,
-                    "reaction_string":reaction_string,
-                    "rowid": rowid,
-                    "split": reaction["split"]
-                }
-            
+                "reactants": reactants,
+                "products": products,
+                "ec": ec,
+                "reaction_string": reaction_string,
+                "rowid": rowid,
+                "split": reaction["split"],
+            }
+
             # add reaction sample to dataset
             dataset.append(sample)
-        
+
         return dataset
 
     def skip_sample(self, sample, split_group) -> bool:
@@ -237,8 +300,10 @@ class ECReactGraph(ECReact_RXNS):
         if (sample["sequence"] is None) or (len(sample["sequence"]) == 0):
             return True
 
-        if (self.args.max_protein_length is not None) and len(sample["sequence"]) > self.args.max_protein_length:
-            return True 
+        if (self.args.max_protein_length is not None) and len(
+            sample["sequence"]
+        ) > self.args.max_protein_length:
+            return True
 
         return False
 
@@ -254,7 +319,7 @@ class ECReactGraph(ECReact_RXNS):
             valid_uniprots = self.valid_ec2uniprot[ec]
             uniprot_id = random.sample(valid_uniprots, 1)[0]
             sequence = self.uniprot2sequence[uniprot_id]
-            
+
             residue_dict = self.get_uniprot_residues(self.mcsa_data, sequence, ec)
             residues = residue_dict["residues"]
             residue_mask = residue_dict["residue_mask"]
@@ -280,23 +345,30 @@ class ECReactGraph(ECReact_RXNS):
                     reaction = "{}>>{}".format(".".join(reactants), ".".join(products))
                 except:
                     pass
-            
+
             reactants = from_smiles(".".join(reactants))
             products = from_smiles(".".join(products))
 
             # first feature is atomic number
-            reactants.x = F.one_hot(reactants.x[:,0], len(x_map["atomic_num"]) ).to(torch.float)
+            reactants.x = F.one_hot(reactants.x[:, 0], len(x_map["atomic_num"])).to(
+                torch.float
+            )
             # first feature is bond type
-            reactants.edge_attr = F.one_hot(reactants.edge_attr[:,0], len(e_map["bond_type"]) ).to(torch.float)
+            reactants.edge_attr = F.one_hot(
+                reactants.edge_attr[:, 0], len(e_map["bond_type"])
+            ).to(torch.float)
 
             # first feature is atomic number
-            products.x = F.one_hot(products.x[:,0], len(x_map["atomic_num"]) ).to(torch.float)
+            products.x = F.one_hot(products.x[:, 0], len(x_map["atomic_num"])).to(
+                torch.float
+            )
             # first feature is bond type
-            products.edge_attr = F.one_hot(products.edge_attr[:,0], len(e_map["bond_type"]) ).to(torch.float)
+            products.edge_attr = F.one_hot(
+                products.edge_attr[:, 0], len(e_map["bond_type"])
+            ).to(torch.float)
             products.y = torch.zeros((1, 0), dtype=torch.float)
 
-            
-            sample_id = sample['rowid']    
+            sample_id = sample["rowid"]
             item = {
                 "reaction": reaction,
                 "reactants": reactants,
@@ -309,18 +381,26 @@ class ECReactGraph(ECReact_RXNS):
             }
 
             if self.args.precomputed_esm_features_dir is not None:
-                esm_features = pickle.load(open(
-                    os.path.join(self.args.precomputed_esm_features_dir, f"sample_{uniprot_id}.predictions"), 'rb'
-                ))
-                
-                mask_hiddens = esm_features["mask_hiddens"] # sequence len, 1
-                protein_hidden = esm_features["hidden"] 
-                token_hiddens = esm_features["token_hiddens"][mask_hiddens[:,0].bool()]
-                item.update({
-                    #"token_hiddens": token_hiddens,
-                    "protein_len": mask_hiddens.sum(),
-                    "hidden": protein_hidden
-                })
+                esm_features = pickle.load(
+                    open(
+                        os.path.join(
+                            self.args.precomputed_esm_features_dir,
+                            f"sample_{uniprot_id}.predictions",
+                        ),
+                        "rb",
+                    )
+                )
+
+                mask_hiddens = esm_features["mask_hiddens"]  # sequence len, 1
+                protein_hidden = esm_features["hidden"]
+                token_hiddens = esm_features["token_hiddens"][mask_hiddens[:, 0].bool()]
+                item.update(
+                    {
+                        # "token_hiddens": token_hiddens,
+                        "protein_len": mask_hiddens.sum(),
+                        "hidden": protein_hidden,
+                    }
+                )
 
             return item
 
@@ -329,8 +409,8 @@ class ECReactGraph(ECReact_RXNS):
 
     @property
     def SUMMARY_STATEMENT(self) -> None:
-        reactions = [ d["reaction_string"] for d in self.dataset ]
-        proteins = [u for  d in self.dataset for u in self.valid_ec2uniprot[d["ec"]] ]
+        reactions = [d["reaction_string"] for d in self.dataset]
+        proteins = [u for d in self.dataset for u in self.valid_ec2uniprot[d["ec"]]]
         ecs = [d["ec"] for d in self.dataset]
         statement = f""" 
         * Number of reactions: {len(set(reactions))}
@@ -379,38 +459,41 @@ class ECReactGraph(ECReact_RXNS):
             help="maximum product size",
         )
 
+
 @register_object("ecreact_multiproduct_graph", "dataset")
 class ECReact_MultiProduct_Graph(ECReact_MultiProduct_RXNS):
-
     @staticmethod
     def set_args(args):
-        args.dataset_file_path = '/Mounts/rbg-storage1/datasets/Enzymes/ECReact/ecreact_multiproduct.json'
+        args.dataset_file_path = (
+            "/Mounts/rbg-storage1/datasets/Enzymes/ECReact/ecreact_multiproduct.json"
+        )
 
 
 @register_object("ecreact_substrates", "dataset")
 class ECReactSubstrate(ECReactGraph):
-
     def post_process(self, args):
         split_group = self.split_group
 
         # get data info (input / output dimensions)
-        train_dataset = [d for d in self.dataset if d['split'] == 'train']
-        
+        train_dataset = [d for d in self.dataset if d["split"] == "train"]
+
         smiles = set()
         for d in train_dataset:
-            smiles.add(d['reactant'])
+            smiles.add(d["reactant"])
         smiles = list(smiles)
 
-        data_info = DatasetInfo(smiles, args) 
-        
+        data_info = DatasetInfo(smiles, args)
+
         if args.extra_features_type is not None:
-            extra_features = ExtraFeatures(args.extra_features_type, dataset_info=data_info) 
+            extra_features = ExtraFeatures(
+                args.extra_features_type, dataset_info=data_info
+            )
         else:
             extra_features = None
 
         example_batch = [from_smiles(smiles[0]), from_smiles(smiles[1])]
         example_batch = Batch.from_data_list(example_batch, None, None)
-        
+
         data_info.compute_input_output_dims(
             example_batch=example_batch,
             extra_features=extra_features,
@@ -423,41 +506,41 @@ class ECReactSubstrate(ECReactGraph):
         args.domain_features = None
         args.num_classes = data_info.max_n_nodes
 
-        # check right split
-        self.dataset = [d for d in self.dataset if d['split'] == split_group]
-        
-
     def create_dataset(
         self, split_group: Literal["train", "dev", "test"]
     ) -> List[dict]:
 
         dataset = []
-        
-        for rowid, reaction in tqdm(enumerate(self.metadata_json), total=len(self.metadata_json), desc="Building dataset"):
-            
+
+        for rowid, reaction in tqdm(
+            enumerate(self.metadata_json),
+            total=len(self.metadata_json),
+            desc="Building dataset",
+        ):
+
             ec = reaction["ec"]
             reactants = reaction["reactants"]
             products = reaction["products"]
-            reaction_string = ".".join(reactants)+ ">>" + ".".join(products)
-            
+            reaction_string = ".".join(reactants) + ">>" + ".".join(products)
+
             valid_uniprots = []
             for uniprot in self.ec2uniprot.get(ec, []):
                 temp_sample = {
                     "reactants": reactants,
                     "products": products,
                     "ec": ec,
-                    "reaction_string":reaction_string,
+                    "reaction_string": reaction_string,
                     "protein_id": uniprot,
                     "sequence": self.uniprot2sequence[uniprot],
-                    "split": reaction.get("split", None)
+                    "split": reaction.get("split", None),
                 }
                 if super().skip_sample(temp_sample, split_group):
                     continue
-                
+
                 valid_uniprots.append(uniprot)
-            
+
             if len(valid_uniprots) == 0:
-                continue 
+                continue
 
             if ec not in self.valid_ec2uniprot:
                 self.valid_ec2uniprot[ec] = valid_uniprots
@@ -467,37 +550,39 @@ class ECReactSubstrate(ECReactGraph):
                     "reactant": reactant,
                     "products": products,
                     "ec": ec,
-                    "reaction_string":reaction_string,
+                    "reaction_string": reaction_string,
                     "protein_id": uniprot,
                     "sequence": self.uniprot2sequence[uniprot],
-                    "split": reaction.get("split", None)
-                    }
+                    "split": reaction.get("split", None),
+                }
                 if self.skip_sample(sample_to_check, split_group):
                     continue
-                
+
                 sample = {
-                        "reactant": reactant,
-                        "ec": ec,
-                        "reaction_string":reaction_string,
-                        "rowid": f"{rid}{rowid}",
-                        "split": reaction["split"]
-                    }
-                
+                    "reactant": reactant,
+                    "ec": ec,
+                    "reaction_string": reaction_string,
+                    "rowid": f"{rid}{rowid}",
+                    "split": reaction["split"],
+                }
+
                 dataset.append(sample)
-        
+
         return dataset
-    
+
     def skip_sample(self, sample, split_group) -> bool:
         if super().skip_sample(sample, split_group):
-            return True 
-        
+            return True
+
         # skip graphs of size 1
         reactant_size = rdkit.Chem.MolFromSmiles(sample["reactant"]).GetNumAtoms()
         if reactant_size <= 1:
-            return True 
+            return True
 
-        if (self.args.max_reactant_size is not None) and (reactant_size > self.args.max_reactant_size):
-            return True 
+        if (self.args.max_reactant_size is not None) and (
+            reactant_size > self.args.max_reactant_size
+        ):
+            return True
 
         return False
 
@@ -511,7 +596,7 @@ class ECReactSubstrate(ECReactGraph):
             valid_uniprots = self.valid_ec2uniprot[ec]
             uniprot_id = random.sample(valid_uniprots, 1)[0]
             sequence = self.uniprot2sequence[uniprot_id]
-            
+
             residue_dict = self.get_uniprot_residues(self.mcsa_data, sequence, ec)
             residues = residue_dict["residues"]
             residue_mask = residue_dict["residue_mask"]
@@ -519,21 +604,31 @@ class ECReactSubstrate(ECReactGraph):
             residue_positions = residue_dict["residue_positions"]
 
             # first feature is atomic number
-            reactant.x = F.one_hot(reactant.x[:,0], len(x_map["atomic_num"]) ).to(torch.float)
+            reactant.x = F.one_hot(reactant.x[:, 0], len(x_map["atomic_num"])).to(
+                torch.float
+            )
             # first feature is bond type
-            reactant.edge_attr = F.one_hot(reactant.edge_attr[:,0], len(e_map["bond_type"]) ).to(torch.float)
+            reactant.edge_attr = F.one_hot(
+                reactant.edge_attr[:, 0], len(e_map["bond_type"])
+            ).to(torch.float)
 
-            reactant.sample_id = sample['rowid']  
-            reactant.sequence =  sequence
-            
-            esm_features = pickle.load(open(
-                os.path.join(self.args.precomputed_esm_features_dir, f"sample_{uniprot_id}.predictions"), 'rb'
-            ))
-            
-            mask_hiddens = esm_features["mask_hiddens"] # sequence len, 1
-            protein_hidden = esm_features["hidden"] 
+            reactant.sample_id = sample["rowid"]
+            reactant.sequence = sequence
+
+            esm_features = pickle.load(
+                open(
+                    os.path.join(
+                        self.args.precomputed_esm_features_dir,
+                        f"sample_{uniprot_id}.predictions",
+                    ),
+                    "rb",
+                )
+            )
+
+            mask_hiddens = esm_features["mask_hiddens"]  # sequence len, 1
+            protein_hidden = esm_features["hidden"]
             # token_hiddens = esm_features["token_hiddens"][mask_hiddens[:,0].bool()]
-            reactant.y = protein_hidden.view(1,-1)
+            reactant.y = protein_hidden.view(1, -1)
 
             return reactant
 

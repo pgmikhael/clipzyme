@@ -229,8 +229,8 @@ class StokesAntibiotics(Molecules):
             dataset.append(mol_datapoint)
         return dataset
 
-    def make_split_group_dataset(self, split_group):
-        self.dataset = [d for d in self.dataset if d["split"] == split_group]
+    def make_split_group_dataset(self, processed_dataset, split_group):
+        return [d for d in processed_dataset if d["split"] == split_group]
 
     def get_label(self, sample):
         """

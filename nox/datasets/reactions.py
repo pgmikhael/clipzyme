@@ -23,8 +23,10 @@ class ChemRXN(AbstractDataset):
             dataset.append({"x": rxn_dict["reaction"], "sample_id": rxn_dict["rxnid"]})
         return dataset
 
-    def make_split_group_dataset(self, split_group: Literal["train", "dev", "test"]):
-        self.dataset = [d for d in self.dataset if d["split"] == split_group]
+    def make_split_group_dataset(
+        self, processed_dataset, split_group: Literal["train", "dev", "test"]
+    ):
+        return [d for d in processed_dataset if d["split"] == split_group]
 
     def __getitem__(self, index):
         try:
