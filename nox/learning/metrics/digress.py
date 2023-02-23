@@ -5,6 +5,9 @@ from nox.utils.digress.rdkit_functions import compute_molecular_metrics
 import torch
 from torchmetrics import Metric, MeanAbsoluteError, MetricCollection
 from torch import Tensor
+import rdkit 
+from rdkit import Chem
+
 
 
 class GeneratedNDistribution(Metric):
@@ -392,11 +395,50 @@ class MoleculeAccuracy(Metric):
     def __init__(self):
         super().__init__()
         self.add_state("total_mol_correct", default=torch.tensor(0.0), dist_reduce_fx="sum")
+        self.add_state("total_smile_correct", default=torch.tensor(0.0), dist_reduce_fx="sum")
         self.add_state("total_edge_accuracy", default=torch.tensor(0.0), dist_reduce_fx="sum")
         self.add_state("total_node_accuracy", default=torch.tensor(0.0), dist_reduce_fx="sum")
         self.add_state("total_edge_samples", default=torch.tensor(0.0), dist_reduce_fx="sum")
         self.add_state("total_samples", default=torch.tensor(0.0), dist_reduce_fx="sum")
-    
+
+    def smiles_from_graphs(self, node_list, adjacency_matrix, args):
+        atom_decoder = args.dataset_statistics.atom_decoder
+        # create empty editable mol object
+        mol = Chem.RWMol()
+
+        # add atoms to mol and keep track of index
+        node_to_idx = {}
+        for i in range(len(node_list)):
+            if node_list[i] == -1:
+                continue
+            a = Chem.Atom(atom_decoder[int(node_list[i])])
+            molIdx = mol.AddAtom(a)
+            node_to_idx[i] = molIdx
+
+        for ix, row in enumerate(adjacency_matrix):
+            for iy, bond in enumerate(row):
+                # only traverse half the symmetric matrix
+                if iy <= ix:
+                    continue
+                if bond == 1:
+                    bond_type = Chem.rdchem.BondType.SINGLE
+                elif bond == 2:
+                    bond_type = Chem.rdchem.BondType.DOUBLE
+                elif bond == 3:
+                    bond_type = Chem.rdchem.BondType.TRIPLE
+                elif bond == 4:
+                    bond_type = Chem.rdchem.BondType.AROMATIC
+                else:
+                    continue
+                mol.AddBond(node_to_idx[ix], node_to_idx[iy], bond_type)
+
+        try:
+            mol = mol.GetMol()
+        except rdkit.Chem.KekulizeException:
+            # print("Can't kekulize molecule")
+            mol = None
+        return Chem.MolToSmiles(mol)
+
     def update(self, predictions_dict, args):
         masked_pred_X = predictions_dict["masked_pred_X"]
         masked_pred_E = predictions_dict["masked_pred_E"]
@@ -410,7 +452,7 @@ class MoleculeAccuracy(Metric):
 
         node_accuracy = ((x_label == x_pred) * x_mask).sum(-1) / x_mask.sum(-1)
         self.total_node_accuracy = node_accuracy.sum()
-        
+
         # edges correct, NOTE: diagonals are all zero-vectors (no self-loop)
         e_mask = (true_E != 0.0).any(dim=-1)
         e_label = torch.argmax(true_E, -1) 
@@ -431,11 +473,23 @@ class MoleculeAccuracy(Metric):
         self.total_mol_correct += torch.logical_and(correct_nodes, correct_edges).sum()
         self.total_samples += len(masked_pred_X)
 
+        # smiles accuracy
+        for i in range(len(x_pred)):
+            nodemask = x_mask[i]
+            nodelist, adjacency = x_pred[i][nodemask], e_pred[i][nodemask][:,nodemask]
+            pred_smiles = self.smiles_from_graphs(nodelist, adjacency, args)
+
+            nodelist, adjacency = x_label[i][nodemask], e_label[i][nodemask][:,nodemask]
+            target_smiles = self.smiles_from_graphs(nodelist, adjacency, args)
+
+            self.total_smile_correct += int(pred_smiles == target_smiles)
+
     def compute(self):
         stats_dict = {
             "average_node_accuracy": torch.tensor([self.total_node_accuracy  / self.total_samples], device = self.device),
             "average_edge_accuracy": torch.tensor([self.total_edge_accuracy  / self.total_edge_samples], device = self.device),
-            "top1_molecule_accuracy": torch.tensor([self.total_mol_correct /  self.total_samples], device = self.device)
+            "top1_molecule_accuracy": torch.tensor([self.total_mol_correct /  self.total_samples], device = self.device),
+            "top1_smile_accuracy": torch.tensor([self.total_smile_correct /  self.total_samples], device = self.device)
         }
         return stats_dict
 

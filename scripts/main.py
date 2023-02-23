@@ -1,7 +1,7 @@
 import sys, os
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
-
+os.environ["WANDB__SERVICE_WAIT"] = "300"
 from ast import arg
 from collections import OrderedDict
 import pickle

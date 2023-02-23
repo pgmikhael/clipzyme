@@ -180,7 +180,11 @@ class ECReactGraph(ECReact_RXNS):
         split_group = self.split_group
 
         # get data info (input / output dimensions)
+<<<<<<< HEAD
         train_dataset = [d for d in self.dataset if d["split"] == "train"]
+=======
+        train_dataset = self.get_split_group_dataset(self.dataset, "train")
+>>>>>>> f3385e3e80a50530bbe6edaf949f32b21cbc4f70
 
         smiles = set()
         for d in train_dataset:
@@ -204,8 +208,46 @@ class ECReactGraph(ECReact_RXNS):
         args.extra_features = extra_features
         args.domain_features = None
 
+    def get_split_group_dataset(
+        self, processed_dataset, split_group: Literal["train", "dev", "test"]
+    ) -> List[dict]:
         # check right split
+<<<<<<< HEAD
         self.dataset = [d for d in self.dataset if d["split"] == split_group]
+=======
+        parse_ec = lambda ec: ".".join(ec.split(".")[: self.args.ec_level + 1])
+        dataset = []
+        if self.assign_splits:
+            if self.args.split_type in ["sequence", "ec", "product"]:
+                for sample in processed_dataset:
+                    if self.args.split_type == "sequence":
+                        if self.to_split[sample["protein_id"]] != split_group:
+                            continue
+                    elif self.args.split_type == "ec":
+                        ec = parse_ec(sample["ec"])
+                        if self.to_split[ec] != split_group:
+                            continue
+                    elif self.args.split_type == "product":
+                        if self.to_split[sample["products"][0]] != split_group:
+                            continue
+                    dataset.append(sample)
+
+            elif self.args.split_type == "random":
+                for sample in processed_dataset:
+                    reaction_string = (
+                        ".".join(sample["reactants"])
+                        + ">>"
+                        + ".".join(sample["products"])
+                    )
+                    if self.to_split[reaction_string] != split_group:
+                        continue
+                dataset.append(sample)
+
+        else:
+            dataset = [d for d in processed_dataset if d["split"] == split_group]
+
+        return dataset
+>>>>>>> f3385e3e80a50530bbe6edaf949f32b21cbc4f70
 
     def create_dataset(
         self, split_group: Literal["train", "dev", "test"]
@@ -473,9 +515,12 @@ class ECReactSubstrate(ECReactGraph):
         if not args.use_original_num_classes:
             args.num_classes = data_info.max_n_nodes
 
+<<<<<<< HEAD
         # check right split
         self.dataset = [d for d in self.dataset if d["split"] == split_group]
 
+=======
+>>>>>>> f3385e3e80a50530bbe6edaf949f32b21cbc4f70
     def create_dataset(
         self, split_group: Literal["train", "dev", "test"]
     ) -> List[dict]:

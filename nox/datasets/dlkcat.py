@@ -14,11 +14,13 @@ class BrendaKCat(AbstractDataset):
     def create_dataset(
         self, split_group: Literal["train", "dev", "test"]
     ) -> List[dict]:
-        
+
         # get sequence,smiles pair to y-value
         seq_smi_2_y = defaultdict(list)
         for kcat_dict in self.metadata_json:
-            seq_smi_2_y[f"{kcat_dict['Sequence']}{kcat_dict['Smiles']}"].append(self.get_label(kcat_dict))
+            seq_smi_2_y[f"{kcat_dict['Sequence']}{kcat_dict['Smiles']}"].append(
+                self.get_label(kcat_dict)
+            )
 
         # create samples
         dataset = []
@@ -38,7 +40,10 @@ class BrendaKCat(AbstractDataset):
                 "smiles": kcat_dict["Smiles"],
                 "sequence": kcat_dict["Sequence"],
                 "y": self.get_label(kcat_dict),
-                "sample_id": kcat_dict["sample_id"]
+                "sample_id": kcat_dict["sample_id"],
+                "ec": kcat_dict["ECNumber"],
+                "organism": kcat_dict["Organism"],
+                "type": kcat_dict["Type"],
             }
 
             dataset.append(sample)
@@ -54,22 +59,24 @@ class BrendaKCat(AbstractDataset):
 
         Ref: https://github.com/SysBioChalmers/DLKcat/blob/master/DeeplearningApproach/Code/model/preprocess_all.py
         """
-        if sample["split"] != split_group:
-            return True
-        
         if "." in sample["Smiles"]:
             return True
-        
+
         if float(sample["Value"]) <= 0:
             return True
-        
+
         # skip if sequence, smile pair has inconsistent values (across organisms, conditions)
         smi = sample["Smiles"]
         seq = sample["Sequence"]
         if any(i != seq_smi_2_y[f"{seq}{smi}"][0] for i in seq_smi_2_y[f"{seq}{smi}"]):
-            return True 
+            return True
 
         return False
+
+    def get_split_group_dataset(self, processed_dataset, split_group):
+        return [
+            sample for sample in processed_dataset if sample["split"] == split_group
+        ]
 
     def assign_splits(self, metadata_json, split_probs, seed=0) -> None:
         np.random.seed(seed)
@@ -77,14 +84,7 @@ class BrendaKCat(AbstractDataset):
             super().assign_splits(metadata_json, split_probs, seed)
 
         elif self.args.split_type in ["smiles", "sequence", "ec", "organism"]:
-            if self.args.split_type == "smiles":
-                key = "Smiles"
-            elif self.args.split_type == "sequence":
-                key = "Sequence"
-            elif self.args.split_type == "ec":
-                key = "ECNumber"
-            elif self.args.split_type == "organism":
-                key = "Organism"
+            key = self.args.split_type
 
             #  split based on key
             samples = set([sample[key] for sample in metadata_json])
@@ -105,7 +105,7 @@ class BrendaKCat(AbstractDataset):
                 empirical_distribution, split_probs, atol=0.1, rtol=0
             ):
                 #  split based on sequence
-                samples = set([sample["Sequence"] for sample in metadata_json])
+                samples = set([sample["sequence"] for sample in metadata_json])
                 samples = sorted(list(samples))
                 np.random.shuffle(samples)
                 split_indices = np.cumsum(np.array(split_probs) * len(samples)).astype(
@@ -114,7 +114,7 @@ class BrendaKCat(AbstractDataset):
                 seq_split_indices = np.concatenate([[0], split_indices])
 
                 #  split based on smiles
-                samples = set([sample["Smiles"] for sample in metadata_json])
+                samples = set([sample["smiles"] for sample in metadata_json])
                 samples = sorted(list(samples))
                 np.random.shuffle(samples)
                 split_indices = np.cumsum(np.array(split_probs) * len(samples)).astype(
@@ -125,12 +125,12 @@ class BrendaKCat(AbstractDataset):
                 for i in range(len(split_indices) - 1):
                     for sample in metadata_json:
                         if (
-                            sample["Smiles"]
+                            sample["smiles"]
                             in smi_split_indices[
                                 split_indices[i] : split_indices[i + 1]
                             ]
                         ) and (
-                            sample["Sequence"]
+                            sample["sequence"]
                             in seq_split_indices[
                                 split_indices[i] : split_indices[i + 1]
                             ]
@@ -153,12 +153,12 @@ class BrendaKCat(AbstractDataset):
                     sample["split"] = np.random.choice(
                         ["train", "dev"], p=[1 - dev_probs, dev_probs]
                     )
-        
+
         elif self.args.split_type == "mutation":
             #  split based on mutation
             assert len(split_probs) == 2, "Mutation split only supports 2 splits"
             for sample in metadata_json:
-                if sample["Type"] == "wildtype":
+                if sample["type"] == "wildtype":
                     sample["split"] = "train"
                 else:
                     sample["split"] = np.random.choice(["dev", "test"], split_probs)
@@ -185,7 +185,7 @@ class BrendaKCat(AbstractDataset):
     def set_args(args) -> None:
         args.dataset_file_path = "/Mounts/rbg-storage1/datasets/Enzymes/DLKcat/DeeplearningApproach/Data/database/Kcat_combination_0918_wildtype_mutant_sample_ids.json"
         args.num_classes = 1
-        
+
     @property
     def SUMMARY_STATEMENT(self) -> None:
         """

@@ -1,4 +1,4 @@
-import json 
+import json
 from typing import List, Literal
 from nox.utils.registry import register_object, get_object
 from nox.datasets.abstract import AbstractDataset
@@ -13,15 +13,16 @@ from rxn.chemutils.smiles_randomization import randomize_smiles_rotated
 import warnings
 from frozendict import frozendict
 import copy, os
-import numpy as np 
+import numpy as np
 from p_tqdm import p_map
-import random 
+import random
+
 
 @register_object("ecreact", "dataset")
 class ECReact(BrendaReaction):
     def __init__(self, args, split_group) -> None:
-        super(ECReact,ECReact).__init__(self, args, split_group)
-        self.metadata_json = None # overwrite for memory
+        super(ECReact, ECReact).__init__(self, args, split_group)
+        self.metadata_json = None  # overwrite for memory
 
     def load_dataset(self, args: argparse.ArgumentParser) -> None:
         """Loads dataset file
@@ -36,9 +37,13 @@ class ECReact(BrendaReaction):
             self.metadata_json = json.load(open(args.dataset_file_path, "r"))
         except Exception as e:
             raise Exception(METAFILE_NOTFOUND_ERR.format(args.dataset_file_path, e))
-        
-        #self.ec2uniprot = pickle.load(open("/Mounts/rbg-storage1/datasets/Enzymes/ECReact/ecreact_ec2uniprot.p", "rb"))
-        self.uniprot2sequence = pickle.load(open("/Mounts/rbg-storage1/datasets/Enzymes/ECReact/ecreact_proteins.p", "rb"))
+
+        # self.ec2uniprot = pickle.load(open("/Mounts/rbg-storage1/datasets/Enzymes/ECReact/ecreact_ec2uniprot.p", "rb"))
+        self.uniprot2sequence = pickle.load(
+            open(
+                "/Mounts/rbg-storage1/datasets/Enzymes/ECReact/ecreact_proteins.p", "rb"
+            )
+        )
 
     def create_dataset(
         self, split_group: Literal["train", "dev", "test"]
@@ -48,14 +53,16 @@ class ECReact(BrendaReaction):
 
         mcsa_data = self.load_mcsa_data(self.args)
         for reaction in tqdm(self.metadata_json):
-            
+
             ec = reaction["ec"]
             reactants = reaction["reactants"]
             products = reaction["products"]
-            reaction_string = ".".join(reactants)+ ">>" + ".".join(products)
-            
-            uniprotid=reaction["uniprot_id"]
-            sample_id = hashlib.md5(f"{uniprotid}_{reaction_string}".encode()).hexdigest()
+            reaction_string = ".".join(reactants) + ">>" + ".".join(products)
+
+            uniprotid = reaction["uniprot_id"]
+            sample_id = hashlib.md5(
+                f"{uniprotid}_{reaction_string}".encode()
+            ).hexdigest()
             sequence = self.uniprot2sequence[uniprotid]
             residues = self.get_uniprot_residues(mcsa_data, sequence, ec)
 
@@ -65,21 +72,22 @@ class ECReact(BrendaReaction):
                 "reactants": reactants,
                 "products": products,
                 "ec": ec,
-                "reaction_string":reaction_string,
+                "reaction_string": reaction_string,
                 "sample_id": sample_id,
-                "split": reaction.get("split", None)
+                "split": reaction.get("split", None),
             }
 
-            if hasattr(self, "to_split"):
-                sample.update({
+            sample.update(
+                {
                     "residues": residues["residues"],
                     "residue_mask": residues["residue_mask"],
                     "has_residues": residues["has_residues"],
                     "residue_positions": residues["residue_positions"],
-                })
+                }
+            )
 
             if self.skip_sample(sample, split_group):
-                continue 
+                continue
 
             if self.args.split_type != "random":
                 del sample["sequence"]
@@ -87,40 +95,52 @@ class ECReact(BrendaReaction):
             dataset.append(sample)
 
         return dataset
-    
+
     def skip_sample(self, sample, split_group) -> bool:
-        # check right split
-        if hasattr(self, "to_split"):
-            if self.args.split_type == "sequence":
-                if self.to_split[sample["protein_id"]] != split_group:
-                    return True
-
-            if self.args.split_type == "ec":
-                ec = ".".join(sample["ec"].split(".")[: self.args.ec_level + 1])
-                if self.to_split[ec] != split_group:
-                    return True
-            
-            if self.args.split_type == "product":
-                if any(self.to_split[p] != split_group for p in sample["products"]):
-                    return True
-        
-        elif sample["split"] is not None:
-            if sample["split"] != split_group:
-                return True
-
         # if sequence is unknown
         if (sample["sequence"] is None) or (len(sample["sequence"]) == 0):
             return True
 
-        if (self.args.max_protein_length is not None) and len(sample["sequence"]) > self.args.max_protein_length:
-            return True 
+        if (self.args.max_protein_length is not None) and len(
+            sample["sequence"]
+        ) > self.args.max_protein_length:
+            return True
 
         return False
-    
+
+    def get_split_group_dataset(
+        self, processed_dataset, split_group: Literal["train", "dev", "test"]
+    ) -> List[dict]:
+        # check right split
+        dataset = []
+        for sample in processed_dataset:
+            if hasattr(self, "to_split"):
+                if self.args.split_type == "sequence":
+                    if self.to_split[sample["protein_id"]] != split_group:
+                        continue
+
+                if self.args.split_type == "ec":
+                    ec = ".".join(sample["ec"].split(".")[: self.args.ec_level + 1])
+                    if self.to_split[ec] != split_group:
+                        continue
+
+                if self.args.split_type == "product":
+                    if any(self.to_split[p] != split_group for p in sample["products"]):
+                        continue
+
+            elif sample["split"] is not None:
+                if sample["split"] != split_group:
+                    continue
+
+            dataset.append(sample)
+        return dataset
+
     @staticmethod
     def set_args(args) -> None:
         super(ECReact, ECReact).set_args(args)
-        args.dataset_file_path = "/Mounts/rbg-storage1/datasets/Enzymes/ECReact/ecreact_dataset_lite_v2.json"
+        args.dataset_file_path = (
+            "/Mounts/rbg-storage1/datasets/Enzymes/ECReact/ecreact_dataset_lite_v2.json"
+        )
 
     def __getitem__(self, index):
         sample = self.dataset[index]
@@ -151,7 +171,7 @@ class ECReact(BrendaReaction):
                     reaction = "{}>>{}".format(".".join(reactants), ".".join(products))
                 except:
                     pass
-                
+
             item = {
                 "reaction": reaction,
                 "reactants": ".".join(reactants),
@@ -169,37 +189,46 @@ class ECReact(BrendaReaction):
             }
 
             if self.args.precomputed_esm_features_dir is not None:
-                esm_features = pickle.load(open(
-                    os.path.join(self.args.precomputed_esm_features_dir, f"sample_{sample['protein_id']}.predictions"), 'rb'
-                ))
-                
-                mask_hiddens = esm_features["mask_hiddens"] # sequence len, 1
-                protein_hidden = esm_features["hidden"] 
-                token_hiddens = esm_features["token_hiddens"][mask_hiddens[:,0].bool()]
-                item.update({
-                    #"token_hiddens": token_hiddens,
-                    "protein_len": mask_hiddens.sum(),
-                    "hidden": protein_hidden
-                })
+                esm_features = pickle.load(
+                    open(
+                        os.path.join(
+                            self.args.precomputed_esm_features_dir,
+                            f"sample_{sample['protein_id']}.predictions",
+                        ),
+                        "rb",
+                    )
+                )
+
+                mask_hiddens = esm_features["mask_hiddens"]  # sequence len, 1
+                protein_hidden = esm_features["hidden"]
+                token_hiddens = esm_features["token_hiddens"][mask_hiddens[:, 0].bool()]
+                item.update(
+                    {
+                        # "token_hiddens": token_hiddens,
+                        "protein_len": mask_hiddens.sum(),
+                        "hidden": protein_hidden,
+                    }
+                )
 
             return item
 
         except Exception:
             warnings.warn(f"Could not load sample: {sample['sample_id']}")
 
+
 @register_object("ecreact+orgos", "dataset")
 class EC_Orgo_React(ECReact):
     def load_dataset(self, args: argparse.ArgumentParser) -> None:
-        super(EC_Orgo_React,EC_Orgo_React).load_dataset(args)
+        super(EC_Orgo_React, EC_Orgo_React).load_dataset(args)
         self.orgo_reactions = get_object("chemical_reactions", "dataset")(args)
-        
-    
+
     def create_dataset(
         self, split_group: Literal["train", "dev", "test"]
     ) -> List[dict]:
-        dataset = super(EC_Orgo_React,EC_Orgo_React).create_dataset(split_group)
+        dataset = super(EC_Orgo_React, EC_Orgo_React).create_dataset(split_group)
 
-        return self.orgo_reactions.dataset + dataset 
+        return self.orgo_reactions.dataset + dataset
+
 
 @register_object("ecreact_proteins", "dataset")
 class ECReactProteins(AbstractDataset):
@@ -212,12 +241,14 @@ class ECReactProteins(AbstractDataset):
         Raises:
             Exception: Unable to load
         """
-        self.metadata_json = pickle.load(open(args.dataset_file_path, 'rb'))
-    
+        self.metadata_json = pickle.load(open(args.dataset_file_path, "rb"))
+
     @staticmethod
     def set_args(args) -> None:
         super(ECReactProteins, ECReactProteins).set_args(args)
-        args.dataset_file_path =  "/Mounts/rbg-storage1/datasets/Enzymes/ECReact/ecreact_proteins.p"
+        args.dataset_file_path = (
+            "/Mounts/rbg-storage1/datasets/Enzymes/ECReact/ecreact_proteins.p"
+        )
 
     def create_dataset(
         self, split_group: Literal["train", "dev", "test"]
@@ -225,27 +256,22 @@ class ECReactProteins(AbstractDataset):
         dataset = []
         for uniprot_id, sequence in tqdm(self.metadata_json.items()):
             if self.skip_sample(sequence):
-                continue 
-            dataset.append(
-                {
-                    "sample_id": uniprot_id,
-                    "sequence": sequence
-                }
-            )
-    
+                continue
+            dataset.append({"sample_id": uniprot_id, "sequence": sequence})
+
         return dataset
 
     def __getitem__(self, index):
         return self.dataset[index]
-    
+
     def skip_sample(self, sequence):
         if sequence is None:
             return True
-        
+
         if len(sequence) > self.args.max_protein_length:
             return True
-        
-        return False 
+
+        return False
 
     @staticmethod
     def add_args(parser) -> None:
@@ -262,9 +288,9 @@ class ECReactProteins(AbstractDataset):
             help="skip proteins longer than max_protein_length",
         )
 
+
 @register_object("ecreact_reactions", "dataset")
 class ECReact_RXNS(ECReact):
-
     def init_class(self, args: argparse.ArgumentParser, split_group: str) -> None:
         """Perform Class-Specific init methods
            Default is to load JSON dataset
@@ -274,24 +300,28 @@ class ECReact_RXNS(ECReact):
             split_group (str)
         """
         self.load_dataset(args)
-    
-        if args.assign_splits:
-            self.assign_splits(self.metadata_json, args.split_probs, args.split_seed)
-        elif not args.assign_splits:
-            rprint("[magenta]WARNING: `assign_splits` = False[/magenta]")
-        
-        self.ec2uniprot = pickle.load(open("/Mounts/rbg-storage1/datasets/Enzymes/ECReact/ecreact_ec2uniprot.p", "rb"))
+
+        self.ec2uniprot = pickle.load(
+            open(
+                "/Mounts/rbg-storage1/datasets/Enzymes/ECReact/ecreact_ec2uniprot.p",
+                "rb",
+            )
+        )
         self.valid_ec2uniprot = {}
-        self.uniprot2sequence = pickle.load(open("/Mounts/rbg-storage1/datasets/Enzymes/ECReact/ecreact_proteins.p", "rb"))
+        self.uniprot2sequence = pickle.load(
+            open(
+                "/Mounts/rbg-storage1/datasets/Enzymes/ECReact/ecreact_proteins.p", "rb"
+            )
+        )
         self.mcsa_data = self.load_mcsa_data(self.args)
 
     def assign_splits(self, metadata_json, split_probs, seed=0) -> None:
         """
         Assigns each sample to a split group based on split_probs
         """
-        # get all samples 
+        # get all samples
         rprint("Generating dataset in order to assign splits...")
-        
+
         self.to_split = {}
 
         # set seed
@@ -302,30 +332,37 @@ class ECReact_RXNS(ECReact):
 
             if self.args.split_type == "sequence":
                 # split based on uniprot_id
-                samples = [u for reaction in metadata_json for u in self.ec2uniprot.get(reaction['ec'], [])]
-            
+                samples = [
+                    u
+                    for reaction in metadata_json
+                    for u in self.ec2uniprot.get(reaction["ec"], [])
+                ]
 
             elif self.args.split_type == "ec":
                 # split based on ec number
-                samples = [reaction['ec'] for reaction in metadata_json]
+                samples = [reaction["ec"] for reaction in metadata_json]
 
                 # option to change level of ec categorization based on which to split
                 samples = [
                     ".".join(e.split(".")[: self.args.ec_level + 1]) for e in samples
                 ]
-            
+
             elif self.args.split_type == "product":
                 # split by reaction product (splits share no products)
-                if any(len(s['products']) > 1 for s in metadata_json):
-                    raise NotImplementedError("Product split not implemented for multi-products")
+                if any(len(s["products"]) > 1 for s in metadata_json):
+                    raise NotImplementedError(
+                        "Product split not implemented for multi-products"
+                    )
 
-                samples = [p for s in metadata_json for p in s['products']]
+                samples = [p for s in metadata_json for p in s["products"]]
 
             samples = sorted(list(set(samples)))
             np.random.shuffle(samples)
-            split_indices = np.ceil( np.cumsum(np.array(split_probs) * len(samples)) ).astype(int)
+            split_indices = np.ceil(
+                np.cumsum(np.array(split_probs) * len(samples))
+            ).astype(int)
             split_indices = np.concatenate([[0], split_indices])
-            
+
             for i in range(len(split_indices) - 1):
                 self.to_split.update(
                     {
@@ -333,11 +370,13 @@ class ECReact_RXNS(ECReact):
                         for sample in samples[split_indices[i] : split_indices[i + 1]]
                     }
                 )
-        
+
         # random splitting
         elif self.args.split_type == "random":
             for sample in self.metadata_json:
-                reaction_string = ".".join(sample["reactants"]) + ">>" + ".".join(sample["products"])
+                reaction_string = (
+                    ".".join(sample["reactants"]) + ">>" + ".".join(sample["products"])
+                )
                 self.to_split.update(
                     {
                         reaction_string: np.random.choice(
@@ -353,87 +392,98 @@ class ECReact_RXNS(ECReact):
     ) -> List[dict]:
 
         dataset = []
-        
-        for rowid, reaction in tqdm(enumerate(self.metadata_json), desc="Building dataset"):
-            
+
+        for rowid, reaction in tqdm(
+            enumerate(self.metadata_json), desc="Building dataset"
+        ):
+
             ec = reaction["ec"]
             reactants = reaction["reactants"]
             products = reaction["products"]
-            reaction_string = ".".join(reactants)+ ">>" + ".".join(products)
-            
+            reaction_string = ".".join(reactants) + ">>" + ".".join(products)
+
             valid_uniprots = []
             for uniprot in self.ec2uniprot.get(ec, []):
                 temp_sample = {
                     "reactants": reactants,
                     "products": products,
                     "ec": ec,
-                    "reaction_string":reaction_string,
+                    "reaction_string": reaction_string,
                     "protein_id": uniprot,
                     "sequence": self.uniprot2sequence[uniprot],
-                    "split": reaction.get("split", None)
-
+                    "split": reaction.get("split", None),
                 }
                 if self.skip_sample(temp_sample, split_group):
                     continue
-                
+
                 valid_uniprots.append(uniprot)
-            
+
             if len(valid_uniprots) == 0:
-                continue 
+                continue
 
             if ec not in self.valid_ec2uniprot:
                 self.valid_ec2uniprot[ec] = valid_uniprots
 
             sample = {
-                    "reactants": reactants,
-                    "products": products,
-                    "ec": ec,
-                    "reaction_string":reaction_string,
-                    "rowid": rowid
-                }
-            
+                "reactants": reactants,
+                "products": products,
+                "ec": ec,
+                "reaction_string": reaction_string,
+                "rowid": rowid,
+            }
+
             # add reaction sample to dataset
             dataset.append(sample)
-        
+
         return dataset
 
     def skip_sample(self, sample, split_group) -> bool:
-        # check right split
-
-        if self.args.split_type == "ec":
-            ec = sample['ec']
-            split_ec = ".".join(ec.split(".")[: self.args.ec_level + 1])
-            if self.to_split[split_ec] != split_group:
-                return True
-        
-        elif self.args.split_type == "product":
-            products = sample['products']
-            if any(self.to_split[p] != split_group for p in products):
-                return True
-
-        elif self.args.split_type == "sequence":
-            uniprot = sample['protein_id']
-            if self.to_split[uniprot] != split_group:
-                return True
-        
-        elif sample["split"] is not None:
-            if sample["split"] != split_group:
-                return True
-
         # if sequence is unknown
-        sequence = sample['sequence']
+        sequence = sample["sequence"]
         if (sequence is None) or (len(sequence) == 0):
             return True
 
-        if (self.args.max_protein_length is not None) and len(sequence) > self.args.max_protein_length:
-            return True 
+        if (self.args.max_protein_length is not None) and len(
+            sequence
+        ) > self.args.max_protein_length:
+            return True
 
         return False
 
+    def get_split_group_dataset(
+        self, processed_dataset, split_group: Literal["train", "dev", "test"]
+    ) -> List[dict]:
+        dataset = []
+        for sample in processed_dataset:
+            # check right split
+            if self.args.split_type == "ec":
+                ec = sample["ec"]
+                split_ec = ".".join(ec.split(".")[: self.args.ec_level + 1])
+                if self.to_split[split_ec] != split_group:
+                    continue
+
+            elif self.args.split_type == "product":
+                products = sample["products"]
+                if any(self.to_split[p] != split_group for p in products):
+                    continue
+
+            elif self.args.split_type == "sequence":
+                uniprot = sample["protein_id"]
+                if self.to_split[uniprot] != split_group:
+                    continue
+
+            elif sample["split"] is not None:
+                if sample["split"] != split_group:
+                    continue
+            dataset.append(sample)
+        return dataset
+
     @staticmethod
     def set_args(args):
-        args.dataset_file_path = '/Mounts/rbg-storage1/datasets/Enzymes/ECReact/ecreact_ibm_splits.json'
-    
+        args.dataset_file_path = (
+            "/Mounts/rbg-storage1/datasets/Enzymes/ECReact/ecreact_ibm_splits.json"
+        )
+
     def __getitem__(self, index):
         sample = self.dataset[index]
 
@@ -446,7 +496,6 @@ class ECReact_RXNS(ECReact):
             valid_uniprots = self.valid_ec2uniprot[ec]
             uniprot_id = random.sample(valid_uniprots, 1)[0]
             sequence = self.uniprot2sequence[uniprot_id]
-            
 
             residue_dict = self.get_uniprot_residues(self.mcsa_data, sequence, ec)
             residues = residue_dict["residues"]
@@ -473,10 +522,9 @@ class ECReact_RXNS(ECReact):
                     reaction = "{}>>{}".format(".".join(reactants), ".".join(products))
                 except:
                     pass
-            
 
             # sample_id = hashlib.md5(f"{uniprot_id}_{sample['reaction_string']}".encode()).hexdigest()
-            sample_id = sample['rowid']    
+            sample_id = sample["rowid"]
             item = {
                 "reaction": reaction,
                 "reactants": ".".join(reactants),
@@ -494,18 +542,26 @@ class ECReact_RXNS(ECReact):
             }
 
             if self.args.precomputed_esm_features_dir is not None:
-                esm_features = pickle.load(open(
-                    os.path.join(self.args.precomputed_esm_features_dir, f"sample_{uniprot_id}.predictions"), 'rb'
-                ))
-                
-                mask_hiddens = esm_features["mask_hiddens"] # sequence len, 1
-                protein_hidden = esm_features["hidden"] 
-                token_hiddens = esm_features["token_hiddens"][mask_hiddens[:,0].bool()]
-                item.update({
-                    #"token_hiddens": token_hiddens,
-                    "protein_len": mask_hiddens.sum(),
-                    "hidden": protein_hidden
-                })
+                esm_features = pickle.load(
+                    open(
+                        os.path.join(
+                            self.args.precomputed_esm_features_dir,
+                            f"sample_{uniprot_id}.predictions",
+                        ),
+                        "rb",
+                    )
+                )
+
+                mask_hiddens = esm_features["mask_hiddens"]  # sequence len, 1
+                protein_hidden = esm_features["hidden"]
+                token_hiddens = esm_features["token_hiddens"][mask_hiddens[:, 0].bool()]
+                item.update(
+                    {
+                        # "token_hiddens": token_hiddens,
+                        "protein_len": mask_hiddens.sum(),
+                        "hidden": protein_hidden,
+                    }
+                )
 
             return item
 
@@ -518,7 +574,7 @@ class ECReact_RXNS(ECReact):
             "{}>>{}".format(".".join(d["reactants"]), ".".join(d["products"]))
             for d in self.dataset
         ]
-        proteins = [u for  d in self.dataset for u in self.valid_ec2uniprot[d["ec"]] ]
+        proteins = [u for d in self.dataset for u in self.valid_ec2uniprot[d["ec"]]]
         ecs = [d["ec"] for d in self.dataset]
         statement = f""" 
         * Number of reactions: {len(set(reactions))}
@@ -530,16 +586,17 @@ class ECReact_RXNS(ECReact):
 
 @register_object("ecreact_multiproduct_reactions", "dataset")
 class ECReact_MultiProduct_RXNS(ECReact_RXNS):
-
     @staticmethod
     def set_args(args):
-        args.dataset_file_path = '/Mounts/rbg-storage1/datasets/Enzymes/ECReact/ecreact_multiproduct.json'
-    
+        args.dataset_file_path = (
+            "/Mounts/rbg-storage1/datasets/Enzymes/ECReact/ecreact_multiproduct.json"
+        )
+
     def skip_sample(self, sample, split_group) -> bool:
         if super().skip_sample(sample, split_group):
             return True
-        
-        if len(sample['reaction_string']) > 2000:
-            return True 
-        
-        return False 
+
+        if len(sample["reaction_string"]) > 2000:
+            return True
+
+        return False

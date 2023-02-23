@@ -43,6 +43,9 @@ class DiscreteDenoisingDiffusion(Base):
             "validity",
             "uniqueness",
             "novelty",
+            "nll",
+            "kl",
+            "log_pn",
         ]
 
     def validation_epoch_end(self, outputs) -> None:
@@ -103,7 +106,7 @@ class DiscreteDenoisingDiffusion(Base):
         if self.args.compute_sampling_metric:
             self.sampling_metric_val.reset()
 
-    def test_epoch_end(self, outs) -> None:
+    def test_epoch_end(self, outputs) -> None:
         """Measure likelihood on a test set and compute stability metrics."""
 
         self.phase = "test"
