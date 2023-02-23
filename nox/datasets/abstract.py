@@ -49,7 +49,7 @@ class AbstractDataset(data.Dataset, Nox):
 
         self.post_process(args)
 
-        self.dataset = self.make_split_group_dataset()
+        self.make_split_group_dataset(split_group)
 
         self.set_sample_weights(args)
 
@@ -75,10 +75,6 @@ class AbstractDataset(data.Dataset, Nox):
         """
         pass
 
-    def make_split_group_dataset(self) -> str:
-        """Get split group dataset"""
-        return [d for d in self.dataset if d["split"] == self.split_group]
-
     def load_dataset(self, args: argparse.ArgumentParser) -> None:
         """Loads dataset file
 
@@ -100,6 +96,12 @@ class AbstractDataset(data.Dataset, Nox):
         """
         Creates the dataset of samples from json metadata file.
         """
+        pass
+
+    def make_split_group_dataset(
+        self, split_group: Literal["train", "dev", "test"]
+    ) -> List[dict]:
+        """Get split group dataset"""
         pass
 
     @abstractmethod
