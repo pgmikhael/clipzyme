@@ -196,22 +196,17 @@ class MoleNet(Molecules, MoleculeNet):
             default=None,
             help="task indices",
         )
-    
+
     def process(self) -> None:
         super().process()
-    
+
     @property
     def raw_dir(self) -> str:
         return self.root
 
+
 @register_object("stokes_antiobiotics", "dataset")
 class StokesAntibiotics(Molecules):
-    def load_dataset(self, args: argparse.ArgumentParser) -> None:
-        super().load_dataset(args)
-        self.assign_splits(
-            self.metadata_json, args.split_probs, args.split_type, seed=args.split_seed
-        )
-
     def create_dataset(self, split_group):
         dataset = []
         for sample in tqdm(self.metadata_json, "Constructing dataset"):
@@ -230,17 +225,12 @@ class StokesAntibiotics(Molecules):
                     sample["smiles"], method=self.args.rdkit_features_name
                 )
             )
+            mol_datapoint.smiles = sample["smiles"]
             dataset.append(mol_datapoint)
         return dataset
 
-    def skip_sample(self, sample, split_group) -> bool:
-        """
-        Return True if sample should be skipped and not included in data
-        """
-        if sample["split"] != split_group:
-            return True
-
-        return False
+    def make_split_group_dataset(self, split_group):
+        self.dataset = [d for d in self.dataset if d["split"] == split_group]
 
     def get_label(self, sample):
         """

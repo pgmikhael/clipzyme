@@ -43,7 +43,7 @@ class AbstractDataset(data.Dataset, Nox):
             return
 
         if args.assign_splits:
-            self.assign_splits(self.metadata_json, args.split_probs, args.split_seed)
+            self.assign_splits(self.dataset, args.split_probs, args.split_seed)
         else:
             rprint("[magenta]WARNING: `assign_splits` = False[/magenta]")
 
