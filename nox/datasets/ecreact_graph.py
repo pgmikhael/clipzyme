@@ -504,7 +504,8 @@ class ECReactSubstrate(ECReactGraph):
         args.dataset_statistics = data_info
         args.extra_features = extra_features
         args.domain_features = None
-        args.num_classes = data_info.max_n_nodes
+        if not args.use_original_num_classes:
+            args.num_classes = data_info.max_n_nodes
 
     def create_dataset(
         self, split_group: Literal["train", "dev", "test"]
@@ -629,8 +630,23 @@ class ECReactSubstrate(ECReactGraph):
             protein_hidden = esm_features["hidden"]
             # token_hiddens = esm_features["token_hiddens"][mask_hiddens[:,0].bool()]
             reactant.y = protein_hidden.view(1, -1)
-
+            reactant.ec = sample["ec"]
             return reactant
 
         except Exception:
             warnings.warn(f"Could not load sample: {sample['rowid']}")
+
+    @staticmethod
+    def add_args(parser) -> None:
+        """Add class specific args
+
+        Args:
+            parser (argparse.ArgumentParser): argument parser
+        """
+        super(ECReactSubstrate, ECReactSubstrate).add_args(parser)
+        parser.add_argument(
+            "--use_original_num_classes",
+            action="store_true",
+            default=False,
+            help="use max node type as num_classes",
+        )

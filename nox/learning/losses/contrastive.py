@@ -271,3 +271,175 @@ class DCLWLoss(Nox):
             default=1.0,
             help="temperature for dcl-w loss.",
         )
+
+@register_object("clip_loss", "loss")
+class CLIPLoss(Nox):
+    def __init__(self, args) -> None:
+        super().__init__()
+
+    def __call__(self, model_output, batch, model, args):
+        logging_dict, predictions = {}, {}
+        substrate_features = model_output["substrate_features"]
+        protein_features = model_output["protein_features"]
+
+        # cosine similarity as logits
+        logit_scale = model.model.logit_scale.exp()
+        logits_per_substrate = logit_scale * substrate_features @ protein_features.t()
+        logits_per_protein = logits_per_substrate.t()
+
+        # labels
+        labels = torch.arange(logits_per_substrate.shape[0]).to(logits_per_substrate.device)
+        loss = (
+            F.cross_entropy(logits_per_substrate, labels)
+            + F.cross_entropy(logits_per_protein, labels)
+        ) / 2
+        logging_dict["clip_loss"] = loss.detach()
+
+        predictions["clip_probs"] = F.softmax(logits_per_substrate, dim=-1).detach().cpu()
+        predictions["clip_preds"] = (
+            predictions["clip_probs"].argmax(axis=-1).reshape(-1).cpu()
+        )
+        predictions["clip_golds"] = labels.cpu()
+
+        predictions["projection1"] = substrate_features.detach().cpu()
+        predictions["projection2"] = protein_features.detach().cpu()
+
+        return loss, logging_dict, predictions
+
+
+@register_object("supervised_contrastive_loss", "loss")
+class SupConLoss(Nox):
+    """
+    Supervised Contrastive Learning: https://arxiv.org/pdf/2004.11362.pdf.
+    It also supports the unsupervised contrastive loss in SimCLR
+    GitHub: https://github.com/HobbitLong/SupContrast/blob/master/losses.py
+    """
+    def __init__(self):
+        super(SupConLoss, self).__init__()
+
+    def __call__(self, model_output, batch, model, args):
+        """
+        Compute loss for model. If both `labels` and `mask` are None,
+        it degenerates to SimCLR unsupervised loss: https://arxiv.org/pdf/2002.05709.pdf
+        
+        Args:
+            features: hidden vector of shape [bsz, n_views, ...].
+            labels: ground truth of shape [bsz].
+            mask: contrastive mask of shape [bsz, bsz], mask_{i,j}=1 if sample j
+                has the same class as sample i. Can be asymmetric.
+        Returns:
+            A loss scalar.
+        """
+
+        features = model_output['logit']
+        logging_dict, predictions = OrderedDict(), OrderedDict()
+        device = features.device
+        mask = None
+
+        if "y" in model_output:
+            predictions["golds"] = model_output["y"]
+        elif "y" in batch:
+            predictions["golds"] = batch["y"]
+        else:
+            raise KeyError("predictions_dict ERROR: y not found")
+        
+        labels = predictions["golds"] 
+        # if args.precomputed_loss:
+        #     loss = model_output["loss"]
+        # else:
+        #     loss = F.cross_entropy(logit.view(-1, args.num_classes), target.view(-1).long()) * args.ce_loss_lambda
+        predictions["probs"] = F.softmax(features, dim=-1).detach()
+        predictions["preds"] = predictions["probs"].argmax(axis=-1)
+        
+        if not args.keep_preds_dim:
+             predictions["golds"] =  predictions["golds"].view(-1)
+             predictions["preds"] =  predictions["preds"].reshape(-1)
+
+
+        if len(features.shape) < 3:
+            raise ValueError('`features` needs to be [B, N, ...], at least 3 dimensions are required')
+        if len(features.shape) > 3:
+            features = features.view(features.shape[0], features.shape[1], -1)
+
+        batch_size = features.shape[0]
+        if labels is not None and mask is not None:
+            raise ValueError('Cannot define both `labels` and `mask`')
+        elif labels is None and mask is None:
+            print("Loss degenerates to SimCLR loss because labels / mask are not defined")
+            mask = torch.eye(batch_size, dtype=torch.float32).to(device)
+        elif labels is not None:
+            labels = labels.contiguous().view(-1, 1)
+            if labels.shape[0] != batch_size:
+                raise ValueError('Num of labels does not match num of features')
+            mask = torch.eq(labels, labels.T).float().to(device)
+        else:
+            mask = mask.float().to(device)
+
+        contrast_count = features.shape[1]
+        contrast_feature = torch.cat(torch.unbind(features, dim=1), dim=0)
+        if args.contrast_mode == 'one':
+            anchor_feature = features[:, 0]
+            anchor_count = 1
+        elif args.contrast_mode == 'all':
+            anchor_feature = contrast_feature
+            anchor_count = contrast_count
+        else:
+            raise ValueError('Unknown mode: {}'.format(args.contrast_mode))
+
+        # compute logits
+        # logit_scale = model.model.logit_scale.exp()
+        anchor_dot_contrast = torch.div(torch.matmul(logit_scale * anchor_feature, contrast_feature.T), args.supcon_temperature)
+        # logits_per_substrate = logit_scale * substrate_features @ protein_features.t()
+        # logits_per_protein = logits_per_substrate.t()
+        
+        # for numerical stability
+        logits_max, _ = torch.max(anchor_dot_contrast, dim=1, keepdim=True)
+        logits = anchor_dot_contrast - logits_max.detach()
+
+        # tile mask
+        mask = mask.repeat(anchor_count, contrast_count)
+        
+        # mask-out self-contrast cases
+        logits_mask = torch.scatter(torch.ones_like(mask), 1, torch.arange(batch_size * anchor_count).view(-1, 1).to(device), 0)
+        mask = mask * logits_mask
+
+        # compute log_prob
+        exp_logits = torch.exp(logits) * logits_mask
+        log_prob = logits - torch.log(exp_logits.sum(1, keepdim=True))
+
+        # compute mean of log-likelihood over positive
+        mean_log_prob_pos = (mask * log_prob).sum(1) / mask.sum(1)
+
+        # loss
+        loss = - (args.supcon_temperature / args.supcon_base_temperature) * mean_log_prob_pos
+        loss = loss.view(anchor_count, batch_size).mean()
+
+        logging_dict["cross_entropy_loss"] = loss.detach()
+        return loss, logging_dict, predictions
+
+    @staticmethod
+    def add_args(parser) -> None:
+        """Add class specific args
+
+        Args:
+            parser (argparse.ArgumentParser): argument parser
+        """
+        parser.add_argument(
+            "--supcon_temperature",
+            type=float,
+            default=0.07,
+            help="temperature for supervised contrastive loss.",
+        )
+        parser.add_argument(
+            "--contrast_mode",
+            type=str,
+            choices=["all", "one"],
+            default="all",
+            help="extra features to use",
+        )
+        parser.add_argument(
+            "--supcon_base_temperature",
+            type=float,
+            default=0.07,
+            help="temperature for supervised contrastive loss.",
+        )

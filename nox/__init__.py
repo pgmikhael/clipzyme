@@ -85,6 +85,7 @@ import nox.models.seq2seq
 import nox.models.contrastive
 import nox.models.graph_transformer
 import nox.models.digress
+import nox.models.clip
 
 # comet
 import nox.loggers.comet

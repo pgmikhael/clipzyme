@@ -129,44 +129,60 @@ class Seq2SeqClassification(Metric, Nox):
     """Same as BaseClassification but samplewise multidim_average"""
 
     def __init__(self, args) -> None:
-        super().__init__(args)
-
+        super().__init__()
+        self.ignore_index = args.ignore_index
         self.task_type = args.task_type
         self.accuracy_metric = torchmetrics.Accuracy(
             task=args.task_type,
             num_classes=args.num_classes,
             multidim_average="samplewise",
+            ignore_index=args.ignore_index,
         )
         self.f1_metric = torchmetrics.F1Score(
             task=args.task_type,
             num_classes=args.num_classes,
             multidim_average="samplewise",
+            ignore_index=args.ignore_index,
         )
         self.macro_f1_metric = torchmetrics.F1Score(
             task=args.task_type,
             num_classes=args.num_classes,
             average="macro",
             multidim_average="samplewise",
+            ignore_index=args.ignore_index,
         )
         self.precision_metric = torchmetrics.Precision(
             task=args.task_type,
             num_classes=args.num_classes,
             multidim_average="samplewise",
+            ignore_index=args.ignore_index,
         )
         self.recall_metric = torchmetrics.Recall(
             task=args.task_type,
             num_classes=args.num_classes,
             multidim_average="samplewise",
+            ignore_index=args.ignore_index,
+        )
+        self.top_1_metric = TopK(
+            task=args.task_type,
+            num_classes=args.num_classes,
+            ignore_index=args.ignore_index,
         )
         # don't have multidim_average arg
         self.auroc_metric = torchmetrics.AUROC(
-            task=args.task_type, num_classes=args.num_classes
+            task=args.task_type,
+            num_classes=args.num_classes,
+            ignore_index=args.ignore_index,
         )
         self.ap_metric = torchmetrics.AveragePrecision(
-            task=args.task_type, num_classes=args.num_classes
+            task=args.task_type,
+            num_classes=args.num_classes,
+            ignore_index=args.ignore_index,
         )
         self.auprc_metric = torchmetrics.PrecisionRecallCurve(
-            task=args.task_type, num_classes=args.num_classes
+            task=args.task_type,
+            num_classes=args.num_classes,
+            ignore_index=args.ignore_index,
         )
 
     @property
@@ -175,15 +191,16 @@ class Seq2SeqClassification(Metric, Nox):
 
     def update(self, predictions_dict, args) -> Dict:
 
-        probs = predictions_dict["probs"]  # B, C (float)
-        preds = predictions_dict["preds"]  # B
-        golds = predictions_dict["golds"].int()  # B
+        probs = predictions_dict["probs"]  # B, N, C (float)
+        preds = predictions_dict["preds"]  # B, N
+        golds = predictions_dict["golds"].long()  # B, N
 
         self.accuracy_metric.update(preds, golds)
-        self.f1_metric.update(probs, golds)
-        self.macro_f1_metric.update(probs, golds)
-        self.precision_metric.update(probs, golds)
-        self.recall_metric.update(probs, golds)
+        self.f1_metric.update(preds, golds)
+        self.macro_f1_metric.update(preds, golds)
+        self.precision_metric.update(preds, golds)
+        self.recall_metric.update(preds, golds)
+        self.top_1_metric.update(preds, golds)
 
         for sample_prob, sample_gold in zip(probs, golds):
             self.auroc_metric.update(sample_prob, sample_gold)
@@ -205,6 +222,7 @@ class Seq2SeqClassification(Metric, Nox):
             "macro_f1": self.macro_f1_metric.compute(),
             "precision": self.precision_metric.compute(),
             "recall": self.recall_metric.compute(),
+            "top_1": self.top_1_metric.compute(),
         }
         return stats_dict
 
@@ -231,6 +249,12 @@ class Seq2SeqClassification(Metric, Nox):
             default=None,
             required=True,
             choices=["binary", "multiclass", "multilabel"],
+            help="type of task",
+        )
+        parser.add_argument(
+            "--ignore_index",
+            type=int,
+            default=-100,
             help="type of task",
         )
 
@@ -301,3 +325,34 @@ class BaseRegression(Metric, Nox):
             choices=["raw_values", "uniform_average", "variance_weighted"],
             help="aggregation in the case of multiple output scores",
         )
+
+
+class TopK(Metric):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        higher_is_better: Optional[bool] = True
+        s_differentiable = False
+        full_state_update: bool = False
+
+        self.ignore_index = kwargs['ignore_index']
+        self.task = kwargs['task']
+        self.num_classes = kwargs['num_classes']
+        
+        self.add_state("correct", default=torch.tensor(0), dist_reduce_fx="sum")
+        self.add_state("total", default=torch.tensor(0), dist_reduce_fx="sum")
+
+    def update(self, preds: torch.Tensor, target: torch.Tensor):
+        assert preds.shape == target.shape
+
+        if self.ignore_index is not None:
+            preds[target == self.ignore_index] = self.ignore_index
+
+        correct = (preds == target).sum(1) == preds.shape[1]
+        correct = correct.sum()
+        total = torch.tensor(preds.shape[0], device=correct.device)
+
+        self.correct += correct
+        self.total += total
+
+    def compute(self):
+        return self.correct.float() / self.total
