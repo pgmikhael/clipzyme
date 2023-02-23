@@ -19,12 +19,13 @@ def get_feature_similarity(h):
 class ContrastiveStatistics(Nox):
     def __init__(self, args) -> None:
         super().__init__()
-        keys_for_contrastive_views_as_tuples = []
-        for keypair in args.keys_for_contrastive_views:
-            keys_for_contrastive_views_as_tuples.append(tuple(keypair.split("/")))
+        # keys_for_contrastive_views_as_tuples = []
+        # for keypair in args.keys_for_contrastive_views:
+        #     keys_for_contrastive_views_as_tuples.append(tuple(keypair.split("/")))
 
-        args.keys_for_contrastive_views = keys_for_contrastive_views_as_tuples
-        self.metric_keys = args.keys_for_contrastive_views
+        # args.keys_for_contrastive_views = keys_for_contrastive_views_as_tuples
+        # self.metric_keys = args.keys_for_contrastive_views
+        # self.metric_keys = self.metric_keys()
 
     @property
     def metric_keys(self):
@@ -43,6 +44,20 @@ class ContrastiveStatistics(Nox):
         stats_dict["{}_feature_std".format(k2)] = get_feature_similarity(h2)
 
         return stats_dict
+
+    # @staticmethod
+    # def add_args(parser) -> None:
+    #     """Add class specific args
+
+    #     Args:
+    #         parser (argparse.ArgumentParser): argument parser
+    #     """
+    #     parser.add_argument(
+    #         "--keys_for_contrastive_views",
+    #         type=float,
+    #         default=2.0,
+    #         help="Exponent for alignment loss",
+    #     )
 
 
 @register_object("alignment_uniformity", "metric")
