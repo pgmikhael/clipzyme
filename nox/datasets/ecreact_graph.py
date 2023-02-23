@@ -180,7 +180,7 @@ class ECReactGraph(ECReact_RXNS):
         split_group = self.split_group
 
         # get data info (input / output dimensions)
-        train_dataset = [d for d in self.dataset if d["split"] == "train"]
+        train_dataset = self.get_split_group_dataset(self.dataset, "train")
 
         smiles = set()
         for d in train_dataset:
