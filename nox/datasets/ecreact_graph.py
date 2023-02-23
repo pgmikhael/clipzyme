@@ -210,7 +210,7 @@ class ECReactGraph(ECReact_RXNS):
         # check right split
         parse_ec = lambda ec: ".".join(ec.split(".")[: self.args.ec_level + 1])
         dataset = []
-        if self.assign_splits:
+        if self.args.assign_splits:
             if self.args.split_type in ["sequence", "ec", "product"]:
                 for sample in processed_dataset:
                     if self.args.split_type == "sequence":
