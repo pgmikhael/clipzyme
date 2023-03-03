@@ -289,9 +289,9 @@ class ECReact_RXNS(ECReact):
         """
         Assigns each sample to a split group based on split_probs
         """
-        # get all samples 
-        rprint("Generating dataset in order to assign splits...")
-        
+        # get all samples
+        rprint("Assigning splits...")
+
         self.to_split = {}
 
         # set seed

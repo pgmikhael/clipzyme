@@ -955,16 +955,17 @@ class BrendaReaction(Brenda):
             if "proteins" not in ec_dict:
                 continue
 
+            # NOTE: len v is always 1
             proteinid2uniprot = {
                 k: v[0]["accessions"] for k, v in ec_dict["proteins"].items()
             }
             protein2organism = {k: v["value"] for k, v in ec_dict["organisms"].items()}
 
-            proteinid2uniprot = {
-                k: v[0]["accessions"][0]
-                for k, v in ec_dict["proteins"].items()
-                if len(v[0]["accessions"]) == 1
-            }
+            # proteinid2uniprot = {
+            #     k: v[0]["accessions"][0]
+            #     for k, v in ec_dict["proteins"].items()
+            #     if len(v[0]["accessions"]) == 1
+            # }
             for reaction_key in ["reaction", "natural_reaction"]:
                 # reaction or natural_reaction may not exist
                 if reaction_key in ec_dict:
@@ -976,6 +977,7 @@ class BrendaReaction(Brenda):
                             ps = sorted(entry["products"])
                             reaction_string = ".".join(rs) + ">>" + ".".join(ps)
                             for protein in entry.get("proteins", []):
+                                #for uniprotid in proteinid2uniprot.get(protein, []):
                                 if proteinid2uniprot.get(protein, False):
                                     uniprotid = proteinid2uniprot[protein]
                                     sequence = self.brenda_proteins[uniprotid][
