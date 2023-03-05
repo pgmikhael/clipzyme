@@ -83,7 +83,7 @@ import nox.models.longformer
 import nox.models.enzymenet
 import nox.models.seq2seq
 import nox.models.contrastive
-import nox.models.graph_transformer
+import nox.models.graph_denoisers
 import nox.models.digress
 import nox.models.clip
 

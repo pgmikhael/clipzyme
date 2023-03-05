@@ -414,3 +414,99 @@ class GraphTransformer(AbstractModel):
         )
 
         
+from nox.models.chemprop import DMPNNEncoder
+from torch_geometric.utils import dense_to_sparse, to_dense_adj
+from typing import NamedTuple
+
+
+class GraphData(NamedTuple):
+    x: torch.Tensor
+    edge_index: torch.Tensor
+    edge_attr: torch.Tensor
+    num_nodes: torch.Tensor
+    batch: torch.Tensor
+
+def multidim_dense_to_sparse(adj):
+    """
+    adj: adjacency matrix [batch_size, num_nodes, num_nodes, edge_dim]
+    """
+    # Find non-zero edges in `adj` with multi-dimensional edge_features
+    adj2 = adj.abs().sum(dim=-1)  
+    index = adj2.nonzero(as_tuple=True)
+    edge_attr = adj[index]
+    batch = index[0] * adj.size(-2)
+    index = (batch + index[1], batch + index[2])
+    edge_index = torch.stack(index, dim=0)
+    return edge_index, edge_attr
+
+def dense_to_sparse_nodes(node_features, node_mask):
+    """
+    node_features: [batch_size, max_num_nodes, node_dim]
+    node_mask: [batch_size, max_num_nodes]: 1 if true node
+    """
+    batch_size = node_features.shape[0]
+    x = node_features[node_mask]
+    arr = torch.arange(batch_size).to(node_features.device)
+    batch = torch.repeat_interleave( arr, node_mask.sum(-1) )
+    return x, batch 
+
+
+@register_object("chemprop_denoiser", "model")
+class ChempropDenoiser(DMPNNEncoder):
+    def __init__(self, args):
+        input_dims = args.dataset_statistics.input_dims 
+        node_fdim = input_dims["X"] + input_dims["y"]
+        edge_fdim = input_dims["E"] + input_dims["y"]
+    
+        super(ChempropDenoiser, self).__init__(args)
+
+    def forward(self, batch):
+        X, E, y, node_mask = (
+            batch["X"],
+            batch["E"],
+            batch["y"],
+            batch["node_mask"],
+        ) 
+
+        # add y
+        B, N, d = X.shape 
+        
+        y_for_x = y.unsqueeze(1).repeat(1, N, 1)
+        X = torch.concat((X,y_for_x), -1)
+
+        y_for_e = y[:,None,None].repeat(1, N, N, 1)
+        E = torch.concat((E,y_for_e), -1)
+
+        # process into correct shapes: dense to sparse
+        # x: [num_nodes, num_features]
+        # edge_index: [2, num_edges]
+        # edge_attr: [edge_attr, num_features]
+        sparse_x, node_batch_ids = dense_to_sparse_nodes(X, node_mask)
+        edge_index, edge_attr = multidim_dense_to_sparse(edge_features)
+
+
+        # prepare input data
+        data = GraphData(
+            x = sparse_x,
+            edge_index = edge_index,
+            edge_attr = edge_attr,
+            num_nodes = node_mask.sum().item(),
+            batch = node_batch_ids
+        )
+    
+        # pass through chemprop
+        output = super().forward(data)
+        node_features = output["node_features"]
+        edge_features = output["edge_features"]
+        
+        # process into correct shapes: sparse to dense
+        max_num_nodes = X.shape[-2]
+        X = to_dense_batch(x=node_features, batch=node_batch_ids) 
+        E = to_dense_adj(                                                                                                                                                                                                                         
+                edge_index=edge_index,                                                                                                                                                                                                                
+                batch=node_batch_ids,                                                                                                                                                                                                                          
+                edge_attr=edge_features,
+                max_num_nodes=max_num_nodes,
+            )
+
+        return diffusion_utils.PlaceHolder(X=X, E=E, y=y).mask(node_mask)
