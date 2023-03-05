@@ -455,8 +455,8 @@ def dense_to_sparse_nodes(node_features, node_mask):
 class ChempropDenoiser(DMPNNEncoder):
     def __init__(self, args):
         input_dims = args.dataset_statistics.input_dims 
-        node_fdim = input_dims["X"] + input_dims["y"]
-        edge_fdim = input_dims["E"] + input_dims["y"]
+        args.chemprop_node_dim = input_dims["X"] + input_dims["y"]
+        args.chemprop_edge_dim = input_dims["E"] + input_dims["y"]
     
         super(ChempropDenoiser, self).__init__(args)
 
