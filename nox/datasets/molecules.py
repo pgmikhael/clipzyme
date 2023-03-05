@@ -23,8 +23,9 @@ class Molecules(AbstractDataset):
         except Exception:
             warnings.warn("Could not load sample")
 
-    def assign_splits(self, metadata_json, split_probs, method, seed) -> None:
+    def assign_splits(self, metadata_json, split_probs, seed) -> None:
         np.random.seed(seed)
+        method = self.args.split_type
         if method == "random":
             for idx in range(len(metadata_json)):
                 metadata_json[idx]["split"] = np.random.choice(
@@ -211,7 +212,7 @@ class StokesAntibiotics(Molecules):
         dataset = []
         for sample in tqdm(self.metadata_json, "Constructing dataset"):
 
-            if self.skip_sample(sample, split_group):
+            if self.skip_sample(sample):
                 continue
 
             mol_datapoint = from_smiles(sample["smiles"])

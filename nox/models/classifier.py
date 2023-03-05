@@ -140,6 +140,8 @@ class GraphClassifier(Classifier):
         super(GraphClassifier, self).__init__(args)
         cargs = copy.deepcopy(args)
         cargs.mlp_layer_configuration = args.graph_classifier_mlp_layer_configuration
+        cargs.mlp_use_batch_norm = args.classifier_mlp_use_batch_norm
+        cargs.mlp_use_layer_norm = args.classifier_mlp_use_layer_norm
         if self.args.use_rdkit_features:
             cargs.mlp_input_dim = args.graph_classifier_hidden_dim + args.rdkit_features_dim
         self.mlp = get_object("mlp_classifier", "model")(cargs)
