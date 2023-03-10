@@ -25,26 +25,37 @@ from transformers.modeling_outputs import BaseModelOutput
 class ProteinMoleculeCLIP(AbstractModel):
     def __init__(self, args):
         super(ProteinMoleculeCLIP, self).__init__()
-
+        self.args = args
         self.substrate_encoder = get_object(args.substrate_encoder, "model")(args)
         self.protein_encoder = get_object(args.protein_encoder, "model")(args)
-        self.ln_final = nn.LayerNorm(args.num_classes)
-        self.logit_scale = nn.Parameter(torch.ones([]) *  torch.log(torch.tensor(1 / 0.07)))
+        self.ln_final = nn.LayerNorm(480)  # needs to be shape of protein_hidden
+        self.logit_scale = nn.Parameter(
+            torch.ones([]) * torch.log(torch.tensor(1 / 0.07))
+        )
 
     def forward(self, batch) -> Dict:
         output = {}
         substrate_features_out = self.substrate_encoder(batch)
         substrate_features = substrate_features_out["hidden"]
- 
-        protein_features = self.protein_encoder(batch)["hidden"]
+
+        protein_features = self.protein_encoder(
+            {"x": batch.sequence, "sequence": batch.sequence, "batch": batch}
+        )["hidden"]
         # apply normalization
         protein_features = self.ln_final(protein_features)
 
         # normalized features
-        substrate_features = substrate_features / substrate_features.norm(dim=1, keepdim=True)
+        substrate_features = substrate_features / substrate_features.norm(
+            dim=1, keepdim=True
+        )
         protein_features = protein_features / protein_features.norm(dim=1, keepdim=True)
 
-        output.update( {"substrate_features": substrate_features, "protein_features": protein_features})
+        output.update(
+            {
+                "substrate_features": substrate_features,
+                "protein_features": protein_features,
+            }
+        )
         return output
 
     @staticmethod
@@ -53,13 +64,13 @@ class ProteinMoleculeCLIP(AbstractModel):
             "--substrate_encoder",
             type=str,
             action=set_nox_type("model"),
-            default="graph_classifier",
+            default="chemprop",
             help="Name of encoder to use",
         )
         parser.add_argument(
             "--protein_encoder",
             type=str,
             action=set_nox_type("model"),
-            default="protein_encoder",
+            default="fair_esm2",
             help="Name of encoder to use",
         )
