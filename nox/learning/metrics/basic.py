@@ -28,36 +28,68 @@ class BaseClassification(Metric, Nox):
         """
         super().__init__()
         self.task_type = args.task_type
-        self.accuracy_metric = torchmetrics.Accuracy(
-            task=args.task_type,
-            num_classes=args.num_classes,
-        )
-        self.auroc_metric = torchmetrics.AUROC(
-            task=args.task_type, num_classes=args.num_classes
-        )
-        self.f1_metric = torchmetrics.F1Score(
-            task=args.task_type,
-            num_classes=args.num_classes,
-        )
-        self.macro_f1_metric = torchmetrics.F1Score(
-            task=args.task_type,
-            num_classes=args.num_classes,
-            average="macro",
-        )
-        self.ap_metric = torchmetrics.AveragePrecision(
-            task=args.task_type, num_classes=args.num_classes
-        )
-        self.auprc_metric = torchmetrics.PrecisionRecallCurve(
-            task=args.task_type, num_classes=args.num_classes
-        )
-        self.precision_metric = torchmetrics.Precision(
-            task=args.task_type,
-            num_classes=args.num_classes,
-        )
-        self.recall_metric = torchmetrics.Recall(
-            task=args.task_type,
-            num_classes=args.num_classes,
-        )
+        if args.task_type != 'multilabel':
+            self.accuracy_metric = torchmetrics.Accuracy(
+                task=args.task_type,
+                num_classes=args.num_classes,
+            )
+            self.auroc_metric = torchmetrics.AUROC(
+                task=args.task_type, num_classes=args.num_classes
+            )
+            self.f1_metric = torchmetrics.F1Score(
+                task=args.task_type,
+                num_classes=args.num_classes,
+            )
+            self.macro_f1_metric = torchmetrics.F1Score(
+                task=args.task_type,
+                num_classes=args.num_classes,
+                average="macro",
+            )
+            self.ap_metric = torchmetrics.AveragePrecision(
+                task=args.task_type, num_classes=args.num_classes
+            )
+            self.auprc_metric = torchmetrics.PrecisionRecallCurve(
+                task=args.task_type, num_classes=args.num_classes
+            )
+            self.precision_metric = torchmetrics.Precision(
+                task=args.task_type,
+                num_classes=args.num_classes,
+            )
+            self.recall_metric = torchmetrics.Recall(
+                task=args.task_type,
+                num_classes=args.num_classes,
+            )
+        else:
+            self.accuracy_metric = torchmetrics.Accuracy(
+                task=args.task_type,
+                num_labels=args.num_classes,
+            )
+            self.auroc_metric = torchmetrics.AUROC(
+                task=args.task_type, num_labels=args.num_classes
+            )
+            self.f1_metric = torchmetrics.F1Score(
+                task=args.task_type,
+                num_labels=args.num_classes,
+            )
+            self.macro_f1_metric = torchmetrics.F1Score(
+                task=args.task_type,
+                num_labels=args.num_classes,
+                average="macro",
+            )
+            self.ap_metric = torchmetrics.AveragePrecision(
+                task=args.task_type, num_labels=args.num_classes
+            )
+            self.auprc_metric = torchmetrics.PrecisionRecallCurve(
+                task=args.task_type, num_labels=args.num_classes
+            )
+            self.precision_metric = torchmetrics.Precision(
+                task=args.task_type,
+                num_labels=args.num_classes,
+            )
+            self.recall_metric = torchmetrics.Recall(
+                task=args.task_type,
+                num_labels=args.num_classes,
+            )
 
     @property
     def metric_keys(self):
