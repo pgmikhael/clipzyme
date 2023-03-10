@@ -1,0 +1,13 @@
+{
+  "script": "main",
+  "train_config": "configs/enzymes/protmol_clip_train_for_eval.json",
+  "log_dir": "/Mounts/rbg-storage1/logs/metabo/",
+  "available_gpus": [1,2,3,4,5,6,7],
+  "eval_args": {
+    "save_predictions": [true],
+    "test": [true],
+    "from_checkpoint": [true],
+    "inference_dir": ["/Mounts/rbg-storage1/results/metabolomics/"],
+    "checkpoint_path": ["/Mounts/rbg-storage1/snapshots/metabolomics/d8b8589db4fecb0e96555e16004932ae/d8b8589db4fecb0e96555e16004932aeepoch=19.ckpt"]
+  }
+}
