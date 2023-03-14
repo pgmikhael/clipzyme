@@ -31,6 +31,7 @@ import nox.datasets.dlkcat
 import nox.datasets.ecreact
 import nox.datasets.ecreact_graph
 import nox.datasets.qm9
+import nox.datasets.chembl
 
 # augmentation
 import nox.augmentations.rawinput
