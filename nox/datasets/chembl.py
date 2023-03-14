@@ -38,15 +38,16 @@ class Chembl(AbstractDataset, InMemoryDataset):
         transform = self.get_transform(args)
         InMemoryDataset.__init__(self, root=self.root, transform=transform)
 
-        self.load_datasets()
-
-        self.dataset, self.slices = self.datasets[split_group]
-
-        # get data info (input / output dimensions)
-        smiles = list(set(self.datasets["train"][0].smiles))
+        
+        # self.load_datasets()
+        # self.dataset, self.slices = self.datasets[split_group]
+        self.dataset = self.create_dataset(split_group)
 
         data_info_path = os.path.join(self.processed_dir, f"dataset_info_{self.version}.p")
         if args.recompute_statistics:
+            # get data info (input / output dimensions)
+            smiles = list(set(self.datasets["train"][0].smiles))
+
             data_info = DatasetInfo(smiles, args)
             pickle.dump(data_info, open(data_info_path, "wb"))
             print(f"[magenta] Saved DatasetInfo at: {data_info_path}")
@@ -55,7 +56,7 @@ class Chembl(AbstractDataset, InMemoryDataset):
 
         extra_features = ExtraFeatures(args.extra_features_type, dataset_info=data_info)
 
-        example_batch = [from_smiles(smiles[0]), from_smiles(smiles[1])]
+        example_batch = [ from_smiles(self.__getitem__(0).smiles), from_smiles(self.__getitem__(1).smiles) ]
         example_batch = Batch.from_data_list(example_batch, None, None)
 
         data_info.compute_input_output_dims(
@@ -130,6 +131,7 @@ class Chembl(AbstractDataset, InMemoryDataset):
         pass 
 
     def process(self):
+        return 
         chembl_data = json.load(open( os.path.join(self.root, self.raw_file_names), "r"))
         self.assign_splits(chembl_data, self.args.split_probs, self.args.split_seed)
         
@@ -156,39 +158,41 @@ class Chembl(AbstractDataset, InMemoryDataset):
         """
         Creates the dataset of samples
         """
+        chembl_data = json.load(open( os.path.join(self.root, self.raw_file_names), "r"))
 
-        data, slices = self.datasets[split_group]
+        self.assign_splits(chembl_data, self.args.split_probs, self.args.split_seed)
 
         dataset = []
-        for idx in tqdm(range(len(data.idx)), position=0, desc="Converting to pyg.Data"):
-            data_item = separate(
-                cls=data.__class__, 
-                batch=data, 
-                idx=idx, 
-                slice_dict=slices, 
-                decrement=False
-            )
+        for data_item in tqdm(chembl_data, ncols=60):
+            if data_item["split"] != split_group:
+                continue 
             dataset.append(data_item)
-            
+
         return dataset
 
     def __getitem__(self, index):
         try:
-            mol = separate(
-                cls=self.dataset.__class__, 
-                batch=self.dataset, 
-                idx=index, 
-                slice_dict=self.slices, 
-                decrement=False
-            )
-            mol.sample_id = mol.idx
+            molecule_dict = self.dataset[index]
+
+            mol = from_smiles(molecule_dict["smiles"])
+
+            # first feature is atomic number
+            mol.x = F.one_hot(mol.x[:, 0], len(x_map["atomic_num"])).to(torch.float)
+            # first feature is bond type (bond type 1 is misc)
+            mol.edge_attr = F.one_hot(mol.edge_attr[:, 0], len(e_map["bond_type"])).to(torch.float)
+            mol.y = torch.zeros((1, 0), dtype=torch.float)
+            mol.sample_id = f"{self.split_group}_{index}"
+
+            if len(mol.x) > 100:
+                return 
+                
             return mol
 
         except Exception:
             warnings.warn("Could not load sample")
 
     def __len__(self):
-        return len(self.dataset.idx)
+        return len(self.dataset)
         
     @staticmethod
     def add_args(parser) -> None:
