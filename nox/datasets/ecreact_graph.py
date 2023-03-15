@@ -11,8 +11,8 @@ from nox.datasets.ecreact import ECReact_RXNS, ECReact_MultiProduct_RXNS
 from nox.datasets.qm9 import DistributionNodes
 from nox.utils.digress.extra_features import ExtraFeatures
 from torch_geometric.data import Batch
-from nox.utils.pyg import from_smiles
-from nox.utils.pyg import x_map, e_map
+from nox.utils.pyg import from_smiles, x_map, e_map
+from nox.utils.smiles import get_rdkit_feature
 import nox.utils.digress.diffusion_utils as diff_utils
 import torch.nn.functional as F
 from nox.utils.classes import classproperty
@@ -509,6 +509,9 @@ class ECReactSubstrate(ECReactGraph):
         if not args.use_original_num_classes:
             args.num_classes = data_info.max_n_nodes
 
+        if args.sample_negatives:
+            self.dataset = self.add_negatives(self.dataset, split_group=split_group)
+
     def create_dataset(
         self, split_group: Literal["train", "dev", "test"]
     ) -> List[dict]:
@@ -567,6 +570,7 @@ class ECReactSubstrate(ECReactGraph):
                     "reaction_string": reaction_string,
                     "rowid": f"{rid}{rowid}",
                     "split": reaction["split"],
+                    "y": 1,
                 }
 
                 dataset.append(sample)
@@ -652,6 +656,72 @@ class ECReactSubstrate(ECReactGraph):
             default=False,
             help="use max node type as num_classes",
         )
+        parser.add_argument(
+            "--sample_negatives",
+            action="store_true",
+            default=False,
+            help="whether to sample negative substrates",
+        )
+        parser.add_argument(
+            "--sample_negatives_range",
+            type=float,
+            nargs=2,
+            default=None,
+            help="range of similarity to sample negatives from",
+        )
+
+    def add_negatives(self, dataset, split_group):
+        all_substrates = set(
+            d["reactant"] for d in dataset if d["split"] == split_group
+        )
+        all_substrates_list = list(all_substrates)
+
+        # filter out negatives based on some metric (e.g. similarity)
+        if self.args.sample_negatives_range is not None:
+            min_sim, max_sim = self.args.sample_negatives_range
+
+            smile_fps = np.array(
+                [
+                    get_rdkit_feature(mol=smile, method="morgan_binary")
+                    for smile in all_substrates
+                ]
+            )
+
+            smile_similarity = smile_fps @ smile_fps.T
+            similiarity_idx = np.where(
+                (smile_similarity > min_sim) & (smile_similarity < max_sim)
+            )
+
+        ec_to_positives = {}
+        for sample in tqdm(dataset, desc="Sampling negatives"):
+            ec = sample["ec"]
+            if ec not in ec_to_positives:
+                ec_to_positives[ec].add(sample["reactant"])
+
+                if self.args.sample_negatives_range is not None:
+                    # add to positives so that we don't sample them as negatives
+                    idx = all_substrates_list.index(sample["reactant"])
+                    ec_to_positives[ec].update(
+                        all_substrates[j] for j in similiarity_idx[idx]
+                    )
+
+        ec_to_negatives = {k: all_substrates - v for k, v in ec_to_positives.items()}
+
+        rowid = len(dataset)
+        for ec, negatives in ec_to_negatives.items():
+            for rid, reactant in enumerate(negatives):
+                sample = {
+                    "reactant": reactant,
+                    "ec": ec,
+                    "reaction_string": "",
+                    "rowid": f"{rid}{rowid}",
+                    "split": split_group,
+                    "y": 0,
+                }
+                rowid += 1
+                dataset.append(sample)
+
+        return dataset
 
 
 @register_object("ecreact_substrates_plain_graph", "dataset")
