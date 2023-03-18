@@ -18,9 +18,7 @@ class ChemRXN(AbstractDataset):
     ) -> List[dict]:
         dataset = []
         for rxn_dict in tqdm(self.metadata_json):
-            if self.skip_sample(rxn_dict, split_group):
-                continue
-            dataset.append({"x": rxn_dict["reaction"], "sample_id": rxn_dict["rxnid"]})
+            dataset.append({"x": rxn_dict["reaction"], "sample_id": rxn_dict["rxnid"], "split": rxn_dict["split"]})
         return dataset
 
     def get_split_group_dataset(

@@ -2,13 +2,14 @@
   "script": "main",
   "cartesian_hyperparams": {
     "batch_size": [64],
+    "precision": [16],
     "accumulate_grad_batches": [1],
     "dataset_name": ["chemical_reactions"],
     "dataset_file_path": ["/Mounts/rbg-storage1/datasets/ChemicalReactions/uspto_synthesis_dataset.json"],
     "randomize_order_in_reaction": [true],
     "use_random_smiles_representation": [true],
     "lightning_name": ["base"],
-    "compute_metrics_every_step": [true],
+    "compute_metrics_every_step": [false],
     "model_name": ["reaction_encoder"],
     "use_cls_token": [true],
     "num_hidden_layers": [6],
@@ -18,7 +19,7 @@
     "vocab_path": ["/Mounts/rbg-storage1/datasets/Enzymes/ECReact/uspto_ecreact_vocab.txt"],
     "max_seq_len": [2000],
     "num_heads": [16],
-    "callback_names": ["lr_monitor checkpointer"],
+    "callback_names": ["lr_monitor"],
     "max_epochs": [50],
     "lr_decay": [0.1],
     "lr": [3e-4],
@@ -27,6 +28,7 @@
     "loss_names": ["cross_entropy"],
     "precomputed_loss": [true],
     "keep_preds_dim": [true],
+    "task_type": ["multiclass"],
     "metric_names": ["seq2seq_classification"],
     "checkpoint_save_last": [false],
     "checkpoint_save_top_k": [1],
@@ -53,5 +55,5 @@
     "project_name": ["enzymes"],
     "logger_tags": ["forward-synthesis"]
   },
-  "available_gpus": ["1,2,3,4,5,6,7"]
+  "available_gpus": ["0,1,2,3,4,6,7"]
 }

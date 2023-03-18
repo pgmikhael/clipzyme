@@ -215,13 +215,13 @@ class Seq2SeqClassification(Metric, Nox):
         else:
             pr_auc = compute_auc(rc, pr)
         stats_dict = {
-            "accuracy": self.accuracy_metric.compute(),
+            "accuracy": self.accuracy_metric.compute().mean(),
             "roc_auc": self.auroc_metric.compute(),
             "pr_auc": pr_auc,
-            "f1": self.f1_metric.compute(),
-            "macro_f1": self.macro_f1_metric.compute(),
-            "precision": self.precision_metric.compute(),
-            "recall": self.recall_metric.compute(),
+            "f1": self.f1_metric.compute().mean(),
+            "macro_f1": self.macro_f1_metric.compute().mean(),
+            "precision": self.precision_metric.compute().mean(),
+            "recall": self.recall_metric.compute().mean(),
             "top_1": self.top_1_metric.compute(),
         }
         return stats_dict
@@ -331,7 +331,7 @@ class TopK(Metric):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         higher_is_better: Optional[bool] = True
-        s_differentiable = False
+        is_differentiable = False
         full_state_update: bool = False
 
         self.ignore_index = kwargs['ignore_index']
