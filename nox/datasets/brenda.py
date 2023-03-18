@@ -910,7 +910,7 @@ class BrendaReaction(Brenda):
             proteinid2uniprot = {
                 k: v[0]["accessions"] for k, v in ec_dict["proteins"].items()
             }
-            protein2organism = {k: v["value"] for k, v in ec_dict["organisms"].items()}
+            organism2name = {k: v["value"] for k, v in ec_dict["organisms"].items()}
 
             proteinid2uniprot = {
                 k: v[0]["accessions"][0]
@@ -953,7 +953,7 @@ class BrendaReaction(Brenda):
                                             "reactants": rs,
                                             "products": ps,
                                             "ec": ec,
-                                            "organism": protein2organism[protein],
+                                            "organism": [organism2name[o] for o in entry.get("organisms", [])],
                                             "reaction_string": ".".join(rs)
                                             + ">>"
                                             + ".".join(ps),
@@ -966,9 +966,6 @@ class BrendaReaction(Brenda):
                                             ],
                                         }
 
-                                        if self.skip_sample(sample, split_group):
-                                            continue
-
                                         sample["reactants"] = [
                                             self.get_smiles(m)
                                             for m in sample["reactants"]
@@ -978,6 +975,9 @@ class BrendaReaction(Brenda):
                                             self.get_smiles(m)
                                             for m in sample["products"]
                                         ]
+
+                                        if self.skip_sample(sample, split_group):
+                                            continue
 
                                         uniprot2reactions[uniprotid].append(sample)
 
@@ -1054,9 +1054,6 @@ class BrendaReaction(Brenda):
 
     def skip_sample(self, sample, split_group) -> bool:
         # check if sample has mol
-        if "?" in (sample["products"] + sample["reactants"]):
-            return True
-
         if any(
             s in [None, [], "?"] for s in (sample["products"] + sample["reactants"])
         ):
@@ -1189,7 +1186,7 @@ class BrendaReaction(Brenda):
             "{}>>{}".format(".".join(d["reactants"]), ".".join(d["products"]))
             for d in self.dataset
         ]
-        proteins = [d["protein_id"] for d in self.dataset]
+        proteins = [d["protein_id"] for d in self.dataset] if "protein_id" in self.dataset[0] else []
         ecs = [d["ec"] for d in self.dataset]
         statement = f""" 
         * Number of reactions: {len(set(reactions))}
@@ -1292,3 +1289,137 @@ class MCSA(BrendaReaction):
             dataset.append(sample)
 
         return dataset
+
+@register_object("brenda_reaction_enzymeless", "dataset")
+class BrendaEnzymeLessReaction(BrendaReaction):
+    
+    def create_dataset(
+        self, split_group: Literal["train", "dev", "test"]
+    ) -> List[dict]:
+
+        ec2reactions = defaultdict(list)
+        catalogued_reactions = set()
+
+        # add brenda reactions
+        for ec, ec_dict in tqdm(self.metadata_json.items(), desc="Creating dataset"):
+            if "proteins" not in ec_dict:
+                continue
+
+            organism2name = {k: v["value"] for k, v in ec_dict["organisms"].items()}
+
+            for reaction_key in ["reaction", "natural_reaction"]:
+                # reaction or natural_reaction may not exist
+                if reaction_key in ec_dict:
+                    for entry in ec_dict[reaction_key]:
+                        # check both produces and reactants defined
+                        if ("educts" in entry) and ("products" in entry):
+                            # sort to check if reaction exists already
+                            rs = sorted(entry["educts"])
+                            ps = sorted(entry["products"])
+                            reaction_string = ".".join(rs) + ">>" + ".".join(ps)
+
+                            if reaction_string in catalogued_reactions:
+                                continue
+                            else:
+                                catalogued_reactions.update(reaction_string)
+                            
+                            
+                            sample_id = hashlib.md5(
+                                f"{ec}_{reaction_string}".encode()
+                            ).hexdigest()
+
+                            sample = {
+                                "reactants": rs,
+                                "products": ps,
+                                "ec": ec,
+                                "organism": [organism2name[o] for o in entry.get("organisms", [])],
+                                "reaction_string": ".".join(rs)
+                                + ">>"
+                                + ".".join(ps),
+                                "sample_id": sample_id,
+                            }
+
+                            sample["reactants"] = [
+                                self.get_smiles(m)
+                                for m in sample["reactants"]
+                            ]
+
+                            sample["products"] = [
+                                self.get_smiles(m)
+                                for m in sample["products"]
+                            ]
+
+                            if self.skip_sample(sample, split_group):
+                                continue
+
+                            ec2reactions[ec].append(sample)
+
+        # make each reaction a sample
+        all_reactions = set()
+        dataset = []
+        for ec, reaction_list in ec2reactions.items():
+            for reaction in reaction_list:
+
+                if self.skip_sample(reaction, split_group):
+                    continue
+
+                # in case using reactions alone without protein information in model
+                if self.args.deduplicate_reactions:
+                    rxn = "{}>>{}".format(
+                        ".".join(reaction["reactants"]), ".".join(reaction["products"])
+                    )
+                    if rxn in all_reactions:
+                        continue
+
+                    all_reactions.add(rxn)
+
+                dataset.append(reaction)
+
+        return dataset
+    
+    def skip_sample(self, sample, split_group) -> bool:
+        # check if sample has mol
+        if any(
+            s in [None, [], "?"] for s in (sample["products"] + sample["reactants"])
+        ):
+            return True
+
+        return False
+
+    def __getitem__(self, index):
+        sample = self.dataset[index]
+
+        try:
+            reactants, products = copy.deepcopy(sample["reactants"]), copy.deepcopy(
+                sample["products"]
+            )
+
+            reaction = "{}>>{}".format(".".join(reactants), ".".join(products))
+            # randomize order of reactants and products
+            if self.args.randomize_order_in_reaction:
+                np.random.shuffle(reactants)
+                np.random.shuffle(products)
+                reaction = "{}>>{}".format(".".join(reactants), ".".join(products))
+
+            if self.args.use_random_smiles_representation:
+                try:
+                    reactants = [randomize_smiles_rotated(s) for s in reactants]
+                    products = [randomize_smiles_rotated(s) for s in products]
+                    reaction = "{}>>{}".format(".".join(reactants), ".".join(products))
+                except:
+                    pass
+
+            item = {
+                "reaction": reaction,
+                "reactants": ".".join(reactants),
+                "products": ".".join(products),
+                "ec": sample["ec"],
+                "sample_id": sample["sample_id"],
+            }
+
+            return item
+
+        except Exception as e:
+            warnings.warn(
+                f"Could not load sample: {sample['sample_id']} because of exception: {e}"
+            )
