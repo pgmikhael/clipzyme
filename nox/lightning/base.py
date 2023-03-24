@@ -169,12 +169,12 @@ class Base(pl.LightningModule, Nox):
             predictions_dict = self.store_in_predictions(predictions_dict, batch)
             predictions_dict = self.store_in_predictions(predictions_dict, model_output)
             self.call_metric(predictions_dict, "update")
+            logged_output["loss"] = loss
         else:
             predictions_dict = {}
             predictions_dict = self.store_in_predictions(predictions_dict, batch)
             predictions_dict = self.store_in_predictions(predictions_dict, model_output)
 
-        logged_output["loss"] = loss
         logged_output.update(logging_dict)
         logged_output["preds_dict"] = predictions_dict
         if self.args.save_hiddens:
