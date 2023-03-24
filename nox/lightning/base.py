@@ -132,6 +132,8 @@ class Base(pl.LightningModule, Nox):
         if self.args.compute_metrics_every_step:
             metrics = self.call_metric(predictions_dict, "compute")
             self.log_outputs(metrics, "train")
+            for metric_fn in self.metrics[self.phase]:
+                metric_fn.reset()
 
         logged_output["loss"] = loss
         logged_output.update(logging_dict)
@@ -346,7 +348,7 @@ class Base(pl.LightningModule, Nox):
         # log clocktime of methods for epoch
         if (self.args.profiler is not None) and (self.args.log_profiler):
             logging_dict.update(self.get_time_profile(key))
-        self.log_dict(logging_dict, prog_bar=True, logger=True)
+        self.log_dict(logging_dict, prog_bar=True, logger=True, batch_size=self.args.batch_size)
 
     def get_time_profile(self, key):
         """Obtain trainer method times
