@@ -313,7 +313,7 @@ class ECReact_RXNS(ECReact):
                 "/Mounts/rbg-storage1/datasets/Enzymes/ECReact/ecreact_proteins.p", "rb"
             )
         )
-        # self.mcsa_data = self.load_mcsa_data(self.args)
+        self.mcsa_data = self.load_mcsa_data(self.args)
 
     def assign_splits(self, metadata_json, split_probs, seed=0) -> None:
         """
@@ -526,6 +526,22 @@ class ECReact_RXNS(ECReact):
             "/Mounts/rbg-storage1/datasets/Enzymes/ECReact/ecreact_mapped_ibm_splits.json"
         )
 
+
+    @staticmethod
+    def add_args(parser) -> None:
+        """Add class specific args
+
+        Args:
+            parser (argparse.ArgumentParser): argument parser
+        """
+        super(ECReact_RXNS, ECReact_RXNS).add_args(parser)
+        parser.add_argument(
+            "--add_active_residues_to_item",
+            action="store_true",
+            default=False,
+            help="whether to add active site residues to getitem sample if available",
+        )
+
     def __getitem__(self, index):
         sample = self.dataset[index]
 
@@ -539,11 +555,12 @@ class ECReact_RXNS(ECReact):
             uniprot_id = random.sample(valid_uniprots, 1)[0]
             sequence = self.uniprot2sequence[uniprot_id]
 
-            residue_dict = self.get_uniprot_residues(self.mcsa_data, sequence, ec)
-            residues = residue_dict["residues"]
-            residue_mask = residue_dict["residue_mask"]
-            has_residues = residue_dict["has_residues"]
-            residue_positions = residue_dict["residue_positions"]
+            if self.args.add_active_residues_to_item:
+                residue_dict = self.get_uniprot_residues(self.mcsa_data, sequence, ec)
+                residues = residue_dict["residues"]
+                residue_mask = residue_dict["residue_mask"]
+                has_residues = residue_dict["has_residues"]
+                residue_positions = residue_dict["residue_positions"]
 
             # incorporate sequence residues if known
             if self.args.use_residues_in_reaction:
@@ -576,12 +593,16 @@ class ECReact_RXNS(ECReact):
                 "organism": sample.get("organism", "none"),
                 "protein_id": uniprot_id,
                 "sample_id": sample_id,
-                # "residues": ".".join(residues),
-                # "has_residues": has_residues,
-                # "residue_positions": ".".join(
-                #     [str(s) for s in residue_positions]
-                # ),
             }
+
+            if self.args.add_active_residues_to_item:
+                item.update({
+                    "residues": ".".join(residues),
+                    "has_residues": has_residues,
+                    "residue_positions": ".".join(
+                        [str(s) for s in residue_positions]
+                    ),
+                })
 
             if self.args.precomputed_esm_features_dir is not None:
                 esm_features = pickle.load(
