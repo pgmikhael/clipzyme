@@ -432,6 +432,11 @@ class ECReact_RXNS(ECReact):
                 "rowid": rowid,
             }
 
+            if self.args.atom_map_reactions:
+                sample["mapped_reaction"] = get_atom_mapped_reaction(reaction_string, self.args)
+                if sample["mapped_reaction"] is None:
+                    continue 
+
             # add reaction sample to dataset
             dataset.append(sample)
 
