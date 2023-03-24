@@ -175,6 +175,9 @@ class Chembl(AbstractDataset, InMemoryDataset):
             molecule_dict = self.dataset[index]
 
             mol = from_smiles(molecule_dict["smiles"])
+            
+            if len(mol.x) > 40:
+                return 
 
             # first feature is atomic number
             mol.x = F.one_hot(mol.x[:, 0], len(x_map["atomic_num"])).to(torch.float)
@@ -182,10 +185,7 @@ class Chembl(AbstractDataset, InMemoryDataset):
             mol.edge_attr = F.one_hot(mol.edge_attr[:, 0], len(e_map["bond_type"])).to(torch.float)
             mol.y = torch.zeros((1, 0), dtype=torch.float)
             mol.sample_id = f"{self.split_group}_{index}"
-
-            if len(mol.x) > 100:
-                return 
-                
+    
             return mol
 
         except Exception:
