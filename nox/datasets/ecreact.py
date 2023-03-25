@@ -439,7 +439,7 @@ class ECReact_RXNS(ECReact):
                     "reaction_string": reaction_string,
                     "protein_id": uniprot,
                     "sequence": self.uniprot2sequence[uniprot],
-                    "split": reaction.get("split", None),
+                    "split": reaction["split"],
                     "mapped_reaction": reaction.get('mapped_reaction', None),
                 }
                 if self.skip_sample(temp_sample, split_group):
@@ -457,6 +457,7 @@ class ECReact_RXNS(ECReact):
                 "reactants": reactants,
                 "products": products,
                 "ec": ec,
+                "split": reaction["split"],
                 "reaction_string": reaction_string,
                 "rowid": rowid,
                 "mapped_reaction": reaction.get('mapped_reaction', None),
