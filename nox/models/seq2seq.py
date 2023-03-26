@@ -14,7 +14,7 @@ from transformers import (
     BertTokenizer,
     AutoTokenizer,
     AutoModel,
-    EsmModel,
+    #EsmModel,
     AutoModelForCausalLM,
 )
 from transformers.modeling_outputs import BaseModelOutput
@@ -611,7 +611,7 @@ class EnzymaticReactionEncoder(ReactionEncoder):
             help="size of protein residue features from ESM models",
         )
 
-
+"""
 @register_object("esm_decoder", "model")
 class ESMDecoder(AbstractModel):
     def __init__(self, args):
@@ -797,7 +797,7 @@ class ESMDecoder(AbstractModel):
         return output
 
     def generate(self, batch):
-        """Applies auto-regressive generation for reaction prediction
+        '''Applies auto-regressive generation for reaction prediction
         Usage: https://huggingface.co/docs/transformers/main/en/main_classes/text_generation#transformers.GenerationMixin
 
         Args:
@@ -805,7 +805,7 @@ class ESMDecoder(AbstractModel):
             decoder_start_token_id = 2,
             bos_token_id = 2,
             max_new_tokens=100
-        """
+        '''
         bos_id = self.tokenizer.cls_token_id
         eos_id = self.tokenizer.eos_token_id
         pad_id = self.tokenizer.pad_token_id
@@ -979,3 +979,4 @@ class ESMDecoder(AbstractModel):
             default=False,
             help=" Whether to renormalize the logits after applying all the logits processors or warpers (including the custom ones). It's highly recommended to set this flag to `True` as the search algorithms suppose the score logits are normalized but some logit processors or warpers break the normalization.",
         )
+"""

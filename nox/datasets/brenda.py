@@ -1371,3 +1371,128 @@ class BrendaMappedReaction(BrendaReaction):
 
         return False
 
+
+from rdkit.Chem.Scaffolds.MurckoScaffold import MakeScaffoldGeneric,  MurckoScaffoldSmilesFromSmiles
+from rdkit import Chem
+@register_object("brenda_scaffold", "dataset")
+class BrendaReaction(Brenda):
+    def create_dataset(
+        self, split_group: Literal["train", "dev", "test"]
+    ) -> List[dict]:
+        
+        uniprot2substrates = defaultdict(set)
+        all_substrates = set()
+        substrate_to_scaffold = {}
+
+        to_scaffold = lambda x: Chem.MolToSmiles(MakeScaffoldGeneric(Chem.MolFromSmiles(x)))
+
+        for ec, ec_dict in tqdm(self.metadata_json.items(), desc="Creating dataset"):
+            
+            proteinid2uniprot = {
+                    k: v[0]["accessions"] for k, v in ec_dict["proteins"].items()
+                } if "proteins" in ec_dict else {}
+            
+
+            for reaction_key in ["reaction", "natural_reaction"]:
+                # reaction or natural_reaction may not exist
+                if reaction_key not in ec_dict:
+                    continue 
+                for entry in ec_dict[reaction_key]:
+                    # check both produces and reactants defined
+                    if not "educts" in entry:
+                        continue
+                
+                    rs_smiles = [self.get_smiles(m) for m in entry["educts"]]
+
+                    for protein in entry.get("proteins", []):
+                        for uniprotid in proteinid2uniprot.get(protein, []):
+
+                            sequence = self.brenda_proteins[uniprotid]["sequence"]
+
+                            for substrate in rs_smiles:
+                                sample = {
+                                    "sequence": sequence,
+                                    "substrate": substrate,
+                                    "ec": ec,
+                                    }
+
+                                if self.skip_sample(sample, split_group):
+                                    continue
+                                
+                                uniprot2substrates[uniprotid].add((substrate,ec))
+                                all_substrates.add(substrate)
+                                if substrate not in substrate_to_scaffold:
+                                    try:  
+                                        substrate_to_scaffold[substrate] = to_scaffold(substrate)
+                                    except:
+                                        continue
+
+        
+        all_scaffolds = sorted(set(substrate_to_scaffold.values()))
+        scaffold_to_class = {c:i for i,c in enumerate(all_scaffolds)}
+
+        # make each uniprot a sample
+        dataset = []
+        for uniprotid, substrate_list in tqdm(uniprot2substrates.items(), total = len(uniprot2substrates), ncols = 100):
+            y = np.zeros(len(scaffold_to_class))
+            for s in set(s[0] for s in substrate_list): 
+                if substrate_to_scaffold.get(s, False):
+                    y[scaffold_to_class[substrate_to_scaffold[s]]] = 1 
+                else:
+                    continue 
+            for ec in set(s[1] for s in substrate_list): 
+                dataset.append({
+                    "ec": ec,
+                    "x": self.brenda_proteins[uniprotid]["sequence"],
+                    "sequence": self.brenda_proteins[uniprotid]["sequence"],
+                    "uniprotid": uniprotid,
+                    "y": y,
+                    "sample_id": f"{uniprotid}_{ec}"
+                })
+        
+        return dataset
+    
+    def skip_sample(self, sample, split_group) -> bool:
+        # check if sample has mol
+        if sample["substrate"] in [None, [], "?"]:
+            return True
+        
+        if sample["sequence"] is None:
+            return True
+
+        return False
+    
+
+    def __getitem__(self, index):
+        return self.dataset[index]
+    
+
+    def get_split_group_dataset(
+        self, processed_dataset, split_group: Literal["train", "dev", "test"]
+    ) -> List[dict]:
+        dataset = []
+        for sample in processed_dataset:
+            if self.args.split_type == "sequence":
+                if self.to_split[sample["protein_id"]] != split_group:
+                    continue
+
+            if self.args.split_type == "ec":
+                ec = ".".join(sample["ec"].split(".")[: self.args.ec_level + 1])
+                if self.to_split[ec] != split_group:
+                    continue
+
+            dataset.append(sample)
+
+        return dataset
+    
+    @property
+    def SUMMARY_STATEMENT(self) -> None:
+        proteins = [d["uniprotid"] for d in self.dataset] 
+        ecs = [d["ec"] for d in self.dataset]
+        statement = f""" 
+        * Number of samples: {len(self.dataset)}
+        * Number of scaffolds: {len(self.dataset[0]['y'])}
+        * Number of proteins: {len(set(proteins))}
+        * Number of ECs: {len(set(ecs))}
+        """
+        return statement

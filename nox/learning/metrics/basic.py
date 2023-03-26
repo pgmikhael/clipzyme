@@ -167,17 +167,20 @@ class Seq2SeqClassification(Metric, Nox):
         self.accuracy_metric = torchmetrics.Accuracy(
             task=args.task_type,
             num_classes=args.num_classes,
+            num_labels=args.num_classes,
             multidim_average="samplewise",
             ignore_index=args.ignore_index,
         )
         self.f1_metric = torchmetrics.F1Score(
             task=args.task_type,
             num_classes=args.num_classes,
+            num_labels=args.num_classes,
             multidim_average="samplewise",
             ignore_index=args.ignore_index,
         )
         self.macro_f1_metric = torchmetrics.F1Score(
             task=args.task_type,
+            num_labels=args.num_classes,
             num_classes=args.num_classes,
             average="macro",
             multidim_average="samplewise",
@@ -185,34 +188,40 @@ class Seq2SeqClassification(Metric, Nox):
         )
         self.precision_metric = torchmetrics.Precision(
             task=args.task_type,
+            num_labels=args.num_classes,
             num_classes=args.num_classes,
             multidim_average="samplewise",
             ignore_index=args.ignore_index,
         )
         self.recall_metric = torchmetrics.Recall(
             task=args.task_type,
+            num_labels=args.num_classes,
             num_classes=args.num_classes,
             multidim_average="samplewise",
             ignore_index=args.ignore_index,
         )
         self.top_1_metric = TopK(
             task=args.task_type,
+            num_labels=args.num_classes,
             num_classes=args.num_classes,
             ignore_index=args.ignore_index,
         )
         # don't have multidim_average arg
         self.auroc_metric = torchmetrics.AUROC(
             task=args.task_type,
+            num_labels=args.num_classes,
             num_classes=args.num_classes,
             ignore_index=args.ignore_index,
         )
         self.ap_metric = torchmetrics.AveragePrecision(
             task=args.task_type,
+            num_labels=args.num_classes,
             num_classes=args.num_classes,
             ignore_index=args.ignore_index,
         )
         self.auprc_metric = torchmetrics.PrecisionRecallCurve(
             task=args.task_type,
+            num_labels=args.num_classes,
             num_classes=args.num_classes,
             ignore_index=args.ignore_index,
         )

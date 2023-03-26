@@ -65,10 +65,10 @@ class FairEsm(AbstractModel):
             sequence_mask = sequence_mask.unsqueeze(-1)
             # remove cls and eos tokens
             output["hidden"] = (result["representations"][self.repr_layer]* sequence_mask).sum(1) / sequence_mask.sum(1)
+            output["mask_hiddens"] = sequence_mask
 
         output["tokens"] = batch_tokens
         output["token_hiddens"] = result["representations"][self.repr_layer]
-        output["mask_hiddens"] = sequence_mask
 
         return output
 
