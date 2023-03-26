@@ -276,6 +276,7 @@ class Seq2SeqClassification(Metric, Nox):
         self.precision_metric.reset()
         self.recall_metric.reset()
         self.ap_metric.reset()
+        self.top_1_metric.reset()
 
     @staticmethod
     def add_args(parser) -> None:
