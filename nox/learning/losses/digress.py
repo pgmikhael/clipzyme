@@ -272,10 +272,10 @@ class DigressSimpleVLBLoss(Nox):
             pred_E=prob_pred.E,
             node_mask=node_mask,
         )
-        kl_x = F.kl_div(prob_true.X, torch.log(prob_pred.X)) * model.model.T
-        kl_e = F.kl_div(prob_true.E, torch.log(prob_pred.E)) * model.model.T
+        kl_x = F.kl_div(prob_true.X, torch.log(prob_pred.X), reduction="batchmean") * model.model.T
+        kl_e = F.kl_div(prob_true.E, torch.log(prob_pred.E), reduction="batchmean") * model.model.T
         kl_y = (
-            F.kl_div(prob_true.y, torch.log(prob_pred.y)) * model.model.T
+            F.kl_div(prob_true.y, torch.log(prob_pred.y), reduction="batchmean") * model.model.T
             if pred_probs_y.numel() != 0
             else 0
         )
