@@ -167,8 +167,11 @@ class Chembl(AbstractDataset, InMemoryDataset):
             if data_item["split"] != split_group:
                 continue 
             
-            mol = Chem.MolFromSmiles(data_item["smiles"])
-            if mol.GetNumAtoms() > 40:
+            try:
+                mol = Chem.MolFromSmiles(data_item["smiles"])
+                if mol.GetNumAtoms() > 40:
+                    continue 
+            except:
                 continue 
 
             dataset.append(data_item)
