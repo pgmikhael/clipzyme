@@ -166,6 +166,11 @@ class Chembl(AbstractDataset, InMemoryDataset):
         for data_item in tqdm(chembl_data, ncols=60):
             if data_item["split"] != split_group:
                 continue 
+            
+            mol = Chem.MolFromSmiles(data_item["smiles"])
+            if mol.GetNumAtoms() > 40:
+                continue 
+
             dataset.append(data_item)
 
         return dataset
@@ -175,9 +180,6 @@ class Chembl(AbstractDataset, InMemoryDataset):
             molecule_dict = self.dataset[index]
 
             mol = from_smiles(molecule_dict["smiles"])
-            
-            if len(mol.x) > 40:
-                return 
 
             # first feature is atomic number
             mol.x = F.one_hot(mol.x[:, 0], len(x_map["atomic_num"])).to(torch.float)
