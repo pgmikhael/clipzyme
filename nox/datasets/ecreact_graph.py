@@ -608,11 +608,11 @@ class ECReactSubstrate(ECReactGraph):
             uniprot_id = random.sample(valid_uniprots, 1)[0]
             sequence = self.uniprot2sequence[uniprot_id]
 
-            residue_dict = self.get_uniprot_residues(self.mcsa_data, sequence, ec)
-            residues = residue_dict["residues"]
-            residue_mask = residue_dict["residue_mask"]
-            has_residues = residue_dict["has_residues"]
-            residue_positions = residue_dict["residue_positions"]
+            # residue_dict = self.get_uniprot_residues(self.mcsa_data, sequence, ec)
+            # residues = residue_dict["residues"]
+            # residue_mask = residue_dict["residue_mask"]
+            # has_residues = residue_dict["has_residues"]
+            # residue_positions = residue_dict["residue_positions"]
 
             # first feature is atomic number
             reactant.x = F.one_hot(reactant.x[:, 0], len(x_map["atomic_num"])).to(
@@ -843,11 +843,11 @@ class ECReactSubstratePlainGraph(ECReactSubstrate):
             uniprot_id = random.sample(valid_uniprots, 1)[0]
             sequence = self.uniprot2sequence[uniprot_id]
 
-            residue_dict = self.get_uniprot_residues(self.mcsa_data, sequence, ec)
-            residues = residue_dict["residues"]
-            residue_mask = residue_dict["residue_mask"]
-            has_residues = residue_dict["has_residues"]
-            residue_positions = residue_dict["residue_positions"]
+            # residue_dict = self.get_uniprot_residues(self.mcsa_data, sequence, ec)
+            # residues = residue_dict["residues"]
+            # residue_mask = residue_dict["residue_mask"]
+            # has_residues = residue_dict["has_residues"]
+            # residue_positions = residue_dict["residue_positions"]
 
             reactant.sample_id = sample["rowid"]
             reactant.sequence = sequence
