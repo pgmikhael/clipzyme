@@ -325,6 +325,10 @@ class BaseRegression(Metric, Nox):
         probs = predictions_dict["probs"]  # B, C (float)
         golds = predictions_dict["golds"]  # B
 
+        if probs.shape[-1] == 1:
+            probs = probs.view(-1)
+            golds = golds.view(-1)
+
         self.mae.update(probs, golds)
         self.mse.update(probs, golds)
         self.pearson.update(probs, golds)
