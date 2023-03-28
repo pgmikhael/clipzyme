@@ -19,6 +19,10 @@ from nox.utils.classes import classproperty
 from collections import Counter
 import rdkit
 import torch
+from collections import defaultdict
+from rich import print
+import hashlib
+import glob
 
 
 class DatasetInfo:
@@ -622,25 +626,29 @@ class ECReactSubstrate(ECReactGraph):
             reactant.sample_id = sample["rowid"]
             reactant.sequence = sequence
 
-            esm_features = pickle.load(
-                open(
-                    os.path.join(
-                        self.args.precomputed_esm_features_dir,
-                        f"sample_{uniprot_id}.predictions",
-                    ),
-                    "rb",
+            if self.args.precomputed_esm_features_dir is not None:
+                esm_features = pickle.load(
+                    open(
+                        os.path.join(
+                            self.args.precomputed_esm_features_dir,
+                            f"sample_{uniprot_id}.predictions",
+                        ),
+                        "rb",
+                    )
                 )
-            )
 
-            mask_hiddens = esm_features["mask_hiddens"]  # sequence len, 1
-            protein_hidden = esm_features["hidden"]
+                mask_hiddens = esm_features["mask_hiddens"]  # sequence len, 1
+                protein_hidden = esm_features["hidden"]
+                # token_hiddens = esm_features["token_hiddens"][mask_hiddens[:, 0].bool()]
+
             # token_hiddens = esm_features["token_hiddens"][mask_hiddens[:,0].bool()]
-            reactant.y = protein_hidden.view(1, -1)
+            # reactant.y = protein_hidden.view(1, -1)
+            reactant.y = sample["y"]
             reactant.ec = sample["ec"]
             return reactant
 
-        except Exception:
-            warnings.warn(f"Could not load sample: {sample['rowid']}")
+        except Exception as e:
+            warnings.warn(f"Could not load sample: {sample['rowid']} because of {e}")
 
     @staticmethod
     def add_args(parser) -> None:
@@ -654,7 +662,7 @@ class ECReactSubstrate(ECReactGraph):
             "--use_original_num_classes",
             action="store_true",
             default=False,
-            help="use max node type as num_classes",
+            help="use max node type as num_classes if false",
         )
         parser.add_argument(
             "--sample_negatives",
@@ -666,61 +674,142 @@ class ECReactSubstrate(ECReactGraph):
             "--sample_negatives_range",
             type=float,
             nargs=2,
-            default=None,
+            default=[0.7, 1.0],
             help="range of similarity to sample negatives from",
         )
 
     def add_negatives(self, dataset, split_group):
-        all_substrates = set(
-            d["reactant"] for d in dataset if d["split"] == split_group
-        )
-        all_substrates_list = list(all_substrates)
-
-        # filter out negatives based on some metric (e.g. similarity)
-        if self.args.sample_negatives_range is not None:
-            min_sim, max_sim = self.args.sample_negatives_range
-
-            smile_fps = np.array(
+        negative_hash = hashlib.md5(
+            str(
                 [
-                    get_rdkit_feature(mol=smile, method="morgan_binary")
-                    for smile in all_substrates
+                    self.args.dataset_file_path,
+                    self.args.split_seed,
+                    self.args.max_reactant_size,
+                    self.args.dataset_name,
+                    self.args.assign_splits,
+                    self.args.use_residues_in_reaction,
+                    self.args.use_random_smiles_representation,
+                    self.args.max_protein_length,
+                    self.args.split_type,
+                    self.args.sample_negatives,
+                    self.args.sample_negatives_range,
+                    self.args.ec_level,
+                    self.args.precomputed_esm_features_dir,
                 ]
-            )
+            ).encode()
+        ).hexdigest()
+        path_to_negatives = os.path.join(
+            self.args.precomputed_esm_features_dir, f"negatives_to_add_{negative_hash}"
+        )
+        # all negatives were stored only if _done.pkl exists
+        if os.path.exists(
+            os.path.join(path_to_negatives, f"{negative_hash}_{split_group}_done.pkl")
+        ):
+            # directory exists, load all negatives
+            all_sample_paths = glob.glob(os.path.join(path_to_negatives, "*.pkl"))
+            all_sample_paths = [i for i in all_sample_paths if "_done" not in i]
+            negatives_to_add = []
+            for path in tqdm(
+                all_sample_paths,
+                desc=f"Loading negatives from cache: {path_to_negatives}",
+            ):
+                sample = pickle.load(open(path, "rb"))
+                # if not test then only add split group negatives
+                if split_group in ["dev", "train"] and sample["split"] == split_group:
+                    negatives_to_add.append(sample)
+                elif split_group == "test":  # if test, add all negatives
+                    negatives_to_add.append(sample)
 
-            smile_similarity = smile_fps @ smile_fps.T
-            similiarity_idx = np.where(
-                (smile_similarity > min_sim) & (smile_similarity < max_sim)
-            )
+            print(f"[magenta] Adding {len(negatives_to_add)} negatives [/magenta]")
+        else:
+            if not os.path.exists(path_to_negatives):
+                os.makedirs(path_to_negatives)
 
-        ec_to_positives = {}
-        for sample in tqdm(dataset, desc="Sampling negatives"):
-            ec = sample["ec"]
-            if ec not in ec_to_positives:
-                ec_to_positives[ec].add(sample["reactant"])
+            if not split_group in ["train", "dev"]:
+                all_substrates = set(
+                    d["reactant"] for d in dataset if d["split"] == split_group
+                )
+            else:  # if test, need to use all substrates
+                all_substrates = set(d["reactant"] for d in dataset)
+            all_substrates_list = list(all_substrates)
 
-                if self.args.sample_negatives_range is not None:
-                    # add to positives so that we don't sample them as negatives
-                    idx = all_substrates_list.index(sample["reactant"])
-                    ec_to_positives[ec].update(
-                        all_substrates[j] for j in similiarity_idx[idx]
+            # filter out negatives based on some metric (e.g. similarity)
+            if self.args.sample_negatives_range is not None:
+                min_sim, max_sim = self.args.sample_negatives_range
+
+                smile_fps = np.array(
+                    [
+                        get_rdkit_feature(mol=smile, method="morgan_binary")
+                        / np.linalg.norm(
+                            get_rdkit_feature(mol=smile, method="morgan_binary")
+                        )
+                        for smile in all_substrates
+                    ]
+                )
+
+                smile_similarity = smile_fps @ smile_fps.T
+                similarity_idx = np.where(
+                    (smile_similarity < min_sim) | (smile_similarity > max_sim)
+                )
+
+            ec_to_positives = defaultdict(set)
+            for sample in tqdm(dataset, desc="Sampling negatives"):
+                if (
+                    sample["split"] == split_group
+                ):  # even in test, leave, since we want only test prots
+                    ec = sample["ec"]
+                    # if ec not in ec_to_positives:
+                    ec_to_positives[ec].add(sample["reactant"])
+
+                    if self.args.sample_negatives_range is not None:
+                        # add to positives so that we don't sample them as negatives
+                        idx = all_substrates_list.index(sample["reactant"])
+                        ec_to_positives[ec].update(
+                            all_substrates_list[j]
+                            for j in similarity_idx[1][similarity_idx[0] == idx]
+                        )
+
+            ec_to_negatives = {
+                k: all_substrates - v for k, v in ec_to_positives.items()
+            }
+
+            rowid = len(dataset)
+            negatives_to_add = []
+            for ec, negatives in ec_to_negatives.items():
+                for rid, reactant in enumerate(negatives):
+                    sample = {
+                        "reactant": reactant,
+                        "ec": ec,
+                        "reaction_string": "",
+                        "rowid": f"{rid}{rowid}",
+                        "split": split_group,
+                        "y": 0,
+                    }
+                    rowid += 1
+                    negatives_to_add.append(sample)
+                    # dataset.append(sample)
+                    sample_hash = hashlib.md5(str(sample).encode()).hexdigest()
+                    sample_path = os.path.join(
+                        path_to_negatives, f"{negative_hash}_{sample_hash}.pkl"
                     )
+                    if not os.path.exists(sample_path):
+                        pickle.dump(sample, open(sample_path, "wb"))
 
-        ec_to_negatives = {k: all_substrates - v for k, v in ec_to_positives.items()}
+            print(f"[magenta] Adding {len(negatives_to_add)} negatives [/magenta]")
+            # add a final pickle to indicate that we are done
+            pickle.dump(
+                f"done pickling {negative_hash}",
+                open(
+                    os.path.join(
+                        path_to_negatives, f"{negative_hash}_{split_group}_done.pkl"
+                    ),
+                    "wb",
+                ),
+            )
+            # pickle negatives_to_add for caching -> Too slow
+            # pickle.dump(negatives_to_add, open(path_to_negatives, "wb"))
 
-        rowid = len(dataset)
-        for ec, negatives in ec_to_negatives.items():
-            for rid, reactant in enumerate(negatives):
-                sample = {
-                    "reactant": reactant,
-                    "ec": ec,
-                    "reaction_string": "",
-                    "rowid": f"{rid}{rowid}",
-                    "split": split_group,
-                    "y": 0,
-                }
-                rowid += 1
-                dataset.append(sample)
-
+        dataset += negatives_to_add
         return dataset
 
 
@@ -776,7 +865,8 @@ class ECReactSubstratePlainGraph(ECReactSubstrate):
             mask_hiddens = esm_features["mask_hiddens"]  # sequence len, 1
             protein_hidden = esm_features["hidden"]
             # token_hiddens = esm_features["token_hiddens"][mask_hiddens[:,0].bool()]
-            reactant.y = protein_hidden.view(1, -1)
+            # reactant.y = protein_hidden.view(1, -1)
+            reactant.y = sample["y"]
             reactant.ec = sample["ec"]
             reactant.all_reactants = sample["reaction_string"].split(">>")[0].split(".")
 
