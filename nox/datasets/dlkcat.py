@@ -216,6 +216,7 @@ class BrendaKCat(AbstractDataset):
         try:
             return {
                 "smiles": sample["mol"],
+                "mol": sample["mol"],
                 "smiles_str": sample["smiles"],
                 "sequence": sample["sequence"],
                 "y": sample["y"],
