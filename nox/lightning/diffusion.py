@@ -3,6 +3,7 @@ from nox.lightning.base import Base, gather_step_outputs
 from nox.utils.registry import get_object, register_object
 from nox.utils.digress.visualization import MolecularVisualization
 
+
 @register_object("diffusion", "lightning")
 class DiscreteDenoisingDiffusion(Base):
     def __init__(self, args):
@@ -14,7 +15,7 @@ class DiscreteDenoisingDiffusion(Base):
         self.visualization_tools = MolecularVisualization(
             args.remove_h, dataset_infos=args.dataset_statistics
         )
-    
+
     @property
     def LOG_KEYS(self):
         return [
@@ -58,7 +59,7 @@ class DiscreteDenoisingDiffusion(Base):
         outputs.update(self.call_metric({}, "compute"))
 
         self.args.val_counter += 1
-        
+
         if self.args.val_counter % self.args.sample_every_val == 0:
             samples = []
 
@@ -73,31 +74,38 @@ class DiscreteDenoisingDiffusion(Base):
                 to_save = min(samples_left_to_save, bs)
                 chains_save = min(chains_left_to_save, bs)
                 sampled_dict = self.model.sample_batch(
-                        batch_id=ident,
-                        batch_size=to_generate,
-                        num_nodes=None,
-                        keep_chain=chains_save,
-                        number_chain_steps=self.args.number_chain_steps,
-                        dataset=self.trainer.val_dataloaders[0].dataset,
-                    )
-                
+                    batch_id=ident,
+                    batch_size=to_generate,
+                    num_nodes=None,
+                    keep_chain=chains_save,
+                    number_chain_steps=self.args.number_chain_steps,
+                    dataset=self.trainer.val_dataloaders[0].dataset,
+                )
+
                 ident += to_generate
 
                 samples_left_to_save -= to_save
                 samples_left_to_generate -= to_generate
                 chains_left_to_save -= chains_save
                 samples.extend(sampled_dict["molecules"])
-                
+
                 # Visualize samples
-                if self.args.val_counter % self.args.visualize_diffusion_samples_every_val == 0:
+                if (
+                    self.args.val_counter
+                    % self.args.visualize_diffusion_samples_every_val
+                    == 0
+                ):
                     self.log_generated_samples(sampled_dict, num_to_log=to_save)
-                
+
             if self.args.compute_sampling_metric:
                 self.sampling_metric_val.update({"molecules": samples}, self.args)
                 sampling_metrics = self.sampling_metric_val.compute()
-                sampling_metrics = {k: torch.tensor([v], device=self.device).float() for k,v in sampling_metrics.items()}
+                sampling_metrics = {
+                    k: torch.tensor([v], device=self.device).float()
+                    for k, v in sampling_metrics.items()
+                }
                 outputs.update(sampling_metrics)
-                
+
         self.log_outputs(outputs, "val")
 
         for metric_fn in self.metrics["val"]:
@@ -119,7 +127,6 @@ class DiscreteDenoisingDiffusion(Base):
         if not self.args.predict:
             outputs.update(self.call_metric({}, "compute"))
 
-
         samples_left_to_generate = self.args.final_model_samples_to_generate
         samples_left_to_save = self.args.final_model_samples_to_save
         chains_left_to_save = self.args.final_model_chains_to_save
@@ -132,13 +139,13 @@ class DiscreteDenoisingDiffusion(Base):
             to_save = min(samples_left_to_save, bs)
             chains_save = min(chains_left_to_save, bs)
             sampled_dict = self.model.sample_batch(
-                    ident,
-                    to_generate,
-                    num_nodes=None,
-                    keep_chain=chains_save,
-                    number_chain_steps=self.args.number_chain_steps,
-                    dataset=self.trainer.test_dataloaders[0].dataset,
-                )
+                ident,
+                to_generate,
+                num_nodes=None,
+                keep_chain=chains_save,
+                number_chain_steps=self.args.number_chain_steps,
+                dataset=self.trainer.test_dataloaders[0].dataset,
+            )
             ident += to_generate
             samples_left_to_save -= to_save
             samples_left_to_generate -= to_generate
@@ -152,14 +159,17 @@ class DiscreteDenoisingDiffusion(Base):
         if not self.args.predict and self.args.compute_sampling_metric:
             self.sampling_metric_test.update({"molecules": samples}, self.args)
             sampling_metrics = self.sampling_metric_val.compute()
-            sampling_metrics = {k: torch.tensor([v], device=self.device).float() for k,v in sampling_metrics.items()}
+            sampling_metrics = {
+                k: torch.tensor([v], device=self.device).float()
+                for k, v in sampling_metrics.items()
+            }
             outputs.update(sampling_metrics)
 
         self.log_outputs(outputs, "test")
 
         for metric_fn in self.metrics["test"]:
             metric_fn.reset()
-        
+
         if self.args.compute_sampling_metric:
             self.sampling_metric_test.reset()
 
@@ -167,23 +177,26 @@ class DiscreteDenoisingDiffusion(Base):
         chain_X = sampled_dict["chain_X"]
         chain_E = sampled_dict["chain_E"]
         molecule_list = sampled_dict["molecules"]
-    
+
         table_columns = ["molecules", "chain", "epoch"]
         table_data = []
         data_types = ["image", "video", "str"]
         num_molecules = chain_X.size(1)  # number of molecules
         mol_gifs = []
         for i in range(num_molecules):
-            mol_gif = self.visualization_tools.visualize_chain(chain_X[:, i, :].numpy(), chain_E[:, i, :].numpy())   # visualize chain
+            mol_gif = self.visualization_tools.visualize_chain(
+                chain_X[:, i, :].numpy(), chain_E[:, i, :].numpy()
+            )  # visualize chain
             mol_gifs.append(mol_gif)
 
         # Visualize the final molecules
-        mol_images = self.visualization_tools.visualize(molecule_list, num_to_log)   
+        mol_images = self.visualization_tools.visualize(molecule_list, num_to_log)
         table_data = [mol_images, mol_gifs, [self.current_epoch] * len(mol_images)]
 
         # log as table
-        self.logger.log_table(table_columns, table_data, data_types, table_name=f"{self.phase}_samples") # log
-
+        self.logger.log_table(
+            table_columns, table_data, data_types, table_name=f"{self.phase}_samples"
+        )  # log
 
     @staticmethod
     def add_args(parser) -> None:
@@ -268,5 +281,3 @@ class DiscreteDenoisingDiffusion(Base):
             default=False,
             help="whether to compute the `SamplingMolecularMetrics` metric",
         )
-
-        

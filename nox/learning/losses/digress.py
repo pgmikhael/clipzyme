@@ -108,7 +108,7 @@ class DigressLoss(Nox):
 class DigressSimpleVLBLoss(Nox):
     def __init__(self) -> None:
         super().__init__()
-    
+
     @torch.no_grad()
     def __call__(self, model_output, batch, model, args):
         """Computes an estimator for the variational lower bound, or the simple loss (MSE).
@@ -138,7 +138,10 @@ class DigressSimpleVLBLoss(Nox):
         kl_prior = self.kl_prior(X, E, y, node_mask, model, args)
 
         # 3. Diffusion loss
-        loss_all_t = self.compute_Lt(X, E, y, pred, noisy_data, node_mask, test, model) * model.model.T
+        loss_all_t = (
+            self.compute_Lt(X, E, y, pred, noisy_data, node_mask, test, model)
+            * model.model.T
+        )
 
         # 4. Reconstruction loss
         # Compute L0 term : -log p (X, E, y | z_0) = reconstruction loss
@@ -162,8 +165,8 @@ class DigressSimpleVLBLoss(Nox):
 
         nll = nll.detach()
 
-        loss = nll 
-        logging_dict= {
+        loss = nll
+        logging_dict = {
             "nll": nll,
             "kl_prior": kl_prior.mean(),
             "estimator_loss_terms": loss_all_t.mean(),
@@ -184,7 +187,7 @@ class DigressSimpleVLBLoss(Nox):
         Ts = args.diffusion_steps * ones
         alpha_t_bar = model.model.noise_schedule.get_alpha_bar(t_int=Ts)  # (bs, 1)
 
-        Qtb = model.model.transition_model.get_Qt_bar(alpha_t_bar, X.device) 
+        Qtb = model.model.transition_model.get_Qt_bar(alpha_t_bar, X.device)
 
         # Compute transition probabilities
         probX = X @ Qtb.X  # (bs, n, dx_out)
@@ -194,8 +197,14 @@ class DigressSimpleVLBLoss(Nox):
 
         bs, n, _ = probX.shape
 
-        limit_X = model.model.limit_dist.X[None, None, :].expand(bs, n, -1).type_as(probX)
-        limit_E = (model.model.limit_dist.E[None, None, None, :].expand(bs, n, n, -1).type_as(probE))
+        limit_X = (
+            model.model.limit_dist.X[None, None, :].expand(bs, n, -1).type_as(probX)
+        )
+        limit_E = (
+            model.model.limit_dist.E[None, None, None, :]
+            .expand(bs, n, n, -1)
+            .type_as(probE)
+        )
         uniform_dist_y = torch.ones_like(proby) / model.model.ydim_output
 
         # Make sure that masked rows do not contribute to the loss
@@ -228,8 +237,12 @@ class DigressSimpleVLBLoss(Nox):
         pred_probs_E = F.softmax(pred.E, dim=-1)
         pred_probs_y = F.softmax(pred.y, dim=-1)
 
-        Qtb = model.model.transition_model.get_Qt_bar(noisy_data["alpha_t_bar"], model.device)
-        Qsb = model.model.transition_model.get_Qt_bar(noisy_data["alpha_s_bar"], model.device)
+        Qtb = model.model.transition_model.get_Qt_bar(
+            noisy_data["alpha_t_bar"], model.device
+        )
+        Qsb = model.model.transition_model.get_Qt_bar(
+            noisy_data["alpha_s_bar"], model.device
+        )
         Qt = model.model.transition_model.get_Qt(noisy_data["beta_t"], model.device)
 
         # Compute distributions to compare with KL
@@ -272,10 +285,17 @@ class DigressSimpleVLBLoss(Nox):
             pred_E=prob_pred.E,
             node_mask=node_mask,
         )
-        kl_x = F.kl_div(prob_true.X, torch.log(prob_pred.X), reduction="batchmean") * model.model.T
-        kl_e = F.kl_div(prob_true.E, torch.log(prob_pred.E), reduction="batchmean") * model.model.T
+        kl_x = (
+            F.kl_div(prob_true.X, torch.log(prob_pred.X), reduction="batchmean")
+            * model.model.T
+        )
+        kl_e = (
+            F.kl_div(prob_true.E, torch.log(prob_pred.E), reduction="batchmean")
+            * model.model.T
+        )
         kl_y = (
-            F.kl_div(prob_true.y, torch.log(prob_pred.y), reduction="batchmean") * model.model.T
+            F.kl_div(prob_true.y, torch.log(prob_pred.y), reduction="batchmean")
+            * model.model.T
             if pred_probs_y.numel() != 0
             else 0
         )
@@ -295,8 +315,12 @@ class DigressSimpleVLBLoss(Nox):
             probX=probX0, probE=probE0, node_mask=node_mask
         )
 
-        X0 = F.one_hot(sampled0.X, num_classes=args.dataset_statistics.output_dims["X"]).float() # TODO
-        E0 = F.one_hot(sampled0.E, num_classes=args.dataset_statistics.output_dims["E"]).float() # TODO
+        X0 = F.one_hot(
+            sampled0.X, num_classes=args.dataset_statistics.output_dims["X"]
+        ).float()  # TODO
+        E0 = F.one_hot(
+            sampled0.E, num_classes=args.dataset_statistics.output_dims["E"]
+        ).float()  # TODO
         y0 = sampled0.y
         assert (X.shape == X0.shape) and (E.shape == E0.shape)
 
@@ -324,14 +348,18 @@ class DigressSimpleVLBLoss(Nox):
         proby0 = F.softmax(pred0.y, dim=-1)
 
         # Set masked rows to arbitrary values that don't contribute to loss
-        
-        probX0[~node_mask] = torch.ones(args.dataset_statistics.output_dims["X"]).type_as(probX0) 
+
+        probX0[~node_mask] = torch.ones(
+            args.dataset_statistics.output_dims["X"]
+        ).type_as(probX0)
         probE0[~(node_mask.unsqueeze(1) * node_mask.unsqueeze(2))] = torch.ones(
             args.dataset_statistics.output_dims["E"]
         ).type_as(probE0)
 
         diag_mask = torch.eye(probE0.size(1)).type_as(probE0).bool()
         diag_mask = diag_mask.unsqueeze(0).expand(probE0.size(0), -1, -1)
-        probE0[diag_mask] = torch.ones(args.dataset_statistics.output_dims["E"]).type_as(probE0) 
+        probE0[diag_mask] = torch.ones(
+            args.dataset_statistics.output_dims["E"]
+        ).type_as(probE0)
 
         return diffusion_utils.PlaceHolder(X=probX0, E=probE0, y=proby0)

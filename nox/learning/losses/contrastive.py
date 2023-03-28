@@ -398,7 +398,7 @@ class SupervisedCLIPLoss(Nox):
         predictions["logits"] = logits
         predictions["probs"] = probs
         predictions["preds"] = (probs > 0.5).float()
-        predictions["y"] = batch.y # labels of pairs, for testing
+        predictions["y"] = batch.y  # labels of pairs, for testing
 
         return loss, logging_dict, predictions
 

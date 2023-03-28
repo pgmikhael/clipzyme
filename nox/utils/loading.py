@@ -11,7 +11,7 @@ from nox.utils.sampler import DistributedWeightedSampler
 from nox.utils.augmentations import get_augmentations_by_split
 from pytorch_lightning.utilities.cloud_io import load as pl_load
 from torch_geometric.data import Data, HeteroData, Batch
-from rich import print as rprint 
+from rich import print as rprint
 
 string_classes = (str, bytes)
 int_classes = int
@@ -37,18 +37,23 @@ def default_collate(batch):
         # pad with zero
         if not all(v.shape == elem.shape for v in batch):
             max_len = max(v.shape[0] for v in batch)
-            batch = [ torch.concat([x,torch.zeros(max_len - x.shape[0], *x.shape[1:])]) for x in batch]
+            batch = [
+                torch.concat([x, torch.zeros(max_len - x.shape[0], *x.shape[1:])])
+                for x in batch
+            ]
 
         elem = batch[0]
         out = None
         if torch.utils.data.get_worker_info() is not None:
             # If we're in a background process, concatenate directly into a
             # shared memory tensor to avoid an extra copy
-            numel = sum([x.numel() for x in batch])               # assumes all have the same size
-            #numel = max([x.numel() for x in batch]) * len(batch)    # total size of tensors 
-            storage = elem.storage()._new_shared(numel) # Creates a new storage in shared memory with the same data type
-            out = elem.new(storage).view(-1, *list(elem.size()))  
-        
+            numel = sum([x.numel() for x in batch])  # assumes all have the same size
+            # numel = max([x.numel() for x in batch]) * len(batch)    # total size of tensors
+            storage = elem.storage()._new_shared(
+                numel
+            )  # Creates a new storage in shared memory with the same data type
+            out = elem.new(storage).view(-1, *list(elem.size()))
+
         return torch.stack(batch, 0, out=out)
     elif (
         elem_type.__module__ == "numpy"
@@ -264,7 +269,7 @@ def get_lightning_model(args: Namespace):
         model = model.load_from_checkpoint(
             checkpoint_path=modelpath,
             strict=not args.relax_checkpoint_matching,
-            **{"args": args}
+            **{"args": args},
         )
         rprint(f"[bold] Loaded checkpoint from {modelpath}")
     else:

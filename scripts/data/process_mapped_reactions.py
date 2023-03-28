@@ -4,35 +4,55 @@ import argparse
 from rdkit import RDLogger
 import numpy as np
 from tqdm import tqdm
+
 lg = RDLogger.logger()
 lg.setLevel(4)
 
 
-
-'''
+"""
 This script evaluates the quality of predictions from the rank_diff_wln model by applying the predicted
 graph edits to the reactants, cleaning up the generated product, and comparing it to what was recorded
 as the true (major) product of that reaction
-'''
+"""
 
 # Define some post-sanitization reaction cleaning scripts
 # These are to align our graph edit representation of a reaction with the data for improved coverage
 from rdkit.Chem import AllChem
+
 clean_rxns_presani = [
-    AllChem.ReactionFromSmarts('[O:1]=[c:2][n;H0:3]>>[O:1]=[c:2][n;H1:3]'), # hydroxypyridine written with carbonyl, must invent H on nitrogen
+    AllChem.ReactionFromSmarts(
+        "[O:1]=[c:2][n;H0:3]>>[O:1]=[c:2][n;H1:3]"
+    ),  # hydroxypyridine written with carbonyl, must invent H on nitrogen
 ]
 clean_rxns_postsani = [
-    AllChem.ReactionFromSmarts('[n;H1;+0:1]:[n;H0;+1:2]>>[n;H0;+0:1]:[n;H0;+0:2]'), # two adjacent aromatic nitrogens should allow for H shift
-    AllChem.ReactionFromSmarts('[n;H1;+0:1]:[c:3]:[n;H0;+1:2]>>[n;H0;+0:1]:[*:3]:[n;H0;+0:2]'), # two aromatic nitrogens separated by one should allow for H shift
-    AllChem.ReactionFromSmarts('[#7;H0;+:1]-[O;H1;+0:2]>>[#7;H0;+:1]-[O;H0;-:2]'),
-    AllChem.ReactionFromSmarts('[C;H0;+0:1](=[O;H0;+0:2])[O;H0;-1:3]>>[C;H0;+0:1](=[O;H0;+0:2])[O;H1;+0:3]'), # neutralize C(=O)[O-]
-    AllChem.ReactionFromSmarts('[I,Br,F;H1;D0;+0:1]>>[*;H0;-1:1]'), # turn neutral halogens into anions EXCEPT HCl
-    AllChem.ReactionFromSmarts('[N;H0;-1:1]([C:2])[C:3]>>[N;H1;+0:1]([*:2])[*:3]'), # inexplicable nitrogen anion in reactants gets fixed in prods
+    AllChem.ReactionFromSmarts(
+        "[n;H1;+0:1]:[n;H0;+1:2]>>[n;H0;+0:1]:[n;H0;+0:2]"
+    ),  # two adjacent aromatic nitrogens should allow for H shift
+    AllChem.ReactionFromSmarts(
+        "[n;H1;+0:1]:[c:3]:[n;H0;+1:2]>>[n;H0;+0:1]:[*:3]:[n;H0;+0:2]"
+    ),  # two aromatic nitrogens separated by one should allow for H shift
+    AllChem.ReactionFromSmarts("[#7;H0;+:1]-[O;H1;+0:2]>>[#7;H0;+:1]-[O;H0;-:2]"),
+    AllChem.ReactionFromSmarts(
+        "[C;H0;+0:1](=[O;H0;+0:2])[O;H0;-1:3]>>[C;H0;+0:1](=[O;H0;+0:2])[O;H1;+0:3]"
+    ),  # neutralize C(=O)[O-]
+    AllChem.ReactionFromSmarts(
+        "[I,Br,F;H1;D0;+0:1]>>[*;H0;-1:1]"
+    ),  # turn neutral halogens into anions EXCEPT HCl
+    AllChem.ReactionFromSmarts(
+        "[N;H0;-1:1]([C:2])[C:3]>>[N;H1;+0:1]([*:2])[*:3]"
+    ),  # inexplicable nitrogen anion in reactants gets fixed in prods
 ]
 for clean_rxn in clean_rxns_presani + clean_rxns_postsani:
     if clean_rxn.Validate() != (0, 0):
-        raise ValueError('Invalid cleaning reaction - check your SMARTS!')
-BOND_TYPE = [0, Chem.rdchem.BondType.SINGLE, Chem.rdchem.BondType.DOUBLE, Chem.rdchem.BondType.TRIPLE, Chem.rdchem.BondType.AROMATIC]
+        raise ValueError("Invalid cleaning reaction - check your SMARTS!")
+BOND_TYPE = [
+    0,
+    Chem.rdchem.BondType.SINGLE,
+    Chem.rdchem.BondType.DOUBLE,
+    Chem.rdchem.BondType.TRIPLE,
+    Chem.rdchem.BondType.AROMATIC,
+]
+
 
 def edit_mol(rmol, edits):
     new_mol = Chem.RWMol(rmol)
@@ -42,12 +62,22 @@ def edit_mol(rmol, edits):
     aromatic_carbonyl_adj_to_aromatic_nH = {}
     aromatic_carbondeg3_adj_to_aromatic_nH0 = {}
     for a in new_mol.GetAtoms():
-        if a.GetIsAromatic() and a.GetSymbol() == 'N':
+        if a.GetIsAromatic() and a.GetSymbol() == "N":
             aromatic_nitrogen_idx.add(a.GetIdx())
             for nbr in a.GetNeighbors():
-                if a.GetNumExplicitHs() == 1 and nbr.GetSymbol() == 'C' and nbr.GetIsAromatic() and any(b.GetBondTypeAsDouble() == 2 for b in nbr.GetBonds()):
+                if (
+                    a.GetNumExplicitHs() == 1
+                    and nbr.GetSymbol() == "C"
+                    and nbr.GetIsAromatic()
+                    and any(b.GetBondTypeAsDouble() == 2 for b in nbr.GetBonds())
+                ):
                     aromatic_carbonyl_adj_to_aromatic_nH[nbr.GetIdx()] = a.GetIdx()
-                elif a.GetNumExplicitHs() == 0 and nbr.GetSymbol() == 'C' and nbr.GetIsAromatic() and len(nbr.GetBonds()) == 3:
+                elif (
+                    a.GetNumExplicitHs() == 0
+                    and nbr.GetSymbol() == "C"
+                    and nbr.GetIsAromatic()
+                    and len(nbr.GetBonds()) == 3
+                ):
                     aromatic_carbondeg3_adj_to_aromatic_nH0[nbr.GetIdx()] = a.GetIdx()
         else:
             a.SetNumExplicitHs(0)
@@ -55,15 +85,15 @@ def edit_mol(rmol, edits):
 
     amap = {}
     for atom in rmol.GetAtoms():
-        amap[atom.GetIntProp('molAtomMapNumber')] = atom.GetIdx()
+        amap[atom.GetIntProp("molAtomMapNumber")] = atom.GetIdx()
 
     # Apply the edits as predicted
-    for x,y,t in edits:
-        bond = new_mol.GetBondBetweenAtoms(amap[x],amap[y])
+    for x, y, t in edits:
+        bond = new_mol.GetBondBetweenAtoms(amap[x], amap[y])
         a1 = new_mol.GetAtomWithIdx(amap[x])
         a2 = new_mol.GetAtomWithIdx(amap[y])
         if bond is not None:
-            new_mol.RemoveBond(amap[x],amap[y])
+            new_mol.RemoveBond(amap[x], amap[y])
 
             # Are we losing a bond on an aromatic nitrogen?
             if bond.GetBondTypeAsDouble() == 1.0:
@@ -81,12 +111,16 @@ def edit_mol(rmol, edits):
             # Are we losing a c=O bond on an aromatic ring? If so, remove H from adjacent nH if appropriate
             if bond.GetBondTypeAsDouble() == 2.0:
                 if amap[x] in aromatic_carbonyl_adj_to_aromatic_nH:
-                    new_mol.GetAtomWithIdx(aromatic_carbonyl_adj_to_aromatic_nH[amap[x]]).SetNumExplicitHs(0)
+                    new_mol.GetAtomWithIdx(
+                        aromatic_carbonyl_adj_to_aromatic_nH[amap[x]]
+                    ).SetNumExplicitHs(0)
                 elif amap[y] in aromatic_carbonyl_adj_to_aromatic_nH:
-                    new_mol.GetAtomWithIdx(aromatic_carbonyl_adj_to_aromatic_nH[amap[y]]).SetNumExplicitHs(0)
+                    new_mol.GetAtomWithIdx(
+                        aromatic_carbonyl_adj_to_aromatic_nH[amap[y]]
+                    ).SetNumExplicitHs(0)
 
         if t > 0:
-            new_mol.AddBond(amap[x],amap[y],BOND_TYPE[t])
+            new_mol.AddBond(amap[x], amap[y], BOND_TYPE[t])
 
             # Special alkylation case?
             if t == 1:
@@ -104,66 +138,83 @@ def edit_mol(rmol, edits):
             # Are we getting a c=O bond on an aromatic ring? If so, add H to adjacent nH0 if appropriate
             if t == 2:
                 if amap[x] in aromatic_carbondeg3_adj_to_aromatic_nH0:
-                    new_mol.GetAtomWithIdx(aromatic_carbondeg3_adj_to_aromatic_nH0[amap[x]]).SetNumExplicitHs(1)
+                    new_mol.GetAtomWithIdx(
+                        aromatic_carbondeg3_adj_to_aromatic_nH0[amap[x]]
+                    ).SetNumExplicitHs(1)
                 elif amap[y] in aromatic_carbondeg3_adj_to_aromatic_nH0:
-                    new_mol.GetAtomWithIdx(aromatic_carbondeg3_adj_to_aromatic_nH0[amap[y]]).SetNumExplicitHs(1)
+                    new_mol.GetAtomWithIdx(
+                        aromatic_carbondeg3_adj_to_aromatic_nH0[amap[y]]
+                    ).SetNumExplicitHs(1)
 
     pred_mol = new_mol.GetMol()
 
     # Clear formal charges to make molecules valid
     # Note: because S and P (among others) can change valence, be more flexible
     for atom in pred_mol.GetAtoms():
-        atom.ClearProp('molAtomMapNumber')
-        if atom.GetSymbol() == 'N' and atom.GetFormalCharge() == 1: # exclude negatively-charged azide
+        atom.ClearProp("molAtomMapNumber")
+        if (
+            atom.GetSymbol() == "N" and atom.GetFormalCharge() == 1
+        ):  # exclude negatively-charged azide
             bond_vals = sum([bond.GetBondTypeAsDouble() for bond in atom.GetBonds()])
             if bond_vals <= 3:
                 atom.SetFormalCharge(0)
-        elif atom.GetSymbol() == 'N' and atom.GetFormalCharge() == -1: # handle negatively-charged azide addition
+        elif (
+            atom.GetSymbol() == "N" and atom.GetFormalCharge() == -1
+        ):  # handle negatively-charged azide addition
             bond_vals = sum([bond.GetBondTypeAsDouble() for bond in atom.GetBonds()])
-            if bond_vals == 3 and any([nbr.GetSymbol() == 'N' for nbr in atom.GetNeighbors()]):
+            if bond_vals == 3 and any(
+                [nbr.GetSymbol() == "N" for nbr in atom.GetNeighbors()]
+            ):
                 atom.SetFormalCharge(0)
-        elif atom.GetSymbol() == 'N':
+        elif atom.GetSymbol() == "N":
             bond_vals = sum([bond.GetBondTypeAsDouble() for bond in atom.GetBonds()])
-            if bond_vals == 4 and not atom.GetIsAromatic(): # and atom.IsInRingSize(5)):
+            if (
+                bond_vals == 4 and not atom.GetIsAromatic()
+            ):  # and atom.IsInRingSize(5)):
                 atom.SetFormalCharge(1)
-        elif atom.GetSymbol() == 'C' and atom.GetFormalCharge() != 0:
+        elif atom.GetSymbol() == "C" and atom.GetFormalCharge() != 0:
             atom.SetFormalCharge(0)
-        elif atom.GetSymbol() == 'O' and atom.GetFormalCharge() != 0:
-            bond_vals = sum([bond.GetBondTypeAsDouble() for bond in atom.GetBonds()]) + atom.GetNumExplicitHs()
+        elif atom.GetSymbol() == "O" and atom.GetFormalCharge() != 0:
+            bond_vals = (
+                sum([bond.GetBondTypeAsDouble() for bond in atom.GetBonds()])
+                + atom.GetNumExplicitHs()
+            )
             if bond_vals == 2:
                 atom.SetFormalCharge(0)
-        elif atom.GetSymbol() in ['Cl', 'Br', 'I', 'F'] and atom.GetFormalCharge() != 0:
+        elif atom.GetSymbol() in ["Cl", "Br", "I", "F"] and atom.GetFormalCharge() != 0:
             bond_vals = sum([bond.GetBondTypeAsDouble() for bond in atom.GetBonds()])
             if bond_vals == 1:
                 atom.SetFormalCharge(0)
-        elif atom.GetSymbol() == 'S' and atom.GetFormalCharge() != 0:
+        elif atom.GetSymbol() == "S" and atom.GetFormalCharge() != 0:
             bond_vals = sum([bond.GetBondTypeAsDouble() for bond in atom.GetBonds()])
             if bond_vals in [2, 4, 6]:
                 atom.SetFormalCharge(0)
-        elif atom.GetSymbol() == 'P': # quartenary phosphorous should be pos. charge with 0 H
+        elif (
+            atom.GetSymbol() == "P"
+        ):  # quartenary phosphorous should be pos. charge with 0 H
             bond_vals = [bond.GetBondTypeAsDouble() for bond in atom.GetBonds()]
             if sum(bond_vals) == 4 and len(bond_vals) == 4:
                 atom.SetFormalCharge(1)
                 atom.SetNumExplicitHs(0)
-            elif sum(bond_vals) == 3 and len(bond_vals) == 3: # make sure neutral
+            elif sum(bond_vals) == 3 and len(bond_vals) == 3:  # make sure neutral
                 atom.SetFormalCharge(0)
-        elif atom.GetSymbol() == 'B': # quartenary boron should be neg. charge with 0 H
+        elif atom.GetSymbol() == "B":  # quartenary boron should be neg. charge with 0 H
             bond_vals = [bond.GetBondTypeAsDouble() for bond in atom.GetBonds()]
             if sum(bond_vals) == 4 and len(bond_vals) == 4:
                 atom.SetFormalCharge(-1)
                 atom.SetNumExplicitHs(0)
-        elif atom.GetSymbol() in ['Mg', 'Zn']:
+        elif atom.GetSymbol() in ["Mg", "Zn"]:
             bond_vals = [bond.GetBondTypeAsDouble() for bond in atom.GetBonds()]
             if sum(bond_vals) == 1 and len(bond_vals) == 1:
                 atom.SetFormalCharge(1)
-        elif atom.GetSymbol() == 'Si':
+        elif atom.GetSymbol() == "Si":
             bond_vals = [bond.GetBondTypeAsDouble() for bond in atom.GetBonds()]
             if sum(bond_vals) == len(bond_vals):
                 atom.SetNumExplicitHs(max(0, 4 - len(bond_vals)))
 
     # Bounce to/from SMILES to try to sanitize
     pred_smiles = Chem.MolToSmiles(pred_mol)
-    pred_list = pred_smiles.split('.')
+    pred_list = pred_smiles.split(".")
     pred_mols = [Chem.MolFromSmiles(pred_smiles) for pred_smiles in pred_list]
 
     for i, mol in enumerate(pred_mols):
@@ -184,30 +235,40 @@ def edit_mol(rmol, edits):
                     Chem.SanitizeMol(out[0][0])
                     pred_mols[i] = Chem.MolFromSmiles(Chem.MolToSmiles(out[0][0]))
                 except Exception as e:
-                    pass 
+                    pass
                     # print(e)
                     # print('Could not sanitize postsani reaction product: {}'.format(Chem.MolToSmiles(out[0][0])))
                     # print('Original molecule was: {}'.format(Chem.MolToSmiles(mol)))
-    pred_smiles = [Chem.MolToSmiles(pred_mol) for pred_mol in pred_mols if pred_mol is not None]
+    pred_smiles = [
+        Chem.MolToSmiles(pred_mol) for pred_mol in pred_mols if pred_mol is not None
+    ]
 
     return pred_smiles
 
 
-'''
+"""
 This script prepares the data used in Wengong Jin's NIPS paper on predicting reaction outcomes for the modified
 forward prediction script. Rather than just training to predict which bonds change, we make a direct prediction
 on HOW those bonds change
-'''
+"""
+
+
 def atom_numberize_post(reactants_smi):
     m = Chem.MolFromSmiles(reactants_smi)
-    atomnums = sorted([ str( a.GetProp('molAtomMapNumber')) for a in m.GetAtoms()  if a.HasProp('molAtomMapNumber') ])
+    atomnums = sorted(
+        [
+            str(a.GetProp("molAtomMapNumber"))
+            for a in m.GetAtoms()
+            if a.HasProp("molAtomMapNumber")
+        ]
+    )
 
     mapnum = 1
     for a in m.GetAtoms():
-        if not a.HasProp('molAtomMapNumber'):
+        if not a.HasProp("molAtomMapNumber"):
             while str(mapnum) in atomnums:
                 mapnum += 1
-            a.SetIntProp('molAtomMapNumber', mapnum)
+            a.SetIntProp("molAtomMapNumber", mapnum)
             mapnum += 1
         else:
             continue
@@ -215,41 +276,59 @@ def atom_numberize_post(reactants_smi):
     return Chem.MolToSmiles(m)
 
 
-
 def get_changed_bonds(rxn_smi):
-    reactants = Chem.MolFromSmiles(atom_numberize_post(rxn_smi.split('>')[0]))
-    products  = Chem.MolFromSmiles(rxn_smi.split('>')[2])
+    reactants = Chem.MolFromSmiles(atom_numberize_post(rxn_smi.split(">")[0]))
+    products = Chem.MolFromSmiles(rxn_smi.split(">")[2])
 
-    conserved_maps = [a.GetProp('molAtomMapNumber') for a in products.GetAtoms() if a.HasProp('molAtomMapNumber')]
-    bond_changes = set() # keep track of bond changes
+    conserved_maps = [
+        a.GetProp("molAtomMapNumber")
+        for a in products.GetAtoms()
+        if a.HasProp("molAtomMapNumber")
+    ]
+    bond_changes = set()  # keep track of bond changes
 
     # Look at changed bonds
     bonds_prev = {}
     for bond in reactants.GetBonds():
-        
-        begin_atom_num = bond.GetBeginAtom().GetProp('molAtomMapNumber') if bond.GetBeginAtom().HasProp('molAtomMapNumber') else None
-        end_atom_num = bond.GetEndAtom().GetProp('molAtomMapNumber') if bond.GetEndAtom().HasProp('molAtomMapNumber') else None
-        nums = sorted([begin_atom_num,end_atom_num])
-         
-        if (nums[0] not in conserved_maps) and (nums[1] not in conserved_maps): continue
-        bonds_prev['{}~{}'.format(nums[0], nums[1])] = bond.GetBondTypeAsDouble()
+
+        begin_atom_num = (
+            bond.GetBeginAtom().GetProp("molAtomMapNumber")
+            if bond.GetBeginAtom().HasProp("molAtomMapNumber")
+            else None
+        )
+        end_atom_num = (
+            bond.GetEndAtom().GetProp("molAtomMapNumber")
+            if bond.GetEndAtom().HasProp("molAtomMapNumber")
+            else None
+        )
+        nums = sorted([begin_atom_num, end_atom_num])
+
+        if (nums[0] not in conserved_maps) and (nums[1] not in conserved_maps):
+            continue
+        bonds_prev["{}~{}".format(nums[0], nums[1])] = bond.GetBondTypeAsDouble()
     bonds_new = {}
     for bond in products.GetBonds():
         nums = sorted(
-            [bond.GetBeginAtom().GetProp('molAtomMapNumber'),
-             bond.GetEndAtom().GetProp('molAtomMapNumber')])
-        bonds_new['{}~{}'.format(nums[0], nums[1])] = bond.GetBondTypeAsDouble()
-
+            [
+                bond.GetBeginAtom().GetProp("molAtomMapNumber"),
+                bond.GetEndAtom().GetProp("molAtomMapNumber"),
+            ]
+        )
+        bonds_new["{}~{}".format(nums[0], nums[1])] = bond.GetBondTypeAsDouble()
 
     for bond in bonds_prev:
         if bond not in bonds_new:
-            bond_changes.add((bond.split('~')[0], bond.split('~')[1], 0.0)) # lost bond
+            bond_changes.add((bond.split("~")[0], bond.split("~")[1], 0.0))  # lost bond
         else:
             if bonds_prev[bond] != bonds_new[bond]:
-                bond_changes.add((bond.split('~')[0], bond.split('~')[1], bonds_new[bond])) # changed bond
+                bond_changes.add(
+                    (bond.split("~")[0], bond.split("~")[1], bonds_new[bond])
+                )  # changed bond
     for bond in bonds_new:
         if bond not in bonds_prev:
-            bond_changes.add((bond.split('~')[0], bond.split('~')[1], bonds_new[bond]))  # new bond
+            bond_changes.add(
+                (bond.split("~")[0], bond.split("~")[1], bonds_new[bond])
+            )  # new bond
 
     return reactants, products, bond_changes
 
@@ -265,8 +344,8 @@ def product_is_recoverable(rmol, pmol, gedits, opts):
         thisrow.append(r)
         thisrow.append(p)
 
-        if opts.singleonly and '.' in p:
-            return False 
+        if opts.singleonly and "." in p:
+            return False
 
         # Save pbond information
         pbonds = {}
@@ -277,32 +356,31 @@ def product_is_recoverable(rmol, pmol, gedits, opts):
             pbonds[(a1, a2)] = pbonds[(a2, a1)] = t + 1
 
         for atom in pmol.GetAtoms():
-            atom.ClearProp('molAtomMapNumber')
+            atom.ClearProp("molAtomMapNumber")
 
         psmiles = Chem.MolToSmiles(pmol)
-        psmiles_sani = set(sanitize_smiles(psmiles, True).split('.'))
-        psmiles = set(psmiles.split('.'))
+        psmiles_sani = set(sanitize_smiles(psmiles, True).split("."))
+        psmiles = set(psmiles.split("."))
 
-        thisrow.append('.'.join(psmiles))
-        thisrow.append('.'.join(psmiles_sani))
-
+        thisrow.append(".".join(psmiles))
+        thisrow.append(".".join(psmiles_sani))
 
         ########### Use *true* edits to try to recover product
 
         if opts.bonds_as_doubles:
             cbonds = []
-            for gedit in gedits.split(';'):
-                x,y,t = gedit.split('-')
-                x,y,t = int(x), int(y), float(t)
+            for gedit in gedits.split(";"):
+                x, y, t = gedit.split("-")
+                x, y, t = int(x), int(y), float(t)
                 cbonds.append((x, y, bond_types_as_double[t]))
         else:
             # check if psmiles is recoverable
             cbonds = []
-            for gedit in gedits.split(';'):
-                x,y = gedit.split('-')
-                x,y = int(x), int(y)
-                if (x,y) in pbonds:
-                    t = pbonds[(x,y)]
+            for gedit in gedits.split(";"):
+                x, y = gedit.split("-")
+                x, y = int(x), int(y)
+                if (x, y) in pbonds:
+                    t = pbonds[(x, y)]
                 else:
                     t = 0
                 cbonds.append((x, y, t))
@@ -339,103 +417,94 @@ def product_is_recoverable(rmol, pmol, gedits, opts):
 
 def process_file(fpath, opts):
     num_lines, gfound, gfound_sani = 0.0, 0, 0
-    with open(fpath, 'r') as fid_in, open(fpath + '.proc', 'w') as fid_out:
+    with open(fpath, "r") as fid_in, open(fpath + ".proc", "w") as fid_out:
         for line in tqdm(fid_in):
             num_lines += 1
-            
-            rxn_smi = line.strip().split(' ')[0]
+
+            rxn_smi = line.strip().split(" ")[0]
             try:
-                reactants, products, bond_changes = get_changed_bonds(rxn_smi) 
-                gedits = ';'.join(['{}-{}-{}'.format(x[0], x[1], x[2]) for x in bond_changes])
-                is_recoverable = product_is_recoverable(reactants, products, gedits, opts)
+                reactants, products, bond_changes = get_changed_bonds(rxn_smi)
+                gedits = ";".join(
+                    ["{}-{}-{}".format(x[0], x[1], x[2]) for x in bond_changes]
+                )
+                is_recoverable = product_is_recoverable(
+                    reactants, products, gedits, opts
+                )
                 if not is_recoverable:
-                    continue 
-                
+                    continue
+
             except:
                 continue
-            
-            rxn_smi = "{}>>{}".format(Chem.MolToSmiles(reactants), Chem.MolToSmiles(products))            
-            #fid_out.write('{} {}\n'.format(rxn_smi, gedits ))
+
+            rxn_smi = "{}>>{}".format(
+                Chem.MolToSmiles(reactants), Chem.MolToSmiles(products)
+            )
+            # fid_out.write('{} {}\n'.format(rxn_smi, gedits ))
 
             gfound += is_recoverable[0]
             gfound_sani += is_recoverable[1]
 
-            print('[strict]  gfound = %.1f / %.1f (%.4f) \t [molvs]   gfound = %.1f / %.1f (%.4f) ' % (gfound, num_lines, gfound / num_lines, gfound_sani, num_lines, gfound_sani / num_lines))            
+            print(
+                "[strict]  gfound = %.1f / %.1f (%.4f) \t [molvs]   gfound = %.1f / %.1f (%.4f) "
+                % (
+                    gfound,
+                    num_lines,
+                    gfound / num_lines,
+                    gfound_sani,
+                    num_lines,
+                    gfound_sani / num_lines,
+                )
+            )
 
-    print('Finished processing {}'.format(fpath))
+    print("Finished processing {}".format(fpath))
 
 
-
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description="Parse atom-mapped reactions for WLN model")
-    parser.add_argument("-g", "--gold_path", help="file path") # file containing true edits
-    parser.add_argument("-s", "--singleonly", help="singleonly", default=False) # only compare single products
-    parser.add_argument("--bonds_as_doubles", help="bonds_as_doubles", default=False) # bond types are doubles, not indices
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        description="Parse atom-mapped reactions for WLN model"
+    )
+    parser.add_argument(
+        "-g", "--gold_path", help="file path"
+    )  # file containing true edits
+    parser.add_argument(
+        "-s", "--singleonly", help="singleonly", default=False
+    )  # only compare single products
+    parser.add_argument(
+        "--bonds_as_doubles", help="bonds_as_doubles", default=False
+    )  # bond types are doubles, not indices
     args = parser.parse_args()
 
-
     idxfunc = lambda a: a.GetAtomMapNum()
-    bond_types = [Chem.rdchem.BondType.SINGLE, Chem.rdchem.BondType.DOUBLE, Chem.rdchem.BondType.TRIPLE,
-                  Chem.rdchem.BondType.AROMATIC]
+    bond_types = [
+        Chem.rdchem.BondType.SINGLE,
+        Chem.rdchem.BondType.DOUBLE,
+        Chem.rdchem.BondType.TRIPLE,
+        Chem.rdchem.BondType.AROMATIC,
+    ]
     bond_types_as_double = {0.0: 0, 1.0: 1, 2.0: 2, 3.0: 3, 1.5: 4}
-
 
     # Define a standardization procedure so we can evaluate based on...
     # a) RDKit-sanitized equivalence, and
     # b) MOLVS-sanitized equivalence
     from molvs import Standardizer
+
     standardizer = Standardizer()
     standardizer.prefer_organic = True
+
     def sanitize_smiles(smi, largest_fragment=False):
         mol = Chem.MolFromSmiles(smi)
         if mol is None:
             return smi
         try:
-            mol = standardizer.standardize(mol) # standardize functional group reps
+            mol = standardizer.standardize(mol)  # standardize functional group reps
             if largest_fragment:
-                mol = standardizer.largest_fragment(mol) # remove product counterions/salts/etc.
-            mol = standardizer.uncharge(mol) # neutralize, e.g., carboxylic acids
+                mol = standardizer.largest_fragment(
+                    mol
+                )  # remove product counterions/salts/etc.
+            mol = standardizer.uncharge(mol)  # neutralize, e.g., carboxylic acids
         except Exception:
             pass
         return Chem.MolToSmiles(mol)
-        
 
     # Process files
     process_file(args.gold_path, args)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

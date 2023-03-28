@@ -5,9 +5,8 @@ from nox.utils.digress.rdkit_functions import compute_molecular_metrics
 import torch
 from torchmetrics import Metric, MeanAbsoluteError, MetricCollection
 from torch import Tensor
-import rdkit 
+import rdkit
 from rdkit import Chem
-
 
 
 class GeneratedNDistribution(Metric):
@@ -220,7 +219,9 @@ class SamplingMolecularMetrics(Metric, Nox):
         for key, value in stability.items():
             stats_dict[key] = value
 
-        for i, key in enumerate(["validity", "relaxed_validity", "uniqueness", "novelty"]):
+        for i, key in enumerate(
+            ["validity", "relaxed_validity", "uniqueness", "novelty"]
+        ):
             stats_dict[key] = rdkit_metrics[0][i]
 
         return stats_dict
@@ -376,7 +377,7 @@ class AtomMetricsCE(MetricCollection):
         metrics_list = {}
         for i, atom_type in enumerate(atom_decoder):
             metrics_list[f"{atom_type}_metric"] = CEPerClass(i)
-            
+
         super().__init__(metrics_list)
 
 
@@ -389,16 +390,27 @@ class BondMetricsCE(MetricCollection):
         ce_AR = AromaticCE(4)
         super().__init__([ce_no_bond, ce_SI, ce_DO, ce_TR, ce_AR])
 
+
 class MoleculeAccuracy(Metric):
-    full_state_update=False
+    full_state_update = False
 
     def __init__(self):
         super().__init__()
-        self.add_state("total_mol_correct", default=torch.tensor(0.0), dist_reduce_fx="sum")
-        self.add_state("total_smile_correct", default=torch.tensor(0.0), dist_reduce_fx="sum")
-        self.add_state("total_edge_accuracy", default=torch.tensor(0.0), dist_reduce_fx="sum")
-        self.add_state("total_node_accuracy", default=torch.tensor(0.0), dist_reduce_fx="sum")
-        self.add_state("total_edge_samples", default=torch.tensor(0.0), dist_reduce_fx="sum")
+        self.add_state(
+            "total_mol_correct", default=torch.tensor(0.0), dist_reduce_fx="sum"
+        )
+        self.add_state(
+            "total_smile_correct", default=torch.tensor(0.0), dist_reduce_fx="sum"
+        )
+        self.add_state(
+            "total_edge_accuracy", default=torch.tensor(0.0), dist_reduce_fx="sum"
+        )
+        self.add_state(
+            "total_node_accuracy", default=torch.tensor(0.0), dist_reduce_fx="sum"
+        )
+        self.add_state(
+            "total_edge_samples", default=torch.tensor(0.0), dist_reduce_fx="sum"
+        )
         self.add_state("total_samples", default=torch.tensor(0.0), dist_reduce_fx="sum")
 
     def smiles_from_graphs(self, node_list, adjacency_matrix, args):
@@ -442,54 +454,69 @@ class MoleculeAccuracy(Metric):
     def update(self, predictions_dict, args):
         masked_pred_X = predictions_dict["masked_pred_X"]
         masked_pred_E = predictions_dict["masked_pred_E"]
-        true_X = predictions_dict["true_X"] # batch size, num nodes, one-hot vector
+        true_X = predictions_dict["true_X"]  # batch size, num nodes, one-hot vector
         true_E = predictions_dict["true_E"]
 
         # nodes correct
         x_mask = (true_X != 0.0).any(dim=-1)
-        x_label = torch.argmax(true_X, -1) 
-        x_pred = torch.softmax(masked_pred_X, -1).argmax(-1) 
+        x_label = torch.argmax(true_X, -1)
+        x_pred = torch.softmax(masked_pred_X, -1).argmax(-1)
 
         node_accuracy = ((x_label == x_pred) * x_mask).sum(-1) / x_mask.sum(-1)
         self.total_node_accuracy = node_accuracy.sum()
 
         # edges correct, NOTE: diagonals are all zero-vectors (no self-loop)
         e_mask = (true_E != 0.0).any(dim=-1)
-        e_label = torch.argmax(true_E, -1) 
-        e_pred = torch.softmax(masked_pred_E, -1).argmax(-1)  # diagonals are masked, so no scores
-        
-        edge_accuracy = ((e_label == e_pred) * e_mask).sum((-1,-2)) / e_mask.sum((-1,-2))
+        e_label = torch.argmax(true_E, -1)
+        e_pred = torch.softmax(masked_pred_E, -1).argmax(
+            -1
+        )  # diagonals are masked, so no scores
+
+        edge_accuracy = ((e_label == e_pred) * e_mask).sum((-1, -2)) / e_mask.sum(
+            (-1, -2)
+        )
         # if single node then there is no edge, so remove
-        multi_node_graphs = e_mask.sum((-1,-2)) != 0
+        multi_node_graphs = e_mask.sum((-1, -2)) != 0
         edge_accuracy = edge_accuracy[multi_node_graphs]
         self.total_edge_accuracy = edge_accuracy.sum()
         self.total_edge_samples += multi_node_graphs.sum()
 
         # entire molecule correct
-        correct_nodes = torch.all( (x_label * x_mask) == (x_pred * x_mask),-1)
-        correct_edges = ( (e_label * e_mask) == (e_pred * e_mask)).all(-1).all(-1) 
+        correct_nodes = torch.all((x_label * x_mask) == (x_pred * x_mask), -1)
+        correct_edges = ((e_label * e_mask) == (e_pred * e_mask)).all(-1).all(-1)
 
-        # molecule accuracy         
+        # molecule accuracy
         self.total_mol_correct += torch.logical_and(correct_nodes, correct_edges).sum()
         self.total_samples += len(masked_pred_X)
 
         # smiles accuracy
         for i in range(len(x_pred)):
             nodemask = x_mask[i]
-            nodelist, adjacency = x_pred[i][nodemask], e_pred[i][nodemask][:,nodemask]
+            nodelist, adjacency = x_pred[i][nodemask], e_pred[i][nodemask][:, nodemask]
             pred_smiles = self.smiles_from_graphs(nodelist, adjacency, args)
 
-            nodelist, adjacency = x_label[i][nodemask], e_label[i][nodemask][:,nodemask]
+            nodelist, adjacency = (
+                x_label[i][nodemask],
+                e_label[i][nodemask][:, nodemask],
+            )
             target_smiles = self.smiles_from_graphs(nodelist, adjacency, args)
 
             self.total_smile_correct += int(pred_smiles == target_smiles)
 
     def compute(self):
         stats_dict = {
-            "average_node_accuracy": torch.tensor([self.total_node_accuracy  / self.total_samples], device = self.device),
-            "average_edge_accuracy": torch.tensor([self.total_edge_accuracy  / self.total_edge_samples], device = self.device),
-            "top1_molecule_accuracy": torch.tensor([self.total_mol_correct /  self.total_samples], device = self.device),
-            "top1_smile_accuracy": torch.tensor([self.total_smile_correct /  self.total_samples], device = self.device)
+            "average_node_accuracy": torch.tensor(
+                [self.total_node_accuracy / self.total_samples], device=self.device
+            ),
+            "average_edge_accuracy": torch.tensor(
+                [self.total_edge_accuracy / self.total_edge_samples], device=self.device
+            ),
+            "top1_molecule_accuracy": torch.tensor(
+                [self.total_mol_correct / self.total_samples], device=self.device
+            ),
+            "top1_smile_accuracy": torch.tensor(
+                [self.total_smile_correct / self.total_samples], device=self.device
+            ),
         }
         return stats_dict
 
@@ -505,7 +532,7 @@ class TrainMolecularMetricsDiscrete(Metric, Nox):
     def update(self, predictions_dict, args):
         masked_pred_X = predictions_dict["masked_pred_X"]
         masked_pred_E = predictions_dict["masked_pred_E"]
-        true_X = predictions_dict["true_X"] # batch size, num nodes, one-hot vector
+        true_X = predictions_dict["true_X"]  # batch size, num nodes, one-hot vector
         true_E = predictions_dict["true_E"]
 
         self.train_atom_metrics(masked_pred_X, true_X)
@@ -523,9 +550,13 @@ class TrainMolecularMetricsDiscrete(Metric, Nox):
         return stats_dict
 
     def reset(self):
-        for metric in [self.train_atom_metrics, self.train_bond_metrics, self.molecule_metrics]:
+        for metric in [
+            self.train_atom_metrics,
+            self.train_bond_metrics,
+            self.molecule_metrics,
+        ]:
             metric.reset()
-        
+
     @property
     def metric_keys(self):
         return ["masked_pred_X", "masked_pred_E", "true_X", "true_E"]

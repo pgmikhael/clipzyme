@@ -28,7 +28,7 @@ class NonCanonicalAANet(FairEsm):
                 if aa is None:
                     raise Exception("AA has no smiles associated: {aa}")
                 mol_datapoint = from_smiles(aa)
-                
+
                 try:
                     mol_datapoint.rdkit_features = torch.tensor(
                         get_rdkit_feature(aa, method=self.args.rdkit_features_name)

@@ -8,7 +8,7 @@ import pathlib
 from typing import List, Any, Sequence
 from tqdm import tqdm
 import pandas as pd
-import copy 
+import copy
 
 from rdkit import Chem, RDLogger
 from rdkit.Chem.rdchem import BondType as BT
@@ -28,7 +28,6 @@ from nox.datasets.abstract import AbstractDataset
 import nox.utils.digress.diffusion_utils as utils
 from nox.utils.digress.extra_features import ExtraFeatures
 from nox.utils.digress.extra_features_molecular import ExtraMolecularFeatures
-
 
 
 def files_exist(files) -> bool:
@@ -358,7 +357,7 @@ class QM9(AbstractDataset, InMemoryDataset):
 
         example_batch = [self.dataset[0], self.dataset[1]]
         example_batch = Batch.from_data_list(example_batch, None, None)
-        
+
         data_info.compute_input_output_dims(
             example_batch=example_batch,
             extra_features=extra_features,
@@ -562,16 +561,18 @@ class QM9(AbstractDataset, InMemoryDataset):
         data, slices = self.datasets[split_group]
 
         dataset = []
-        for idx in tqdm(range(len(data.idx)), position=0, desc="Converting to pyg.Data"):
+        for idx in tqdm(
+            range(len(data.idx)), position=0, desc="Converting to pyg.Data"
+        ):
             data_item = separate(
-                cls=data.__class__, 
-                batch=data, 
-                idx=idx, 
-                slice_dict=slices, 
-                decrement=False
+                cls=data.__class__,
+                batch=data,
+                idx=idx,
+                slice_dict=slices,
+                decrement=False,
             )
             dataset.append(data_item)
-            
+
         return dataset
 
     def __getitem__(self, index):

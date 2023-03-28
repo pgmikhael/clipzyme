@@ -22,19 +22,24 @@ class CrossEntropyLoss(Nox):
             predictions["golds"] = batch["y"]
         else:
             raise KeyError("predictions_dict ERROR: y not found")
-        
-        target = predictions["golds"] 
+
+        target = predictions["golds"]
         if args.precomputed_loss:
             loss = model_output["loss"]
         else:
-            loss = F.cross_entropy(logit.view(-1, args.num_classes), target.view(-1).long()) * args.ce_loss_lambda
+            loss = (
+                F.cross_entropy(
+                    logit.view(-1, args.num_classes), target.view(-1).long()
+                )
+                * args.ce_loss_lambda
+            )
         logging_dict["cross_entropy_loss"] = loss.detach()
         predictions["probs"] = F.softmax(logit, dim=-1).detach()
         predictions["preds"] = predictions["probs"].argmax(axis=-1)
-        
+
         if not args.keep_preds_dim:
-             predictions["golds"] =  predictions["golds"].view(-1)
-             predictions["preds"] =  predictions["preds"].reshape(-1)
+            predictions["golds"] = predictions["golds"].view(-1)
+            predictions["preds"] = predictions["preds"].reshape(-1)
         return loss, logging_dict, predictions
 
     @staticmethod
@@ -51,17 +56,18 @@ class CrossEntropyLoss(Nox):
             help="Lambda to weigh the cross-entropy loss.",
         )
         parser.add_argument(
-                "--precomputed_loss",
-                action="store_true",
-                default=False,
-                help="whether loss is computed through model automatically, e.g., hugging face transformers",
+            "--precomputed_loss",
+            action="store_true",
+            default=False,
+            help="whether loss is computed through model automatically, e.g., hugging face transformers",
         )
         parser.add_argument(
-                "--keep_preds_dim",
-                action="store_true",
-                default=False,
-                help="do not flatten preds and y",
+            "--keep_preds_dim",
+            action="store_true",
+            default=False,
+            help="do not flatten preds and y",
         )
+
 
 @register_object("binary_cross_entropy_logits", "loss")
 class BinaryCrossEntropyLoss(Nox):
@@ -72,14 +78,23 @@ class BinaryCrossEntropyLoss(Nox):
         logging_dict, predictions = OrderedDict(), OrderedDict()
         logit = model_output["logit"]
         if "has_y" in batch:
-            loss = F.binary_cross_entropy_with_logits(logit, batch["y"], reduction = "none", weight = batch["has_y"]).sum()/batch["has_y"].sum() * args.ce_loss_lambda
-            predictions["has_golds"] = batch['has_y']
+            loss = (
+                F.binary_cross_entropy_with_logits(
+                    logit, batch["y"], reduction="none", weight=batch["has_y"]
+                ).sum()
+                / batch["has_y"].sum()
+                * args.ce_loss_lambda
+            )
+            predictions["has_golds"] = batch["has_y"]
         else:
-            loss = F.binary_cross_entropy_with_logits(logit, batch["y"]) * args.ce_loss_lambda
+            loss = (
+                F.binary_cross_entropy_with_logits(logit, batch["y"])
+                * args.ce_loss_lambda
+            )
         logging_dict["binary_cross_entropy_loss"] = loss.detach()
         predictions["probs"] = torch.sigmoid(logit).detach()
         predictions["golds"] = batch["y"]
-        predictions["preds"] = predictions["probs"] > 0.5 
+        predictions["preds"] = predictions["probs"] > 0.5
         return loss, logging_dict, predictions
 
     @staticmethod
@@ -95,6 +110,7 @@ class BinaryCrossEntropyLoss(Nox):
             default=1.0,
             help="Lambda to weigh the cross-entropy loss.",
         )
+
 
 @register_object("mse", "loss")
 class MSELoss(Nox):
@@ -125,6 +141,7 @@ class MSELoss(Nox):
             help="Lambda to weigh the MSE loss.",
         )
 
+
 @register_object("rmse", "loss")
 class RMSELoss(Nox):
     def __init__(self) -> None:
@@ -135,7 +152,9 @@ class RMSELoss(Nox):
         B = batch["y"].shape[0]
         golds = batch["y"].view(B, -1).float()
         logit = model_output["logit"].view(B, -1)
-        loss = torch.sqrt(F.mse_loss(logit, golds) + args.rmse_eps) * args.rmse_loss_lambda
+        loss = (
+            torch.sqrt(F.mse_loss(logit, golds) + args.rmse_eps) * args.rmse_loss_lambda
+        )
         l_dict["rmse_loss"] = loss.detach()
         p_dict["probs"] = logit.detach()
         p_dict["golds"] = golds
@@ -160,6 +179,7 @@ class RMSELoss(Nox):
             help="epsilon to avoid nan when backpropagating",
         )
 
+
 @register_object("smoothl1", "loss")
 class SmoothL1Loss(Nox):
     def __init__(self) -> None:
@@ -170,7 +190,10 @@ class SmoothL1Loss(Nox):
         B = batch["y"].shape[0]
         golds = batch["y"].view(B, -1).float()
         logit = model_output["logit"].view(B, -1)
-        loss = F.smooth_l1_loss(logit, golds, beta=args.smoothl1_beta) * args.smoothl1_loss_lambda
+        loss = (
+            F.smooth_l1_loss(logit, golds, beta=args.smoothl1_beta)
+            * args.smoothl1_loss_lambda
+        )
         l_dict["smoothl1_loss"] = loss.detach()
         p_dict["probs"] = logit.detach()
         p_dict["golds"] = golds
@@ -194,6 +217,7 @@ class SmoothL1Loss(Nox):
             default=1.0,
             help="Specifies the threshold at which to change between L1 and L2 loss. The value must be non-negative.",
         )
+
 
 @register_object("mae", "loss")
 class MAELoss(Nox):

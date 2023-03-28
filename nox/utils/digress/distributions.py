@@ -3,8 +3,8 @@ import torch
 
 class DistributionNodes:
     def __init__(self, histogram):
-        """ Compute the distribution of the number of nodes in the dataset, and sample from this distribution.
-            historgram: dict. The keys are num_nodes, the values are counts
+        """Compute the distribution of the number of nodes in the dataset, and sample from this distribution.
+        historgram: dict. The keys are num_nodes, the values are counts
         """
 
         if type(histogram) == dict:
