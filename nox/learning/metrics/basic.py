@@ -309,8 +309,8 @@ class BaseRegression(Metric, Nox):
         self.num_classes = args.num_classes
         self.mae = torchmetrics.MeanAbsoluteError()
         self.mse = torchmetrics.MeanSquaredError()
-        self.pearson = torchmetrics.PearsonCorrcoef(num_outputs=args.num_classes)
-        self.spearman = torchmetrics.SpearmanCorrcoef(num_outputs=args.num_classes)
+        self.pearson = torchmetrics.PearsonCorrCoef(num_outputs=args.num_classes)
+        self.spearman = torchmetrics.SpearmanCorrCoef(num_outputs=args.num_classes)
         self.r2 = torchmetrics.R2Score(
             num_outputs=args.num_classes, multioutput=args.r2_multioutput
         )
