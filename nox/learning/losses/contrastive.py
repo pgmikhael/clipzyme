@@ -348,7 +348,6 @@ class SupervisedCLIPLoss(Nox):
         loss = (loss_prots + loss_substrates) / 2
 
         logging_dict["clip_loss"] = loss.detach()
-        logging_dict["loss"] = loss.detach()
 
         predictions["substrate_features"] = substrate_features.detach()
         predictions["protein_features"] = protein_features.detach()
@@ -399,6 +398,7 @@ class SupervisedCLIPLoss(Nox):
         predictions["logits"] = logits
         predictions["probs"] = probs
         predictions["preds"] = (probs > 0.5).float()
+        predictions["y"] = batch.y # labels of pairs, for testing
 
         return loss, logging_dict, predictions
 
@@ -433,19 +433,6 @@ class SupervisedCLIPLoss(Nox):
         """
         parser.add_argument(
             "--supcon_temperature",
-            type=float,
-            default=0.07,
-            help="temperature for supervised contrastive loss.",
-        )
-        parser.add_argument(
-            "--contrast_mode",
-            type=str,
-            choices=["all", "one"],
-            default="all",
-            help="extra features to use",
-        )
-        parser.add_argument(
-            "--supcon_base_temperature",
             type=float,
             default=0.07,
             help="temperature for supervised contrastive loss.",
