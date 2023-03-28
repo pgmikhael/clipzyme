@@ -31,6 +31,7 @@ import nox.datasets.dlkcat
 import nox.datasets.ecreact
 import nox.datasets.ecreact_graph
 import nox.datasets.qm9
+import nox.datasets.chembl
 
 # augmentation
 import nox.augmentations.rawinput
@@ -68,7 +69,7 @@ import nox.learning.metrics.digress
 # callbacks
 import nox.callbacks.basic
 import nox.callbacks.swa
-import nox.callbacks.ema 
+import nox.callbacks.ema
 
 # models
 import nox.models.vision
@@ -83,7 +84,7 @@ import nox.models.longformer
 import nox.models.enzymenet
 import nox.models.seq2seq
 import nox.models.contrastive
-import nox.models.graph_transformer
+import nox.models.graph_denoisers
 import nox.models.digress
 import nox.models.protmol
 import nox.models.noncanonnet

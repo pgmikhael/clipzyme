@@ -16,7 +16,7 @@ import copy, os
 import numpy as np
 from p_tqdm import p_map
 import random
-
+from collections import defaultdict
 
 @register_object("ecreact", "dataset")
 class ECReact(BrendaReaction):
@@ -371,6 +371,34 @@ class ECReact_RXNS(ECReact):
                     }
                 )
 
+        elif self.args.split_type == "recoverable_mapping_product":
+            products = defaultdict(list)
+            for s in metadata_json:
+                products[s['products'][0]].append( int(s.get('mapped_recoverable_reaction', None) is not None))
+
+            recoverable_products = {p: sum(v) for p,v in products.items() if sum(v) == len(v) }
+
+            # shuffle products
+            product_names = sorted(list(recoverable_products.keys()))
+            np.random.shuffle(product_names)
+
+            # get products necessary to achieve X % 
+            # manually set to get ~ 5% reactions into test
+            num_products = (np.cumsum([recoverable_products[p] for p in product_names]) < split_probs[2] * len(metadata_json) ).sum() - 1 
+            test_products = product_names[:num_products]
+            self.to_split.update({p: "test" for p in test_products })
+
+            # add dev products
+            train_dev_products = [p for p in products if p not in self.to_split]
+            num_dev_products = (np.cumsum([len(products[p]) for p in train_dev_products]) < split_probs[1] * len(metadata_json) ).sum() - 1 
+            dev_products = train_dev_products[:num_dev_products]
+            self.to_split.update({p: "dev" for p in dev_products })
+
+            # add train products
+            train_products = [p for p in products if p not in self.to_split]
+            self.to_split.update({p: "train" for p in train_products })
+                        
+
         # random splitting
         elif self.args.split_type == "random":
             for sample in self.metadata_json:
@@ -394,7 +422,7 @@ class ECReact_RXNS(ECReact):
         dataset = []
 
         for rowid, reaction in tqdm(
-            enumerate(self.metadata_json), desc="Building dataset"
+            enumerate(self.metadata_json), desc="Building dataset", total = len(self.metadata_json), ncols = 100
         ):
 
             ec = reaction["ec"]
@@ -411,7 +439,8 @@ class ECReact_RXNS(ECReact):
                     "reaction_string": reaction_string,
                     "protein_id": uniprot,
                     "sequence": self.uniprot2sequence[uniprot],
-                    "split": reaction.get("split", None),
+                    "split": reaction["split"],
+                    "mapped_reaction": reaction.get('mapped_reaction', None),
                 }
                 if self.skip_sample(temp_sample, split_group):
                     continue
@@ -428,9 +457,20 @@ class ECReact_RXNS(ECReact):
                 "reactants": reactants,
                 "products": products,
                 "ec": ec,
+                "split": reaction["split"],
                 "reaction_string": reaction_string,
                 "rowid": rowid,
+                "mapped_reaction": reaction.get('mapped_reaction', None),
+                "mapped_recoverable_reaction": reaction.get('mapped_recoverable_reaction', None),
+                "bond_changes":reaction.get('bond_changes', None),
+                "mapped_reactants":reaction.get('mapped_reactants', None),
+                "mapped_products":reaction.get('mapped_products', None),
             }
+
+            if self.args.atom_map_reactions:
+                sample["mapped_reaction"] = get_atom_mapped_reaction(reaction_string, self.args)
+                if sample["mapped_reaction"] is None:
+                    continue 
 
             # add reaction sample to dataset
             dataset.append(sample)
@@ -448,6 +488,9 @@ class ECReact_RXNS(ECReact):
         ) > self.args.max_protein_length:
             return True
 
+        if sample["mapped_reaction"] is None:
+            True 
+
         return False
 
     def get_split_group_dataset(
@@ -462,7 +505,7 @@ class ECReact_RXNS(ECReact):
                 if self.to_split[split_ec] != split_group:
                     continue
 
-            elif self.args.split_type == "product":
+            elif self.args.split_type in ["product", "recoverable_mapping_product"]:
                 products = sample["products"]
                 if any(self.to_split[p] != split_group for p in products):
                     continue
@@ -481,7 +524,23 @@ class ECReact_RXNS(ECReact):
     @staticmethod
     def set_args(args):
         args.dataset_file_path = (
-            "/Mounts/rbg-storage1/datasets/Enzymes/ECReact/ecreact_ibm_splits.json"
+            "/Mounts/rbg-storage1/datasets/Enzymes/ECReact/ecreact_mapped_ibm_splits.json"
+        )
+
+
+    @staticmethod
+    def add_args(parser) -> None:
+        """Add class specific args
+
+        Args:
+            parser (argparse.ArgumentParser): argument parser
+        """
+        super(ECReact_RXNS, ECReact_RXNS).add_args(parser)
+        parser.add_argument(
+            "--add_active_residues_to_item",
+            action="store_true",
+            default=False,
+            help="whether to add active site residues to getitem sample if available",
         )
 
     def __getitem__(self, index):
@@ -497,11 +556,12 @@ class ECReact_RXNS(ECReact):
             uniprot_id = random.sample(valid_uniprots, 1)[0]
             sequence = self.uniprot2sequence[uniprot_id]
 
-            residue_dict = self.get_uniprot_residues(self.mcsa_data, sequence, ec)
-            residues = residue_dict["residues"]
-            residue_mask = residue_dict["residue_mask"]
-            has_residues = residue_dict["has_residues"]
-            residue_positions = residue_dict["residue_positions"]
+            if self.args.add_active_residues_to_item:
+                residue_dict = self.get_uniprot_residues(self.mcsa_data, sequence, ec)
+                residues = residue_dict["residues"]
+                residue_mask = residue_dict["residue_mask"]
+                has_residues = residue_dict["has_residues"]
+                residue_positions = residue_dict["residue_positions"]
 
             # incorporate sequence residues if known
             if self.args.use_residues_in_reaction:
@@ -534,12 +594,16 @@ class ECReact_RXNS(ECReact):
                 "organism": sample.get("organism", "none"),
                 "protein_id": uniprot_id,
                 "sample_id": sample_id,
-                # "residues": ".".join(residues),
-                # "has_residues": has_residues,
-                # "residue_positions": ".".join(
-                #     [str(s) for s in residue_positions]
-                # ),
             }
+
+            if self.args.add_active_residues_to_item:
+                item.update({
+                    "residues": ".".join(residues),
+                    "has_residues": has_residues,
+                    "residue_positions": ".".join(
+                        [str(s) for s in residue_positions]
+                    ),
+                })
 
             if self.args.precomputed_esm_features_dir is not None:
                 esm_features = pickle.load(
