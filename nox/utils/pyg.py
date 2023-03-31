@@ -71,7 +71,7 @@ def unbatch(src: Tensor, batch: Tensor, dim: int = 0) -> List[Tensor]:
     return src.split(sizes, dim)
 
 
-def from_smiles(smiles: str, with_hydrogen: bool = False, kekulize: bool = False):
+def from_smiles(smiles: str, with_hydrogen: bool = False, kekulize: bool = False, return_atom_number=False):
     r"""Converts a SMILES string to a :class:`torch_geometric.data.Data`
     instance.
     Args:
@@ -94,6 +94,8 @@ def from_smiles(smiles: str, with_hydrogen: bool = False, kekulize: bool = False
         mol = Chem.Kekulize(mol)
 
     xs = []
+    x_ids = []
+    x_numbers = []
     for atom in mol.GetAtoms():
         x = []
         x.append(x_map["atomic_num"].index(atom.GetAtomicNum()))
@@ -101,13 +103,18 @@ def from_smiles(smiles: str, with_hydrogen: bool = False, kekulize: bool = False
         x.append(x_map["degree"].index(atom.GetTotalDegree()))
         x.append(x_map["formal_charge"].index(atom.GetFormalCharge()))
         x.append(x_map["num_hs"].index(atom.GetTotalNumHs()))
-        x.append(x_map["num_radical_electrons"].index(atom.GetNumRadicalElectrons()))
+        x.append(x_map["num_radical_electrons"].index( max(atom.GetNumRadicalElectrons(),4)))
         x.append(x_map["hybridization"].index(str(atom.GetHybridization())))
         x.append(x_map["is_aromatic"].index(atom.GetIsAromatic()))
         x.append(x_map["is_in_ring"].index(atom.IsInRing()))
         xs.append(x)
+        x_ids.append(atom.GetIdx())
+        if return_atom_number:
+            x_numbers.append(int(atom.GetProp("molAtomMapNumber")) if atom.HasProp("molAtomMapNumber") else -1)
+
 
     x = torch.tensor(xs, dtype=torch.long).view(-1, 9)
+    #x_ids = torch.tensor(x_ids, dtype=torch.long).view(-1)
 
     edge_indices, edge_attrs = [], []
     for bond in mol.GetBonds():
@@ -130,4 +137,7 @@ def from_smiles(smiles: str, with_hydrogen: bool = False, kekulize: bool = False
         perm = (edge_index[0] * x.size(0) + edge_index[1]).argsort()
         edge_index, edge_attr = edge_index[:, perm], edge_attr[perm]
 
-    return Data(x=x, edge_index=edge_index, edge_attr=edge_attr, smiles=smiles)
+    data = Data(x=x, edge_index=edge_index, edge_attr=edge_attr, smiles=smiles, x_ids=x_ids)
+    if return_atom_number:
+        data.atom_map_number = x_numbers # torch.tensor(x_numbers).view(-1)
+    return data
