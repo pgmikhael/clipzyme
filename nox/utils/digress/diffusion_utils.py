@@ -20,7 +20,7 @@ class PlaceHolder:
         """Changes the device and dtype of X, E, y."""
         self.X = self.X.type_as(x)
         self.E = self.E.type_as(x)
-        self.y = self.y.to(x.device) #type_as(x)
+        self.y = self.y.to(x.device)  # type_as(x)
         return self
 
     def mask(self, node_mask, collapse=False):
@@ -452,7 +452,9 @@ def compute_batched_over0_posterior_distribution(X_t, Qt, Qsb, Qtb):
 
     X_t_transposed = X_t.transpose(-1, -2)  # bs, dt, N
 
-    prod = Qtb @ X_t_transposed  # bs, d0, N NOTE: each row (for given col / node) gives prob of moving from that state to the one observed in X_t
+    prod = (
+        Qtb @ X_t_transposed
+    )  # bs, d0, N NOTE: each row (for given col / node) gives prob of moving from that state to the one observed in X_t
     prod = prod.transpose(-1, -2)  # bs, N, d0
     denominator = prod.unsqueeze(-1)  # bs, N, d0, 1
     denominator[denominator == 0] = 1e-6
@@ -493,11 +495,19 @@ def posterior_distributions(X, E, y, X_t, E_t, y_t, Qt, Qsb, Qtb):
 def sample_discrete_feature_noise(limit_dist, node_mask):
     """Sample from the limit distribution of the diffusion process"""
     bs, n_max = node_mask.shape
-    x_limit = limit_dist.X[None, None, :].expand(bs, n_max, -1)                 # batch size, max number nodes, features / node type
-    e_limit = limit_dist.E[None, None, None, :].expand(bs, n_max, n_max, -1)    # batch size, max number nodes, max number nodes, features / edge type
-    y_limit = limit_dist.y[None, :].expand(bs, -1)                              # batch size, graph features
-    U_X = x_limit.flatten(end_dim=-2).multinomial(1).reshape(bs, n_max)         # batch size, max number nodes (category sampled from multinomial)
-    U_E = e_limit.flatten(end_dim=-2).multinomial(1).reshape(bs, n_max, n_max)  # batch size, max number nodes, max number nodes (edge category sampled from multinomial)
+    x_limit = limit_dist.X[None, None, :].expand(
+        bs, n_max, -1
+    )  # batch size, max number nodes, features / node type
+    e_limit = limit_dist.E[None, None, None, :].expand(
+        bs, n_max, n_max, -1
+    )  # batch size, max number nodes, max number nodes, features / edge type
+    y_limit = limit_dist.y[None, :].expand(bs, -1)  # batch size, graph features
+    U_X = (
+        x_limit.flatten(end_dim=-2).multinomial(1).reshape(bs, n_max)
+    )  # batch size, max number nodes (category sampled from multinomial)
+    U_E = (
+        e_limit.flatten(end_dim=-2).multinomial(1).reshape(bs, n_max, n_max)
+    )  # batch size, max number nodes, max number nodes (edge category sampled from multinomial)
     U_y = torch.empty((bs, 0))
 
     long_mask = node_mask.long()
@@ -505,16 +515,22 @@ def sample_discrete_feature_noise(limit_dist, node_mask):
     U_E = U_E.type_as(long_mask)
     U_y = U_y.type_as(long_mask)
 
-    U_X = F.one_hot(U_X, num_classes=x_limit.shape[-1]).float()                 # batch size, max number nodes, one-hot category
-    U_E = F.one_hot(U_E, num_classes=e_limit.shape[-1]).float()                 # batch size, max number nodes, max number nodes , one-hot category
+    U_X = F.one_hot(
+        U_X, num_classes=x_limit.shape[-1]
+    ).float()  # batch size, max number nodes, one-hot category
+    U_E = F.one_hot(
+        U_E, num_classes=e_limit.shape[-1]
+    ).float()  # batch size, max number nodes, max number nodes , one-hot category
 
     # Get upper triangular part of edge noise, without main diagonal
     upper_triangular_mask = torch.zeros_like(U_E)
     indices = torch.triu_indices(row=U_E.size(1), col=U_E.size(2), offset=1)
-    upper_triangular_mask[:, indices[0], indices[1], :] = 1                     # Upper right triangle excluding diagonals: batch size, max number nodes, max number nodes , one-hot category 
+    upper_triangular_mask[
+        :, indices[0], indices[1], :
+    ] = 1  # Upper right triangle excluding diagonals: batch size, max number nodes, max number nodes , one-hot category
 
     U_E = U_E * upper_triangular_mask
-    U_E = U_E + torch.transpose(U_E, 1, 2)                                      # symmetrize
+    U_E = U_E + torch.transpose(U_E, 1, 2)  # symmetrize
 
     assert (U_E == torch.transpose(U_E, 1, 2)).all()
 

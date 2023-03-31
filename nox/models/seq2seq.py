@@ -618,9 +618,7 @@ class ESMDecoder(AbstractModel):
         super().__init__()
 
         # make esm tokenizer + molecule tokenzier
-        self.esm_tokenizer = AutoTokenizer.from_pretrained(
-            args.esm_model_version
-        )
+        self.esm_tokenizer = AutoTokenizer.from_pretrained(args.esm_model_version)
         self.bert_tokenizer = self.init_tokenizer(args)
         esm_encoder_model = EsmModel.from_pretrained(args.esm_model_version)
         dconfig = self.get_transformer_config(args)
@@ -842,7 +840,7 @@ class ESMDecoder(AbstractModel):
             "--esm_model_version",
             type=str,
             default="facebook/esm2_t33_650M_UR50D",
-            help="which version of ESM to use"
+            help="which version of ESM to use",
         )
         parser.add_argument(
             "--transformer_model",

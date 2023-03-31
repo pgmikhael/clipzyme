@@ -12,7 +12,7 @@ from torch import Tensor
 from nox.utils.digress import diffusion_utils
 from nox.utils.registry import register_object
 from nox.models.abstract import AbstractModel
-import json 
+import json
 
 
 class Xtoy(nn.Module):
@@ -26,7 +26,7 @@ class Xtoy(nn.Module):
         m = X.mean(dim=1)
         mi = X.min(dim=1)[0]
         ma = X.max(dim=1)[0]
-        std = X.std(dim=1) # ! cannot have one node in graph
+        std = X.std(dim=1)  # ! cannot have one node in graph
         z = torch.hstack((m, mi, ma, std))
         out = self.lin(z)
         return out
@@ -45,7 +45,7 @@ class Etoy(nn.Module):
         m = E.mean(dim=(1, 2))
         mi = E.min(dim=2)[0].min(dim=1)[0]
         ma = E.max(dim=2)[0].max(dim=1)[0]
-        std = torch.std(E, dim=(1, 2)) # ! cannot have one node in graph
+        std = torch.std(E, dim=(1, 2))  # ! cannot have one node in graph
         z = torch.hstack((m, mi, ma, std))
         out = self.lin(z)
         return out
@@ -278,10 +278,10 @@ class GraphTransformer(AbstractModel):
     def __init__(self, args):
         super().__init__()
 
-        input_dims = args.dataset_statistics.input_dims 
-        hidden_mlp_dims = args.gt_hidden_mlp_dims 
+        input_dims = args.dataset_statistics.input_dims
+        hidden_mlp_dims = args.gt_hidden_mlp_dims
         hidden_dims = args.gt_hidden_dims
-        output_dims = args.dataset_statistics.output_dims 
+        output_dims = args.dataset_statistics.output_dims
 
         self.n_layers = args.gt_n_layers
         self.out_dim_X = output_dims["X"]
@@ -348,7 +348,7 @@ class GraphTransformer(AbstractModel):
             batch["E"],
             batch["y"],
             batch["node_mask"],
-        ) 
+        )
 
         bs, n = X.shape[0], X.shape[1]
 
@@ -413,9 +413,14 @@ class GraphTransformer(AbstractModel):
             help="num layers",
         )
 
-        
+
 from nox.models.chemprop import DMPNNEncoder
-from torch_geometric.utils import dense_to_sparse, to_dense_adj, remove_self_loops, to_dense_batch
+from torch_geometric.utils import (
+    dense_to_sparse,
+    to_dense_adj,
+    remove_self_loops,
+    to_dense_batch,
+)
 from typing import NamedTuple
 
 
@@ -426,27 +431,29 @@ class GraphData(NamedTuple):
     num_nodes: torch.Tensor
     batch: torch.Tensor
 
+
 def multidim_dense_to_sparse(adj, node_batch_ids):
     """
     adj: adjacency matrix [batch_size, num_nodes, num_nodes, edge_dim]
     """
     # Find non-zero edges in `adj` with multi-dimensional edge_features
 
-     
     B, N, _, D = adj.shape
-    mask = torch.eye(N).unsqueeze(0).unsqueeze(-1).repeat(B,1,1,D).to(adj.device)   
-    adj = adj * (1-mask) # remove self loop
+    mask = torch.eye(N).unsqueeze(0).unsqueeze(-1).repeat(B, 1, 1, D).to(adj.device)
+    adj = adj * (1 - mask)  # remove self loop
 
-    adj2 = adj.abs().sum(dim=-1)  
+    adj2 = adj.abs().sum(dim=-1)
     index = adj2.nonzero(as_tuple=True)
     edge_attr = adj[index]
     batch = index[0] * adj.size(-2)
     # index = (batch + index[1], batch + index[2])
 
     # make edge_index such that indices correspond to num nodes in each graph
-    graph_num_edges = torch.bincount(index[0]) # number of edges in each graph
-    graph_sizes = torch.bincount(node_batch_ids)    # number of nodes in each graph
-    graph_sizes_cum = torch.cumsum(graph_sizes, 0)  # cumulative sum, used to shift indices by constant factor
+    graph_num_edges = torch.bincount(index[0])  # number of edges in each graph
+    graph_sizes = torch.bincount(node_batch_ids)  # number of nodes in each graph
+    graph_sizes_cum = torch.cumsum(
+        graph_sizes, 0
+    )  # cumulative sum, used to shift indices by constant factor
     graph_sizes_shifted = torch.zeros_like(graph_sizes_cum)
     graph_sizes_shifted[1:] = graph_sizes_cum[:-1]
     graph_sizes_shifted = graph_sizes_shifted.repeat_interleave(graph_num_edges)
@@ -456,6 +463,7 @@ def multidim_dense_to_sparse(adj, node_batch_ids):
     edge_index, edge_attr = remove_self_loops(edge_index, edge_attr)
     return edge_index, edge_attr
 
+
 def dense_to_sparse_nodes(node_features, node_mask):
     """
     node_features: [batch_size, max_num_nodes, node_dim]
@@ -464,20 +472,20 @@ def dense_to_sparse_nodes(node_features, node_mask):
     batch_size = node_features.shape[0]
     x = node_features[node_mask]
     arr = torch.arange(batch_size).to(node_features.device)
-    batch = torch.repeat_interleave( arr, node_mask.sum(-1) )
-    return x, batch 
+    batch = torch.repeat_interleave(arr, node_mask.sum(-1))
+    return x, batch
 
 
 @register_object("chemprop_denoiser", "model")
 class ChempropDenoiser(DMPNNEncoder):
     def __init__(self, args):
-        input_dims = args.dataset_statistics.input_dims 
+        input_dims = args.dataset_statistics.input_dims
         args.chemprop_node_dim = input_dims["X"] + input_dims["y"]
-        args.chemprop_edge_dim = input_dims["E"] # + input_dims["y"]
-    
+        args.chemprop_edge_dim = input_dims["E"]  # + input_dims["y"]
+
         super(ChempropDenoiser, self).__init__(args)
 
-        output_dims = args.dataset_statistics.output_dims 
+        output_dims = args.dataset_statistics.output_dims
         self.mlp_out_X = nn.Sequential(
             nn.Linear(args.chemprop_hidden_dim, args.chemprop_hidden_dim),
             nn.ReLU(),
@@ -500,9 +508,9 @@ class ChempropDenoiser(DMPNNEncoder):
             batch["E"],
             batch["y"],
             batch["node_mask"],
-        ) 
+        )
 
-        B, N, d = X.shape 
+        B, N, d = X.shape
 
         diag_mask = torch.eye(N)
         diag_mask = ~diag_mask.type_as(E).bool()
@@ -514,7 +522,7 @@ class ChempropDenoiser(DMPNNEncoder):
 
         # add y
         y_for_x = y.unsqueeze(1).repeat(1, N, 1)
-        X = torch.concat((X,y_for_x), -1)
+        X = torch.concat((X, y_for_x), -1)
 
         # process into correct shapes: dense to sparse
         # x: [num_nodes, num_features]
@@ -528,28 +536,28 @@ class ChempropDenoiser(DMPNNEncoder):
 
         # prepare input data
         data = GraphData(
-            x = sparse_x,
-            edge_index = edge_index,
-            edge_attr = edge_attr,
-            num_nodes = node_mask.sum().item(),
-            batch = node_batch_ids
+            x=sparse_x,
+            edge_index=edge_index,
+            edge_attr=edge_attr,
+            num_nodes=node_mask.sum().item(),
+            batch=node_batch_ids,
         )
-    
+
         # pass through chemprop
         output = super().forward(data)
         node_features = output["node_features"]
         edge_features = output["edge_features"]
-        
+
         # process into correct shapes: sparse to dense
         max_num_nodes = X.shape[-2]
-        X, _ = to_dense_batch(x=node_features, batch=node_batch_ids) 
-        E = to_dense_adj(                                                                                                                                                                                                                         
-                edge_index=edge_index,                                                                                                                                                                                                                
-                batch=node_batch_ids,                                                                                                                                                                                                                          
-                edge_attr=edge_features,
-                max_num_nodes=max_num_nodes,
-            )
-        
+        X, _ = to_dense_batch(x=node_features, batch=node_batch_ids)
+        E = to_dense_adj(
+            edge_index=edge_index,
+            batch=node_batch_ids,
+            edge_attr=edge_features,
+            max_num_nodes=max_num_nodes,
+        )
+
         # classify
         X = self.mlp_out_X(X)
         E = self.mlp_out_E(E)

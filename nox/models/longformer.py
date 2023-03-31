@@ -90,7 +90,11 @@ class LFormerModel(AbstractModel):
         # from https://github.com/huggingface/transformers/blob/main/src/transformers/data/data_collator.py#L607
         # If special token mask has been preprocessed, pop it from the dict.
         special_tokens_mask = tokenized_inputs.pop("special_tokens_mask", None)
-        padding_token_mask = torch.ne(tokenized_inputs["input_ids"],self.tokenizer.pad_token_id).long().unsqueeze(-1)
+        padding_token_mask = (
+            torch.ne(tokenized_inputs["input_ids"], self.tokenizer.pad_token_id)
+            .long()
+            .unsqueeze(-1)
+        )
 
         if self.mlm:
             # mask tokens according to probability
@@ -121,7 +125,9 @@ class LFormerModel(AbstractModel):
         # log outputs of interest
         hidden = result["hidden_states"]
         if self.hidden_aggregate_func == "mean":
-            hidden = (result["hidden_states"][-1] * padding_token_mask).sum(1) / padding_token_mask.sum(1)
+            hidden = (result["hidden_states"][-1] * padding_token_mask).sum(
+                1
+            ) / padding_token_mask.sum(1)
         elif self.hidden_aggregate_func == "sum":
             hidden = (result["hidden_states"][-1] * padding_token_mask).sum(1)
         elif self.hidden_aggregate_func == "cls":

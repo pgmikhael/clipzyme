@@ -69,7 +69,7 @@ import nox.learning.metrics.digress
 # callbacks
 import nox.callbacks.basic
 import nox.callbacks.swa
-import nox.callbacks.ema 
+import nox.callbacks.ema
 
 # models
 import nox.models.vision
@@ -88,6 +88,8 @@ import nox.models.graph_denoisers
 import nox.models.digress
 import nox.models.clip
 import nox.models.esm_decoder
+import nox.models.protmol
+import nox.models.noncanonnet
 
 # comet
 import nox.loggers.comet

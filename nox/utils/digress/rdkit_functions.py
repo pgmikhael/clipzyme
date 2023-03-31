@@ -4,6 +4,7 @@ import re
 
 try:
     from rdkit import Chem
+
     # print("Found rdkit, all good")
 except ModuleNotFoundError as e:
     use_rdkit = False
@@ -78,10 +79,10 @@ class BasicMolecularMetrics(object):
                     valid.append(smiles)
                     all_smiles.append(smiles)
                 except Chem.rdchem.AtomValenceException:
-                    #print("Valence error in GetmolFrags")
+                    # print("Valence error in GetmolFrags")
                     all_smiles.append(None)
                 except Chem.rdchem.KekulizeException:
-                    #print("Can't kekulize molecule")
+                    # print("Can't kekulize molecule")
                     all_smiles.append(None)
             else:
                 all_smiles.append(None)
@@ -96,7 +97,7 @@ class BasicMolecularMetrics(object):
         num_novel = 0
         novel = []
         if self.dataset_smiles_list is None:
-            #print("Dataset smiles is None, novelty computation skipped")
+            # print("Dataset smiles is None, novelty computation skipped")
             return 1, 1
         for smiles in unique:
             if smiles not in self.dataset_smiles_list:
@@ -123,11 +124,11 @@ class BasicMolecularMetrics(object):
                     smiles = mol2smiles(largest_mol)
                     valid.append(smiles)
                 except Chem.rdchem.AtomValenceException:
-                    #print("Valence error in GetmolFrags")
-                    pass 
+                    # print("Valence error in GetmolFrags")
+                    pass
                 except Chem.rdchem.KekulizeException:
-                    #print("Can't kekulize molecule")
-                    pass 
+                    # print("Can't kekulize molecule")
+                    pass
         return valid, len(valid) / len(generated)
 
     def evaluate(self, generated):
@@ -185,7 +186,7 @@ def build_molecule(atom_types, edge_types, atom_decoder, verbose=False):
     for atom in atom_types:
         a = Chem.Atom(atom_decoder[atom.item()])
         mol.AddAtom(a)
- 
+
     edge_types = torch.triu(edge_types)
     all_bonds = torch.nonzero(edge_types)
     for i, bond in enumerate(all_bonds):
@@ -202,7 +203,6 @@ def build_molecule(atom_types, edge_types, atom_decoder, verbose=False):
 def build_molecule_with_partial_charges(
     atom_types, edge_types, atom_decoder, verbose=False
 ):
-
 
     mol = Chem.RWMol()
     for atom in atom_types:
@@ -307,11 +307,11 @@ def valid_mol_can_with_seg(m, largest_connected_comp=True):
 
 if __name__ == "__main__":
     smiles_mol = "C1CCC1"
-    #print("Smiles mol %s" % smiles_mol)
+    # print("Smiles mol %s" % smiles_mol)
     chem_mol = Chem.MolFromSmiles(smiles_mol)
     block_mol = Chem.MolToMolBlock(chem_mol)
-    #print("Block mol:")
-    #print(block_mol)
+    # print("Block mol:")
+    # print(block_mol)
 
 use_rdkit = True
 

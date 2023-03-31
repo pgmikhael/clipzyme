@@ -8,7 +8,7 @@ AA_TO_SMILES = {
     "E": "C(CC(=O)O)[C@@H](C(=O)O)N",  # Glutamic acid
     "Q": "C(CC(=O)N)[C@@H](C(=O)O)N",  # Glutamine
     "Z": "X",  # Glutamate or Glutamine
-    "G": "C(C(=O)O)N", # Glycine
+    "G": "C(C(=O)O)N",  # Glycine
     "H": "C([C@@H](C(=O)O)N)C(=O)N",  # Histidine
     "I": "CC[C@H](C)[C@@H](C(=O)O)N",  # Isoleucine
     "L": "CC(C)C[C@@H](C(=O)O)N",  # Leucine
@@ -22,7 +22,7 @@ AA_TO_SMILES = {
     "Y": "C1=CC(=CC=C1C[C@@H](C(=O)O)N)O",  # Tyrosine
     "V": "CC(C)[C@@H](C(=O)O)N",  # Valine
     "X": "X",
-    "U": "C([C@@H](C(=O)O)N)[SeH]" # Selenocysteine
+    "U": "C([C@@H](C(=O)O)N)[SeH]",  # Selenocysteine
 }
 
 AA_TO_TRIPLET = {
@@ -35,7 +35,7 @@ AA_TO_TRIPLET = {
     "E": "glu",  # Glutamic acid
     "Q": "gln",  # Glutamine
     "Z": ["glu", "gln"],  # Glutamate or Glutamine
-    "G": "gly", # Glycine
+    "G": "gly",  # Glycine
     "H": "his",  # Histidine
     "I": "ile",  # Isoleucine
     "L": "leu",  # Leucine
@@ -49,5 +49,5 @@ AA_TO_TRIPLET = {
     "Y": "tyr",  # Tyrosine
     "V": "val",  # Valine
     "X": "x",
-    "U": "sec" # Selenocysteine
+    "U": "sec",  # Selenocysteine
 }

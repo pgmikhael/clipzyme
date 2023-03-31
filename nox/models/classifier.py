@@ -48,7 +48,10 @@ class Classifier(AbstractModel):
             help="name of hidden features from encoder output",
         )
         parser.add_argument(
-            "--classifier_mlp_input_dim", type=int, default=512, help="Dim of input to mlp"
+            "--classifier_mlp_input_dim",
+            type=int,
+            default=512,
+            help="Dim of input to mlp",
         )
         parser.add_argument(
             "--classifier_mlp_layer_configuration",
@@ -143,7 +146,9 @@ class GraphClassifier(Classifier):
         cargs.mlp_use_batch_norm = args.classifier_mlp_use_batch_norm
         cargs.mlp_use_layer_norm = args.classifier_mlp_use_layer_norm
         if self.args.use_rdkit_features:
-            cargs.mlp_input_dim = args.graph_classifier_hidden_dim + args.rdkit_features_dim
+            cargs.mlp_input_dim = (
+                args.graph_classifier_hidden_dim + args.rdkit_features_dim
+            )
         self.mlp = get_object("mlp_classifier", "model")(cargs)
 
     def forward(self, batch=None):

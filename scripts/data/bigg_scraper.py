@@ -63,6 +63,7 @@ HMDB_METABOLITES = json.load(
 
 CHEBI_DB = json.load(open("/Mounts/rbg-storage1/datasets/Metabo/chebi_db.json", "r"))
 
+
 def xml2dict(t):
     """Transform XML into dictionary
 
@@ -196,7 +197,7 @@ def get_biocyc(db_meta: pd.Series) -> dict:
     """
     biocyc = [f for f in db_meta.values[0].split(";") if "biocyc" in f]
     if len(biocyc):
-        biocycid = urllib.parse.quote( os.path.basename(biocyc[0]) )
+        biocycid = urllib.parse.quote(os.path.basename(biocyc[0]))
         try:
             page = requests.get(
                 f"https://websvc.biocyc.org/getxml?id={biocycid}&detail=full"
@@ -306,8 +307,9 @@ def get_pubchem(db_meta: pd.Series) -> dict:
         }
     return dict()
 
+
 def get_chebi(db_meta: pd.Series) -> dict:
-    """Get the metabolite metdata from Chebi downloaded DB 
+    """Get the metabolite metdata from Chebi downloaded DB
 
     Args:
         db_meta (pandas row): pandas row matching metabolite to external links
@@ -336,6 +338,7 @@ def get_chebi(db_meta: pd.Series) -> dict:
         return meta_dict
 
     return dict()
+
 
 def search_chebi(metabolite: Metabolite) -> dict:
     """Search for metabolite in ChEBI using name and/or formula
@@ -381,7 +384,9 @@ def search_chebi(metabolite: Metabolite) -> dict:
     """
     exact_matches = []
     for i, met in enumerate(all_complete_entities):
-        if (("Formulae" in dict(met)) and (met["Formulae"] == metabolite.formula)) or met["ChEBI Name"].lower() == metabolite.name.lower():
+        if (
+            ("Formulae" in dict(met)) and (met["Formulae"] == metabolite.formula)
+        ) or met["ChEBI Name"].lower() == metabolite.name.lower():
             exact_matches.append(i)
 
     # if no matches, then find the closest one
@@ -389,22 +394,23 @@ def search_chebi(metabolite: Metabolite) -> dict:
         if metabolite.formula_weight:
             closest_mass_entities = sorted(
                 all_complete_entities,
-                key=lambda x: abs(metabolite.formula_weight - float(x.get("mass", 0) )),
+                key=lambda x: abs(metabolite.formula_weight - float(x.get("mass", 0))),
             )
         else:
             return meta_dict
 
         match = closest_mass_entities[0] if len(closest_mass_entities) else {}
 
-        meta_dict["errors"] = "exact metabolite not found, metabolite with closest mass used"
-            
+        meta_dict[
+            "errors"
+        ] = "exact metabolite not found, metabolite with closest mass used"
+
         warnings.warn(
             f"exact metabolite not found, metabolite with closest mass used for metabolite {metabolite.id}"
         )
-        
+
     else:
         match = dict(all_complete_entities[exact_matches[0]])
-
 
     for dictkey, dbkey in [
         ("id", "ChEBI ID"),
@@ -444,11 +450,11 @@ def link_metabolite_to_db(metabolite: Metabolite) -> dict:
 
     # Try HMDB
     meta_dict = get_hmdb(db_meta)
-    
+
     if not any("smiles" in k for k in meta_dict.keys()):
         # Try Chebi DB
         meta_dict.update(get_chebi(db_meta))
-    
+
     if not any("smiles" in k for k in meta_dict.keys()):
         # Try VMH
         meta_dict.update(get_vmh(metabolite))
@@ -477,7 +483,9 @@ def link_metabolite_to_db(metabolite: Metabolite) -> dict:
         meta_dict["searched"] = True
 
     # standardize SMILES
-    smiles_key = [k for k,v in meta_dict.items() if ("smiles" in k) and (v is not None)]
+    smiles_key = [
+        k for k, v in meta_dict.items() if ("smiles" in k) and (v is not None)
+    ]
     if len(smiles_key):
         try:
             meta_dict["smiles"] = Chem.CanonSmiles(meta_dict[smiles_key[0]])
@@ -585,7 +593,7 @@ if __name__ == "__main__":
 
         # if r.status_code == 200:
         #     json.loads(r.content.decode("utf-8"))
-        return rxn_dict 
+        return rxn_dict
 
     model = load_matlab_model(
         os.path.join(args.bigg_model_dir, f"{args.organism_name}.mat")

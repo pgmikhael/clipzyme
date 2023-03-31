@@ -31,6 +31,7 @@ parser.add_argument(
     help="if from IBM processed splits",
 )
 
+
 def parse_fasta(f):
     """Parse fasta data
 
@@ -57,17 +58,18 @@ def get_protein_fasta(uniprot):
 
     fasta = requests.get(UNIPROT_ENTRY_URL.format(uniprot))
 
-    if fasta.status_code == 200: # Success
+    if fasta.status_code == 200:  # Success
         sequence = parse_fasta(fasta.text)
-        return sequence 
+        return sequence
 
-    return 
+    return
+
 
 def transform_ec_number(ec_str):
     """
     transform input formatted as [vEC1] [uEC2] [tEC3] [qEC4] into EC1.EC2.EC3.EC4
     """
-    ec_digits = re.findall(r'\d+|-', ec_str)
+    ec_digits = re.findall(r"\d+|-", ec_str)
     ec = ".".join(ec_digits)
     return ec
 
@@ -76,7 +78,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.from_ibm_splits:
-        """run first: rbt-preprocess.py /Mounts/rbg-storage1/datasets/Enzymes/ECReact/smarts_ecreact-1.0.csv /Mounts/rbg-storage1/datasets/Enzymes/ECReact/ibm_splits  --ec-level 4 """
+        """run first: rbt-preprocess.py /Mounts/rbg-storage1/datasets/Enzymes/ECReact/smarts_ecreact-1.0.csv /Mounts/rbg-storage1/datasets/Enzymes/ECReact/ibm_splits  --ec-level 4"""
         formatted_dataset = {
             "train": {"src": [], "tgt": []},
             "valid": {"src": [], "tgt": []},
@@ -84,14 +86,14 @@ if __name__ == "__main__":
         }
         vocab = set()
 
-        split_files = os.listdir(args.react_dir_or_path) 
-        
+        split_files = os.listdir(args.react_dir_or_path)
+
         for filename in split_files:
             if filename.endswith("combined.txt"):
-                continue 
-            
+                continue
+
             filepath = os.path.join(args.react_dir_or_path, filename)
-            rxn_side, split = filename.split('-')
+            rxn_side, split = filename.split("-")
             split, _ = os.path.splitext(split)
             with open(filepath, "r") as f:
                 for line in f:
@@ -108,15 +110,17 @@ if __name__ == "__main__":
                 reactants = reactants_str.replace(" ", "").split(".")
                 products = tgt.replace(" ", "").split(".")
 
-                dataset.append({
-                    "reactants": reactants,
-                    "products": products,
-                    "ec": ec,
-                    "split": "dev" if split == "valid" else split,
-                    "from": filepath,
-                    "rxnid": f"{split}_{i}",
-                })
-        
+                dataset.append(
+                    {
+                        "reactants": reactants,
+                        "products": products,
+                        "ec": ec,
+                        "split": "dev" if split == "valid" else split,
+                        "from": filepath,
+                        "rxnid": f"{split}_{i}",
+                    }
+                )
+
         vocab = sorted(list(vocab))
         vocabpath, _ = os.path.splitext(args.output_file_path)
         with open(f"{vocabpath}_vocab.txt", "w") as f:
@@ -151,43 +155,45 @@ if __name__ == "__main__":
                         uniprot_id = uniprot_result["primaryAccession"]
                         sequence = uniprot_result["sequence"]["value"]
                         uni2seq[uniprot_id] = sequence
-                        
+
                         for comment in uniprot_result["comments"]:
                             for isoform in comment.get("isoforms", []):
                                 isoform_uniprots = isoform["isoformIds"]
                                 for isoform_u in isoform_uniprots:
                                     iso_dataset.append(isoform_u)
-                                    
+
                 else:
                     num_uniprot_results = 0
 
-            
-            for uni,seq in uni2seq.items():
+            for uni, seq in uni2seq.items():
                 dataset.append(
-                            {
-                                "reactants": reactants,
-                                "products": products,
-                                "sequence": seq,
-                                "ec": ec,
-                                "uniprot_id": uni,
-                                "db_source": db_source
-                            }
-                        )
-            
+                    {
+                        "reactants": reactants,
+                        "products": products,
+                        "sequence": seq,
+                        "ec": ec,
+                        "uniprot_id": uni,
+                        "db_source": db_source,
+                    }
+                )
+
             iso_dataset = list(set(iso_dataset))
             iso_dataset = [u for u in iso_dataset if u not in uni2seq]
-            iso_dataset = [{
-                            "reactants": reactants,
-                            "products": products,
-                            "ec": ec,
-                            "uniprot_id": uni,
-                            "db_source": db_source
-            } for uni in iso_dataset]
+            iso_dataset = [
+                {
+                    "reactants": reactants,
+                    "products": products,
+                    "ec": ec,
+                    "uniprot_id": uni,
+                    "db_source": db_source,
+                }
+                for uni in iso_dataset
+            ]
 
             return (dataset, iso_dataset)
 
         # transform csv to json
-        react_dataset_rows = react_dataset.to_dict('records')
+        react_dataset_rows = react_dataset.to_dict("records")
         reactions_dataset = []
         for row in react_dataset_rows:
             rxn_smiles = row["rxn_smiles"]
@@ -199,15 +205,17 @@ if __name__ == "__main__":
             reactants_str, ec_str = full_reactants.split("|")
             reactants = reactants_str.split(".")
             reactions_dataset.append(
-                            {
-                                "reactants": reactants,
-                                "products": products,
-                                "ec": ec,
-                                "db_source": db_source
-                            }
-                        )
-        json.dump(reactions_dataset, open(args.react_dir_or_path.replace(".csv", ".json"), "w"))
-
+                {
+                    "reactants": reactants,
+                    "products": products,
+                    "ec": ec,
+                    "db_source": db_source,
+                }
+            )
+        json.dump(
+            reactions_dataset,
+            open(args.react_dir_or_path.replace(".csv", ".json"), "w"),
+        )
 
         # match ec to uniprots, sequences, and isoforms
         reference_dataset = p_map(parse_react_row, react_dataset_rows)
@@ -215,9 +223,9 @@ if __name__ == "__main__":
         for d in reference_dataset:
             dataset.extend(d[0])
             iso_dataset.extend(d[1])
-        
+
         # pass through isoforms
-        isoform_uniprots = [d['uniprot_id'] for d in iso_dataset]
+        isoform_uniprots = [d["uniprot_id"] for d in iso_dataset]
         isform_sequences = p_map(get_protein_fasta, isoform_uniprots)
         for i, sample in enumerate(iso_dataset):
             sample["sequence"] = isform_sequences[i]

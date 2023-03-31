@@ -4,15 +4,29 @@ import numpy as np
 import pickle
 
 
-prots = pd.read_csv("/Mounts/rbg-storage1/datasets/STRING/e_coli/511145.protein.info.v11.5.txt", sep = "\t")
-prots["#string_protein_id"] = prots["#string_protein_id"].str.replace("511145\.", "", regex=True)
-links = pd.read_csv("/Mounts/rbg-storage1/datasets/STRING/e_coli/511145.protein.links.v11.5.txt", sep = " ")
+prots = pd.read_csv(
+    "/Mounts/rbg-storage1/datasets/STRING/e_coli/511145.protein.info.v11.5.txt",
+    sep="\t",
+)
+prots["#string_protein_id"] = prots["#string_protein_id"].str.replace(
+    "511145\.", "", regex=True
+)
+links = pd.read_csv(
+    "/Mounts/rbg-storage1/datasets/STRING/e_coli/511145.protein.links.v11.5.txt",
+    sep=" ",
+)
 links["protein1"] = links["protein1"].str.replace("511145\.", "", regex=True)
 links["protein2"] = links["protein2"].str.replace("511145\.", "", regex=True)
 
 import argparse
-parser = argparse.ArgumentParser(description='Finds shortest paths on G')
-parser.add_argument("--threshold", help="A cutoff for edge probabilities in STRINGdb", type=float, default=0.5)
+
+parser = argparse.ArgumentParser(description="Finds shortest paths on G")
+parser.add_argument(
+    "--threshold",
+    help="A cutoff for edge probabilities in STRINGdb",
+    type=float,
+    default=0.5,
+)
 args = parser.parse_args()
 
 edgelist = [i.tolist()[1:] for i in links.to_records()]

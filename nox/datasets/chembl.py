@@ -5,9 +5,9 @@ import warnings
 import os
 from typing import List, Any, Sequence
 from tqdm import tqdm
-import json , pickle
+import json, pickle
 from rdkit import Chem
-from rich import print 
+from rich import print
 
 import torch.nn.functional as F
 from torch_geometric.data import InMemoryDataset, Batch
@@ -19,11 +19,16 @@ import nox.utils.digress.diffusion_utils as utils
 from nox.utils.digress.extra_features import ExtraFeatures
 from nox.utils.pyg import from_smiles, x_map, e_map
 from nox.datasets.ecreact_graph import DatasetInfo
-from nox.datasets.qm9 import DistributionNodes, RemoveYTransform, SelectMuTransform, SelectHOMOTransform
+from nox.datasets.qm9 import (
+    DistributionNodes,
+    RemoveYTransform,
+    SelectMuTransform,
+    SelectHOMOTransform,
+)
+
 
 @register_object("chembl", "dataset")
 class Chembl(AbstractDataset, InMemoryDataset):
-
     def __init__(self, args: argparse.ArgumentParser, split_group: str) -> None:
         self.split_group = split_group
         self.args = args
@@ -38,12 +43,13 @@ class Chembl(AbstractDataset, InMemoryDataset):
         transform = self.get_transform(args)
         InMemoryDataset.__init__(self, root=self.root, transform=transform)
 
-        
         # self.load_datasets()
         # self.dataset, self.slices = self.datasets[split_group]
         self.dataset = self.create_dataset(split_group)
 
-        data_info_path = os.path.join(self.processed_dir, f"dataset_info_{self.version}.p")
+        data_info_path = os.path.join(
+            self.processed_dir, f"dataset_info_{self.version}.p"
+        )
         if args.recompute_statistics:
             # get data info (input / output dimensions)
             smiles = list(set(self.datasets["train"][0].smiles))
@@ -56,7 +62,10 @@ class Chembl(AbstractDataset, InMemoryDataset):
 
         extra_features = ExtraFeatures(args.extra_features_type, dataset_info=data_info)
 
-        example_batch = [ from_smiles(self.__getitem__(0).smiles), from_smiles(self.__getitem__(1).smiles) ]
+        example_batch = [
+            from_smiles(self.__getitem__(0).smiles),
+            from_smiles(self.__getitem__(1).smiles),
+        ]
         example_batch = Batch.from_data_list(example_batch, None, None)
 
         data_info.compute_input_output_dims(
@@ -128,24 +137,28 @@ class Chembl(AbstractDataset, InMemoryDataset):
         return ["chembl32_train.pt", "chembl32_dev.pt", "chembl32_test.pt"]
 
     def download(self):
-        pass 
+        pass
 
     def process(self):
-        return 
-        chembl_data = json.load(open( os.path.join(self.root, self.raw_file_names), "r"))
+        return
+        chembl_data = json.load(open(os.path.join(self.root, self.raw_file_names), "r"))
         self.assign_splits(chembl_data, self.args.split_probs, self.args.split_seed)
-        
+
         data_list = {"train": [], "dev": [], "test": []}
-        for idx, molecule_dict in tqdm(enumerate(chembl_data), total = len(chembl_data), ncols= 60):
+        for idx, molecule_dict in tqdm(
+            enumerate(chembl_data), total=len(chembl_data), ncols=60
+        ):
             split = molecule_dict["split"]
             mol = from_smiles(molecule_dict["smiles"])
 
             # first feature is atomic number
             mol.x = F.one_hot(mol.x[:, 0], len(x_map["atomic_num"])).to(torch.float)
             # first feature is bond type (bond type 1 is misc)
-            mol.edge_attr = F.one_hot(mol.edge_attr[:, 0], len(e_map["bond_type"])).to(torch.float)
+            mol.edge_attr = F.one_hot(mol.edge_attr[:, 0], len(e_map["bond_type"])).to(
+                torch.float
+            )
             mol.y = torch.zeros((1, 0), dtype=torch.float)
-            mol.idx = idx 
+            mol.idx = idx
             mol.smiles = molecule_dict["smiles"]
 
             data_list[split].append(mol)
@@ -158,21 +171,21 @@ class Chembl(AbstractDataset, InMemoryDataset):
         """
         Creates the dataset of samples
         """
-        chembl_data = json.load(open( os.path.join(self.root, self.raw_file_names), "r"))
+        chembl_data = json.load(open(os.path.join(self.root, self.raw_file_names), "r"))
 
         self.assign_splits(chembl_data, self.args.split_probs, self.args.split_seed)
 
         dataset = []
         for data_item in tqdm(chembl_data, ncols=60):
             if data_item["split"] != split_group:
-                continue 
-            
+                continue
+
             try:
                 mol = Chem.MolFromSmiles(data_item["smiles"])
                 if mol.GetNumAtoms() > 40:
-                    continue 
+                    continue
             except:
-                continue 
+                continue
 
             dataset.append(data_item)
 
@@ -187,10 +200,12 @@ class Chembl(AbstractDataset, InMemoryDataset):
             # first feature is atomic number
             mol.x = F.one_hot(mol.x[:, 0], len(x_map["atomic_num"])).to(torch.float)
             # first feature is bond type (bond type 1 is misc)
-            mol.edge_attr = F.one_hot(mol.edge_attr[:, 0], len(e_map["bond_type"])).to(torch.float)
+            mol.edge_attr = F.one_hot(mol.edge_attr[:, 0], len(e_map["bond_type"])).to(
+                torch.float
+            )
             mol.y = torch.zeros((1, 0), dtype=torch.float)
             mol.sample_id = f"{self.split_group}_{index}"
-    
+
             return mol
 
         except Exception:
@@ -198,7 +213,7 @@ class Chembl(AbstractDataset, InMemoryDataset):
 
     def __len__(self):
         return len(self.dataset)
-        
+
     @staticmethod
     def add_args(parser) -> None:
         """Add class specific args

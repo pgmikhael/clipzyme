@@ -18,6 +18,7 @@ from p_tqdm import p_map
 import random
 from collections import defaultdict
 
+
 @register_object("ecreact", "dataset")
 class ECReact(BrendaReaction):
     def __init__(self, args, split_group) -> None:
@@ -374,30 +375,39 @@ class ECReact_RXNS(ECReact):
         elif self.args.split_type == "recoverable_mapping_product":
             products = defaultdict(list)
             for s in metadata_json:
-                products[s['products'][0]].append( int(s.get('mapped_recoverable_reaction', None) is not None))
+                products[s["products"][0]].append(
+                    int(s.get("mapped_recoverable_reaction", None) is not None)
+                )
 
-            recoverable_products = {p: sum(v) for p,v in products.items() if sum(v) == len(v) }
+            recoverable_products = {
+                p: sum(v) for p, v in products.items() if sum(v) == len(v)
+            }
 
             # shuffle products
             product_names = sorted(list(recoverable_products.keys()))
             np.random.shuffle(product_names)
 
-            # get products necessary to achieve X % 
+            # get products necessary to achieve X %
             # manually set to get ~ 5% reactions into test
-            num_products = (np.cumsum([recoverable_products[p] for p in product_names]) < split_probs[2] * len(metadata_json) ).sum() - 1 
+            num_products = (
+                np.cumsum([recoverable_products[p] for p in product_names])
+                < split_probs[2] * len(metadata_json)
+            ).sum() - 1
             test_products = product_names[:num_products]
-            self.to_split.update({p: "test" for p in test_products })
+            self.to_split.update({p: "test" for p in test_products})
 
             # add dev products
             train_dev_products = [p for p in products if p not in self.to_split]
-            num_dev_products = (np.cumsum([len(products[p]) for p in train_dev_products]) < split_probs[1] * len(metadata_json) ).sum() - 1 
+            num_dev_products = (
+                np.cumsum([len(products[p]) for p in train_dev_products])
+                < split_probs[1] * len(metadata_json)
+            ).sum() - 1
             dev_products = train_dev_products[:num_dev_products]
-            self.to_split.update({p: "dev" for p in dev_products })
+            self.to_split.update({p: "dev" for p in dev_products})
 
             # add train products
             train_products = [p for p in products if p not in self.to_split]
-            self.to_split.update({p: "train" for p in train_products })
-                        
+            self.to_split.update({p: "train" for p in train_products})
 
         # random splitting
         elif self.args.split_type == "random":
@@ -422,7 +432,10 @@ class ECReact_RXNS(ECReact):
         dataset = []
 
         for rowid, reaction in tqdm(
-            enumerate(self.metadata_json), desc="Building dataset", total = len(self.metadata_json), ncols = 100
+            enumerate(self.metadata_json),
+            desc="Building dataset",
+            total=len(self.metadata_json),
+            ncols=100,
         ):
 
             ec = reaction["ec"]
@@ -440,7 +453,7 @@ class ECReact_RXNS(ECReact):
                     "protein_id": uniprot,
                     "sequence": self.uniprot2sequence[uniprot],
                     "split": reaction["split"],
-                    "mapped_reaction": reaction.get('mapped_reaction', None),
+                    "mapped_reaction": reaction.get("mapped_reaction", None),
                 }
                 if self.skip_sample(temp_sample, split_group):
                     continue
@@ -460,17 +473,21 @@ class ECReact_RXNS(ECReact):
                 "split": reaction["split"],
                 "reaction_string": reaction_string,
                 "rowid": rowid,
-                "mapped_reaction": reaction.get('mapped_reaction', None),
-                "mapped_recoverable_reaction": reaction.get('mapped_recoverable_reaction', None),
-                "bond_changes":reaction.get('bond_changes', None),
-                "mapped_reactants":reaction.get('mapped_reactants', None),
-                "mapped_products":reaction.get('mapped_products', None),
+                "mapped_reaction": reaction.get("mapped_reaction", None),
+                "mapped_recoverable_reaction": reaction.get(
+                    "mapped_recoverable_reaction", None
+                ),
+                "bond_changes": reaction.get("bond_changes", None),
+                "mapped_reactants": reaction.get("mapped_reactants", None),
+                "mapped_products": reaction.get("mapped_products", None),
             }
 
             if self.args.atom_map_reactions:
-                sample["mapped_reaction"] = get_atom_mapped_reaction(reaction_string, self.args)
+                sample["mapped_reaction"] = get_atom_mapped_reaction(
+                    reaction_string, self.args
+                )
                 if sample["mapped_reaction"] is None:
-                    continue 
+                    continue
 
             # add reaction sample to dataset
             dataset.append(sample)
@@ -489,7 +506,7 @@ class ECReact_RXNS(ECReact):
             return True
 
         if sample["mapped_reaction"] is None:
-            True 
+            True
 
         return False
 
@@ -523,10 +540,7 @@ class ECReact_RXNS(ECReact):
 
     @staticmethod
     def set_args(args):
-        args.dataset_file_path = (
-            "/Mounts/rbg-storage1/datasets/Enzymes/ECReact/ecreact_mapped_ibm_splits.json"
-        )
-
+        args.dataset_file_path = "/Mounts/rbg-storage1/datasets/Enzymes/ECReact/ecreact_mapped_ibm_splits.json"
 
     @staticmethod
     def add_args(parser) -> None:
@@ -597,13 +611,15 @@ class ECReact_RXNS(ECReact):
             }
 
             if self.args.add_active_residues_to_item:
-                item.update({
-                    "residues": ".".join(residues),
-                    "has_residues": has_residues,
-                    "residue_positions": ".".join(
-                        [str(s) for s in residue_positions]
-                    ),
-                })
+                item.update(
+                    {
+                        "residues": ".".join(residues),
+                        "has_residues": has_residues,
+                        "residue_positions": ".".join(
+                            [str(s) for s in residue_positions]
+                        ),
+                    }
+                )
 
             if self.args.precomputed_esm_features_dir is not None:
                 esm_features = pickle.load(

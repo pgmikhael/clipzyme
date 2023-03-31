@@ -424,7 +424,7 @@ def get_parser():
         default=0,
         help="L2 Regularization penaty [default: 0]",
     )
-    
+
     # tune
     parser.add_argument(
         "--tune_hyperopt",
