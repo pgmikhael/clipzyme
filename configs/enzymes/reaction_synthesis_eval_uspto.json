@@ -4,9 +4,12 @@
   "log_dir": "/Mounts/rbg-storage1/logs/metabo/",
   "available_gpus": ["0"],
   "eval_args": {
-    "dataset_name": ["brenda_reaction"],
+    "dataset_name": ["ecreact_reactions"],
+    "assign_splits": [true],
+    "split_type": ["recoverable_mapping_product"],
+    "split_probs": ["0.9 0.05 0.05"],
+    "split_seed": [2023],
     "deduplicate_reactions": [true],
-    "assign_splits": [false],
     "generation_renormalize_logits": [true],
     "generation_num_return_sequences": [5],
     "generation_num_beams": [5],
@@ -14,6 +17,7 @@
     "compute_metrics_every_step": [false],
     "test": [true],
     "predict": [true],
+    "task_type": ["multiclass"],
     "metric_names_for_eval": ["topk_classification"],
     "topk_values": ["1 5 10"],
     "logger_tags": ["eval forward-synthesis"]
