@@ -1446,6 +1446,7 @@ class BrendaReaction(Brenda):
                     "x": self.brenda_proteins[uniprotid]["sequence"],
                     "sequence": self.brenda_proteins[uniprotid]["sequence"],
                     "uniprotid": uniprotid,
+                    "protein_id": uniprotid,
                     "y": y,
                     "sample_id": f"{uniprotid}_{ec}"
                 })
