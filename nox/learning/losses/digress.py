@@ -72,7 +72,7 @@ class DigressLoss(Nox):
         else:
             loss_y = 0.0
 
-        loss = loss_X + args.lambda_edge_loss * loss_E + args.lambda_y_loss * loss_y
+        loss = args.lambda_node_loss * loss_X + args.lambda_edge_loss * loss_E + args.lambda_y_loss * loss_y
 
         logging_dict = {
             "loss": loss,
@@ -90,6 +90,12 @@ class DigressLoss(Nox):
         Args:
             parser (argparse.ArgumentParser): argument parser
         """
+        parser.add_argument(
+            "--lambda_node_loss",
+            type=float,
+            default=1.0,
+            help="Lambda to weigh the cross-entropy loss.",
+        )
         parser.add_argument(
             "--lambda_edge_loss",
             type=float,
