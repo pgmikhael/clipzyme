@@ -60,7 +60,8 @@
     "metric_names": ["classification"],
     "sample_negatives": [true],
     "sample_negatives_range": ["0.8 1.0"],
-    "protmol_clip_model_path": ["/Mounts/rbg-storage1/snapshots/metabolomics/4763e987ddcb8054307f7f3baf1740bb/4763e987ddcb8054307f7f3baf1740bbepoch=12.ckpt"]
+    "protmol_clip_model_path": ["/Mounts/rbg-storage1/snapshots/metabolomics/4763e987ddcb8054307f7f3baf1740bb/4763e987ddcb8054307f7f3baf1740bbepoch=12.ckpt"],
+    "negative_samples_cache_dir": ["/Mounts/rbg-storage1/datasets/Enzymes/ECReact/"]
   },
   "available_gpus": ["2,3,4,6"]
 }
