@@ -453,12 +453,6 @@ class ECReactGraph(ECReact_RXNS):
             help="size of protein residue features from ESM models",
         )
         parser.add_argument(
-            "--max_reactant_size",
-            type=int,
-            default=None,
-            help="maximum reactant size",
-        )
-        parser.add_argument(
             "--max_product_size",
             type=int,
             default=None,
@@ -521,6 +515,11 @@ class ECReactSubstrate(ECReactGraph):
     ) -> List[dict]:
 
         dataset = []
+        uniprot_substrates = set()
+
+        if self.args.topk_substrates_to_remove is not None:
+            substrates = Counter([r for d in dataset for r in d['reactants']]).most_common(self.args.topk_substrates_to_remove)
+            self.common_substrates = [s[0] for s in substrates]
 
         for rowid, reaction in tqdm(
             enumerate(self.metadata_json),
@@ -567,17 +566,32 @@ class ECReactSubstrate(ECReactGraph):
                 }
                 if self.skip_sample(sample_to_check, split_group):
                     continue
-
-                sample = {
+                
+                if self.args.use_all_proteins:
+                    for valid_uni in valid_uniprots:
+                        if f"{valid_uni}_{reactant}" in uniprot_substrates:
+                            continue 
+                        else:
+                            uniprot_substrates.add(f"{valid_uni}_{reactant}")
+                            
+                        dataset.append({
+                            "reactant": reactant,
+                            "ec": ec,
+                            "reaction_string": reaction_string,
+                            "rowid": f"{rid}{rowid}",
+                            "split": reaction["split"],
+                            "y": 1,
+                            "uniprot_id": valid_uni,
+                        })
+                else:
+                    dataset.append({
                     "reactant": reactant,
                     "ec": ec,
                     "reaction_string": reaction_string,
                     "rowid": f"{rid}{rowid}",
                     "split": reaction["split"],
                     "y": 1,
-                }
-
-                dataset.append(sample)
+                })
 
         return dataset
 
@@ -594,6 +608,10 @@ class ECReactSubstrate(ECReactGraph):
             reactant_size > self.args.max_reactant_size
         ):
             return True
+        
+        if self.args.topk_substrates_to_remove is not None:
+            if sample["reactant"] in self.common_substrates:
+                return True
 
         return False
 
@@ -604,15 +622,13 @@ class ECReactSubstrate(ECReactGraph):
             reactant = from_smiles(sample["reactant"])
 
             ec = sample["ec"]
-            valid_uniprots = self.valid_ec2uniprot[ec]
-            uniprot_id = random.sample(valid_uniprots, 1)[0]
-            sequence = self.uniprot2sequence[uniprot_id]
-
-            # residue_dict = self.get_uniprot_residues(self.mcsa_data, sequence, ec)
-            # residues = residue_dict["residues"]
-            # residue_mask = residue_dict["residue_mask"]
-            # has_residues = residue_dict["has_residues"]
-            # residue_positions = residue_dict["residue_positions"]
+            if self.args.use_all_proteins:
+                uniprot_id =sample["uniprot_id"]
+                sequence = self.uniprot2sequence[uniprot_id] 
+            else:
+                valid_uniprots = self.valid_ec2uniprot[ec]
+                uniprot_id = random.sample(valid_uniprots, 1)[0]
+                sequence = self.uniprot2sequence[uniprot_id]
 
             # first feature is atomic number
             reactant.x = F.one_hot(reactant.x[:, 0], len(x_map["atomic_num"])).to(
@@ -676,6 +692,12 @@ class ECReactSubstrate(ECReactGraph):
             nargs=2,
             default=[0.7, 1.0],
             help="range of similarity to sample negatives from",
+        )
+        parser.add_argument(
+            "--use_all_proteins",
+            action="store_true",
+            default=False,
+            help="whether to use all proteins or just sample one for each ec",
         )
 
     def add_negatives(self, dataset, split_group):
@@ -839,15 +861,13 @@ class ECReactSubstratePlainGraph(ECReactSubstrate):
             reactant = from_smiles(sample["reactant"])
 
             ec = sample["ec"]
-            valid_uniprots = self.valid_ec2uniprot[ec]
-            uniprot_id = random.sample(valid_uniprots, 1)[0]
-            sequence = self.uniprot2sequence[uniprot_id]
-
-            # residue_dict = self.get_uniprot_residues(self.mcsa_data, sequence, ec)
-            # residues = residue_dict["residues"]
-            # residue_mask = residue_dict["residue_mask"]
-            # has_residues = residue_dict["has_residues"]
-            # residue_positions = residue_dict["residue_positions"]
+            if self.args.use_all_proteins:
+                uniprot_id =sample["uniprot_id"]
+                sequence = self.uniprot2sequence[uniprot_id] 
+            else:
+                valid_uniprots = self.valid_ec2uniprot[ec]
+                uniprot_id = random.sample(valid_uniprots, 1)[0]
+                sequence = self.uniprot2sequence[uniprot_id]
 
             reactant.sample_id = sample["rowid"]
             reactant.sequence = sequence
@@ -864,8 +884,7 @@ class ECReactSubstratePlainGraph(ECReactSubstrate):
 
             mask_hiddens = esm_features["mask_hiddens"]  # sequence len, 1
             protein_hidden = esm_features["hidden"]
-            # token_hiddens = esm_features["token_hiddens"][mask_hiddens[:,0].bool()]
-            # reactant.y = protein_hidden.view(1, -1)
+
             reactant.y = sample["y"]
             reactant.ec = sample["ec"]
             reactant.all_reactants = sample["reaction_string"].split(">>")[0].split(".")

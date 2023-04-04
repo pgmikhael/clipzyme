@@ -8,7 +8,7 @@ from nox.utils.reactions import get_atom_mapped_reaction
 from tqdm import tqdm
 import torch
 import numpy as np
-from collections import defaultdict
+from collections import defaultdict, Counter
 import argparse
 import json
 import os
@@ -520,6 +520,18 @@ class Brenda(AbstractDataset):
             action="store_true",
             default=False,
             help="bond type for mapping",
+        )
+        parser.add_argument(
+            "--max_reactant_size",
+            type=int,
+            default=None,
+            help="maximum reactant size",
+        )
+        parser.add_argument(
+            "--topk_substrates_to_remove",
+            type=int,
+            default=None,
+            help="remove common substrates",
         )
 
     @staticmethod
@@ -1536,3 +1548,113 @@ class BrendaReaction(Brenda):
         * Number of ECs: {len(set(ecs))}
         """
         return statement
+
+@register_object("brenda_substrates", "dataset")
+class BrendaSubstrates(Brenda):
+    def create_dataset(
+        self, split_group: Literal["train", "dev", "test"]
+    ) -> List[dict]:
+        dataset = []
+
+        for ec, ec_dict in tqdm(self.metadata_json.items(), desc="Creating dataset", ncols=50):
+
+            proteinid2uniprot = (
+                {k: v[0]["accessions"] for k, v in ec_dict["proteins"].items()}
+                if "proteins" in ec_dict
+                else {}
+            )
+
+            for reaction_key in ["reaction", "natural_reaction"]:
+                # reaction or natural_reaction may not exist
+                if reaction_key not in ec_dict:
+                    continue
+                for entry in ec_dict[reaction_key]:
+
+                    if not ("educts" in entry):
+                        continue
+                
+                    rs_smiles = [(m, self.get_smiles(m)) for m in entry["educts"] ]
+
+                    for protein in entry.get("proteins", []):
+                        for uniprotid in proteinid2uniprot.get(protein, []):
+                            sequence = self.brenda_proteins[uniprotid]["sequence"]
+                            for reactname, react in rs_smiles:
+                                sample = {
+                                        "protein_id": uniprotid,
+                                        "sequence": sequence,
+                                        "smiles": react,
+                                        "ec": ec,
+                                        "sample_id": f"{uniprotid}_{reactname}"
+
+                                    }
+                                if self.skip_sample(sample, split_group):
+                                    continue 
+                                dataset.append(sample)
+
+        if self.args.topk_substrates_to_remove is not None:
+            substrates = Counter([d['smiles'] for d in dataset]).most_common(self.args.topk_substrates_to_remove)
+            common_substrates = [s[0] for s in substrates]
+            dataset = [d for d in dataset if d['smiles'] not in common_substrates]
+
+        return dataset 
+
+    def skip_sample(self, sample, split_group) -> bool:
+        # check if sample has mol
+        if sample["smiles"] in [None, [], "?"]:
+            return True 
+        if sample["sequence"] is None:
+            return True 
+
+        if self.args.max_reactant_size is not None:
+            try:
+                if Chem.MolFromSmiles(sample["smiles"]).GetNumAtoms() >  self.args.max_reactant_size:
+                    return True 
+            except:
+                pass 
+
+        if self.args.max_protein_length is not None:
+            if len(sample["sequence"]) > self.args.max_protein_length:
+                return True 
+
+        return False
+    
+
+    def get_split_group_dataset(
+        self, processed_dataset, split_group: Literal["train", "dev", "test"]
+    ) -> List[dict]:
+        dataset = []
+        for sample in processed_dataset:
+            if self.args.split_type == "sequence":
+                if self.to_split[sample["protein_id"]] != split_group:
+                    continue
+
+            if self.args.split_type == "ec":
+                ec = ".".join(sample["ec"].split(".")[: self.args.ec_level + 1])
+                if self.to_split[ec] != split_group:
+                    continue
+
+            dataset.append(sample)
+
+        return dataset
+
+    @property
+    def SUMMARY_STATEMENT(self) -> None:
+        proteins = [d["protein_id"] for d in self.dataset]
+        substrates = [d["smiles"] for d in self.dataset]
+        ecs = [d["ec"] for d in self.dataset]
+        statement = f""" 
+        * Number of samples: {len(self.dataset)}
+        * Number of substrates: {len(set(substrates))}
+        * Number of proteins: {len(set(proteins))}
+        * Number of ECs: {len(set(ecs))}
+        """
+        return statement
+    
+    def __getitem__(self, index):
+        sample = self.dataset[index]
+
+        try:
+            return sample
+
+        except Exception:
+            warnings.warn(f"Could not load sample: {sample['sample_id']}")

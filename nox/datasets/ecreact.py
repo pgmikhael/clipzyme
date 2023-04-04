@@ -321,8 +321,6 @@ class ECReact_RXNS(ECReact):
         Assigns each sample to a split group based on split_probs
         """
         # get all samples
-        rprint("Generating dataset in order to assign splits...")
-
         self.to_split = {}
 
         # set seed
@@ -464,7 +462,7 @@ class ECReact_RXNS(ECReact):
                 continue
 
             if ec not in self.valid_ec2uniprot:
-                self.valid_ec2uniprot[ec] = valid_uniprots
+                self.valid_ec2uniprot[ec].update(valid_uniprots)
 
             sample = {
                 "reactants": reactants,
