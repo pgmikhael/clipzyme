@@ -644,6 +644,178 @@ class DigressReactants(Digress):
         return {"chain_X": chain_X, "chain_E": chain_E, "molecules": molecule_list}
 
 
+@register_object("digress_mapped_reactions", "model")
+class DigressMappedReactants(Digress):
+    """
+    - reactants nodes are fixed
+    - reactants edges are fixed
+    - products edges are noised
+    """
+
+    def forward(self, data):
+        # load reactant / products as PyG batches
+        reactants = data["reactants"]
+
+        # reactants
+        reactant_dense_data, reactant_node_mask = diffusion_utils.to_dense(
+            reactants.x, reactants.edge_index, reactants.edge_attr, reactants.batch
+        )
+        reactant_dense_data = reactant_dense_data.mask(reactant_node_mask)
+
+        # products
+        products_dense_data, products_node_mask = diffusion_utils.to_dense(
+            reactants.x, reactants.product_edge_index, reactants.product_edge_attr, reactants.batch
+        )
+        products_dense_data = products_dense_data.mask(products_node_mask)
+        
+        # apply noise to products
+        noisy_data = self.apply_noise(
+            products_dense_data.X, products_dense_data.E, reactants.y, products_node_mask
+        )
+
+        # return only product-related data
+        product_noisy_data = copy.deepcopy(noisy_data)
+        products_extra_data = self.compute_extra_data(noisy_data)
+
+        # concatenate nodes from reactants and products
+        noisy_data["X_t"] = reactant_dense_data.X # should not be noised
+
+        # concatenate nodes from reactants and products
+        num_product_nodes = products_dense_data.E.shape[1]
+
+        # concatenate noisy product edges with reactant edges 
+        noisy_data["E_t"] = torch.concat([noisy_data["E_t"], reactant_dense_data.E], dim = -1)
+        noisy_data["node_mask"] = reactant_node_mask
+
+        # add extra features
+        extra_data = self.compute_extra_data(noisy_data)
+
+        X = torch.cat((noisy_data["X_t"], extra_data.X), dim=2).float()
+        E = torch.cat((noisy_data["E_t"], extra_data.E), dim=3).float()
+        y = torch.hstack((noisy_data["y_t"], extra_data.y)).float()
+
+        denoiser_input = {"X": X, "E": E, "y": y, "node_mask": noisy_data["node_mask"]}
+
+        pred = self.model(denoiser_input)
+            
+        output = {
+            "masked_pred_X": pred.X,            # should* be same as input (logits here)
+            "masked_pred_E": pred.E,  
+            "pred_y": pred.y,
+            "true_X": products_dense_data.X,    # should be same as input
+            "true_E": products_dense_data.E,
+            "true_y": reactants.y,
+            "noisy_data": product_noisy_data,
+            "dense_data": products_dense_data,
+            "extra_data": products_extra_data,
+            "node_mask": products_node_mask,
+        }
+
+
+        return output
+
+    @torch.no_grad()
+    def sample_batch(
+        self,
+        batch_id: int,
+        batch_size: int,
+        keep_chain: int,
+        number_chain_steps: int,
+        num_nodes=None,
+        dataset=None,
+    ):
+        """
+        :param batch_id: int
+        :param batch_size: int
+        :param num_nodes: int, <int>tensor (batch_size) (optional) for specifying number of nodes
+        :param keep_chain: int: number of chains to save to file
+        :param keep_chain_steps: number of timesteps to save for each chain
+        :return: molecule_list. Each element of this list is a tuple (atom_types, charges, positions)
+        """
+        if num_nodes is None:
+            n_nodes = self.node_dist.sample_n(batch_size, self.devicevar.device)
+        elif type(num_nodes) == int:
+            n_nodes = num_nodes * torch.ones(
+                batch_size, device=self.devicevar.device, dtype=torch.int
+            )
+        else:
+            assert isinstance(num_nodes, torch.Tensor)
+            n_nodes = num_nodes
+        n_max = torch.max(n_nodes).item()
+        # Build the masks
+        arange = (
+            torch.arange(n_max, device=self.devicevar.device)
+            .unsqueeze(0)
+            .expand(batch_size, -1)
+        )
+        node_mask = arange < n_nodes.unsqueeze(1)
+        # TODO: how to move node_mask on the right device in the multi-gpu case?
+        # TODO: everything else depends on its device
+        # Sample noise  -- z has size (n_samples, n_nodes, n_features)
+        z_T = diffusion_utils.sample_discrete_feature_noise(
+            limit_dist=self.limit_dist, node_mask=node_mask
+        )
+        X, E, y = z_T.X, z_T.E, z_T.y
+
+        assert (E == torch.transpose(E, 1, 2)).all()
+        assert number_chain_steps < self.T
+        chain_X_size = torch.Size((number_chain_steps, keep_chain, X.size(1)))
+        chain_E_size = torch.Size(
+            (number_chain_steps, keep_chain, E.size(1), E.size(2))
+        )
+
+        chain_X = torch.zeros(chain_X_size)  # chain length, batch size, max num nodes
+        chain_E = torch.zeros(
+            chain_E_size
+        )  # chain length, batch size, max num nodes x max num nodes
+
+        # Iteratively sample p(z_s | z_t) for t = 1, ..., T, with s = t - 1.
+        for s_int in reversed(range(0, self.T)):
+            s_array = s_int * torch.ones((batch_size, 1)).type_as(y)
+            t_array = s_array + 1
+            s_norm = s_array / self.T
+            t_norm = t_array / self.T
+
+            # Sample z_s
+            sampled_s, discrete_sampled_s = self.sample_p_zs_given_zt(
+                s_norm, t_norm, X, E, y, node_mask
+            )
+            X, E, y = sampled_s.X, sampled_s.E, sampled_s.y
+
+            # Save the first keep_chain graphs
+            write_index = (s_int * number_chain_steps) // self.T
+            chain_X[write_index] = discrete_sampled_s.X[:keep_chain]
+            chain_E[write_index] = discrete_sampled_s.E[:keep_chain]
+
+        # Sample
+        sampled_s = sampled_s.mask(node_mask, collapse=True)
+        X, E, y = sampled_s.X, sampled_s.E, sampled_s.y
+
+        # Prepare the chain for saving
+        if keep_chain > 0:
+            final_X_chain = X[:keep_chain]
+            final_E_chain = E[:keep_chain]
+
+            chain_X[0] = final_X_chain  # Overwrite last frame with the resulting X, E
+            chain_E[0] = final_E_chain
+
+            chain_X = diffusion_utils.reverse_tensor(chain_X)
+            chain_E = diffusion_utils.reverse_tensor(chain_E)
+
+            # Repeat last frame to see final sample better
+            chain_X = torch.cat([chain_X, chain_X[-1:].repeat(10, 1, 1)], dim=0)
+            chain_E = torch.cat([chain_E, chain_E[-1:].repeat(10, 1, 1, 1)], dim=0)
+            assert chain_X.size(0) == (number_chain_steps + 10)
+
+        molecule_list = []
+        for i in range(batch_size):
+            n = n_nodes[i]
+            atom_types = X[i, :n].cpu()
+            edge_types = E[i, :n, :n].cpu()
+            molecule_list.append([atom_types, edge_types])
+
+        return {"chain_X": chain_X, "chain_E": chain_E, "molecules": molecule_list}
+
 @register_object("digress_substrate", "model")
 class DigressSubstrate(Digress):
     def __init__(self, args):

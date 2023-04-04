@@ -1480,19 +1480,18 @@ class BrendaReaction(Brenda):
                 if substrate_to_scaffold.get(s, False):
                     y[scaffold_to_class[substrate_to_scaffold[s]]] = 1
                 else:
-                    continue
-            for ec in set(s[1] for s in substrate_list):
-                dataset.append(
-                    {
-                        "ec": ec,
-                        "x": self.brenda_proteins[uniprotid]["sequence"],
-                        "sequence": self.brenda_proteins[uniprotid]["sequence"],
-                        "uniprotid": uniprotid,
-                        "y": y,
-                        "sample_id": f"{uniprotid}_{ec}",
-                    }
-                )
-
+                    continue 
+            for ec in set(s[1] for s in substrate_list): 
+                dataset.append({
+                    "ec": ec,
+                    "x": self.brenda_proteins[uniprotid]["sequence"],
+                    "sequence": self.brenda_proteins[uniprotid]["sequence"],
+                    "uniprotid": uniprotid,
+                    "protein_id": uniprotid,
+                    "y": y,
+                    "sample_id": f"{uniprotid}_{ec}"
+                })
+        
         return dataset
 
     def skip_sample(self, sample, split_group) -> bool:

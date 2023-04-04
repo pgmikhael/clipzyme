@@ -429,8 +429,8 @@ class BaseRegression(Metric, Nox):
         self.num_classes = args.num_classes
         self.mae = torchmetrics.MeanAbsoluteError()
         self.mse = torchmetrics.MeanSquaredError()
-        self.pearson = torchmetrics.PearsonCorrcoef(num_outputs=args.num_classes)
-        self.spearman = torchmetrics.SpearmanCorrcoef(num_outputs=args.num_classes)
+        self.pearson = torchmetrics.PearsonCorrCoef(num_outputs=args.num_classes)
+        self.spearman = torchmetrics.SpearmanCorrCoef(num_outputs=args.num_classes)
         self.r2 = torchmetrics.R2Score(
             num_outputs=args.num_classes, multioutput=args.r2_multioutput
         )
@@ -444,6 +444,10 @@ class BaseRegression(Metric, Nox):
 
         probs = predictions_dict["probs"]  # B, C (float)
         golds = predictions_dict["golds"]  # B
+
+        if probs.shape[-1] == 1:
+            probs = probs.view(-1)
+            golds = golds.view(-1)
 
         self.mae.update(probs, golds)
         self.mse.update(probs, golds)

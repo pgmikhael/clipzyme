@@ -7,7 +7,7 @@ from tqdm import tqdm
 import torch
 import numpy as np
 from collections import defaultdict
-
+from nox.utils.messages import METAFILE_NOTFOUND_ERR, LOAD_FAIL_MSG
 
 @register_object("brenda_kcat", "dataset")
 class BrendaKCat(AbstractDataset):
@@ -90,7 +90,7 @@ class BrendaKCat(AbstractDataset):
             samples = set([sample[key] for sample in metadata_json])
             samples = sorted(list(samples))
             np.random.shuffle(samples)
-            split_indices = np.cumsum(np.array(split_probs) * len(samples)).astype(int)
+            split_indices = np.ceil(np.cumsum(np.array(split_probs) * len(samples))).astype(int)
             split_indices = np.concatenate([[0], split_indices])
             for i in range(len(split_indices) - 1):
                 for sample in metadata_json:
@@ -165,6 +165,9 @@ class BrendaKCat(AbstractDataset):
         else:
             raise ValueError("Split type not supported")
 
+        return metadata_json
+
+
     @staticmethod
     def add_args(parser) -> None:
         """Add class specific args
@@ -199,6 +202,33 @@ class BrendaKCat(AbstractDataset):
         """
         return statement
 
+    def __getitem__(self, index):
+        """
+        Fetch single sample from dataset
+
+        Args:
+            index (int): random index of sample from dataset
+
+        Returns:
+            sample (dict): a sample
+        """
+        sample = self.dataset[index]
+        try:
+            return {
+                "smiles": sample["mol"],
+                "mol": sample["mol"],
+                "smiles_str": sample["smiles"],
+                "sequence": sample["sequence"],
+                "y": sample["y"],
+                "sample_id": sample["sample_id"],
+                "ec": sample["ec"],
+                "organism": sample["organism"],
+                "type": sample["type"],
+            }
+        except Exception:
+            warnings.warn(
+                LOAD_FAIL_MSG.format(sample["sample_id"], traceback.print_exc())
+            )
 
 @register_object("gsm_enzyme_interaction", "dataset")
 class GSMInteraction(AbstractDataset):
