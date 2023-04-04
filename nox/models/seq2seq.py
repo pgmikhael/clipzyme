@@ -633,6 +633,9 @@ class ESMDecoder(AbstractModel):
         self.register_buffer("devicevar", torch.zeros(1, dtype=torch.int8))
 
         self.generation_config = self.make_generation_config(args)
+        self.freeze_encoder = args.freeze_encoder
+        if self.freeze_encoder:
+            self.model.encoder.eval()
 
     def make_generation_config(self, args):
         generate_args = inspect.signature(self.model.generate).parameters
@@ -716,7 +719,7 @@ class ESMDecoder(AbstractModel):
             predictions = self.generate(batch)
             return {
                 "preds": predictions,
-                "golds": batch["products"],
+                "golds": batch["smiles"],
             }
 
         encoder_input_ids = self.esm_tokenizer(
@@ -738,17 +741,23 @@ class ESMDecoder(AbstractModel):
 
         return_dict = self.config.use_return_dict
 
-        encoder_outputs = self.model.encoder(
-            input_ids=encoder_input_ids["input_ids"],
-            attention_mask=encoder_input_ids["attention_mask"],
-        )
+        if self.freeze_encoder:
+            with torch.no_grad():
+                encoder_outputs = self.model.encoder(
+                    input_ids=encoder_input_ids["input_ids"],
+                    attention_mask=encoder_input_ids["attention_mask"],
+                )
+        else:
+            encoder_outputs = self.model.encoder(
+                input_ids=encoder_input_ids["input_ids"],
+                attention_mask=encoder_input_ids["attention_mask"],
+            )
 
         encoder_hidden_states = encoder_outputs[0]
 
         # optionally project encoder_hidden_states
         if (
-            self.model.encoder.config.hidden_size
-            != self.model.decoder.config.hidden_size
+            self.model.encoder.config.hidden_size != self.model.decoder.config.hidden_size
             and self.model.decoder.config.cross_attention_hidden_size is None
         ):
             encoder_hidden_states = self.model.enc_to_dec_proj(encoder_hidden_states)
@@ -783,14 +792,6 @@ class ESMDecoder(AbstractModel):
             "loss": loss,
             "logit": metric_logits,
             "y": metric_labels,
-            # "decoder_hidden_states": decoder_outputs.hidden_states,
-            # "past_key_values": decoder_outputs.past_key_values,
-            # "decoder_hidden_states": decoder_outputs.hidden_states,
-            # "decoder_attentions": decoder_outputs.attentions,
-            # "cross_attentions": decoder_outputs.cross_attentions,
-            # "encoder_last_hidden_state": encoder_outputs.last_hidden_state,
-            # "encoder_hidden_states": encoder_outputs.hidden_states,
-            # "encoder_attentions": encoder_outputs.attentions,
         }
         return output
 
@@ -804,11 +805,18 @@ class ESMDecoder(AbstractModel):
             bos_token_id = 2,
             max_new_tokens=100
         """
-        bos_id = self.tokenizer.cls_token_id
-        eos_id = self.tokenizer.eos_token_id
-        pad_id = self.tokenizer.pad_token_id
+        bos_id = self.bert_tokenizer.cls_token_id
+        eos_id = self.bert_tokenizer.eos_token_id
+        pad_id = self.bert_tokenizer.pad_token_id
 
-        encoder_input_ids = self.tokenize(batch["reactants"], self.tokenizer, self.args)
+        encoder_input_ids = self.esm_tokenizer(
+            batch["sequence"],
+            padding="longest",
+            return_tensors="pt",
+            return_special_tokens_mask=True,
+        )
+
+        # move to device
         for k, v in encoder_input_ids.items():
             encoder_input_ids[k] = v.to(self.devicevar.device)
 
@@ -823,7 +831,7 @@ class ESMDecoder(AbstractModel):
             return_dict_in_generate=True,
             **self.generation_config,
         )
-        generated_samples = self.tokenizer.batch_decode(
+        generated_samples = self.bert_tokenizer.batch_decode(
             generated_ids.sequences, skip_special_tokens=True
         )
         generated_samples = [s.replace(" ", "") for s in generated_samples]
