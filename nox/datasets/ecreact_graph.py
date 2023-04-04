@@ -674,32 +674,48 @@ class ECReactSubstrate(ECReactGraph):
             "--sample_negatives_range",
             type=float,
             nargs=2,
-            default=[0.7, 1.0],
+            default=None,
             help="range of similarity to sample negatives from",
+        )
+        parser.add_argument(
+            "--negative_samples_cache_dir",
+            type=str,
+            default=None,
+            help="directory to save negative samples",
+        )
+        parser.add_argument(
+            "--sample_k_negatives",
+            type=int,
+            default=None,
+            help="number of negatives to sample from each ec",
         )
 
     def add_negatives(self, dataset, split_group):
-        negative_hash = hashlib.md5(
-            str(
-                [
-                    self.args.dataset_file_path,
-                    self.args.split_seed,
-                    self.args.max_reactant_size,
-                    self.args.dataset_name,
-                    self.args.assign_splits,
-                    self.args.use_residues_in_reaction,
-                    self.args.use_random_smiles_representation,
-                    self.args.max_protein_length,
-                    self.args.split_type,
-                    self.args.sample_negatives,
-                    self.args.sample_negatives_range,
-                    self.args.ec_level,
-                    self.args.precomputed_esm_features_dir,
-                ]
-            ).encode()
-        ).hexdigest()
+        args_str = str(
+            [
+                self.args.dataset_file_path,
+                self.args.split_seed,
+                self.args.max_reactant_size,
+                self.args.dataset_name,
+                self.args.assign_splits,
+                self.args.use_residues_in_reaction,
+                self.args.use_random_smiles_representation,
+                self.args.max_protein_length,
+                self.args.split_type,
+                self.args.sample_negatives,
+                self.args.sample_negatives_range,
+                self.args.ec_level,
+                self.args.negative_samples_cache_dir,
+            ]
+        )
+        # to avoid deleting cached negatives
+        if self.args.sample_k_negatives is not None:
+            args_str += str(self.args.sample_k_negatives)
+        negative_hash = hashlib.md5(args_str.encode()).hexdigest()
         path_to_negatives = os.path.join(
-            self.args.precomputed_esm_features_dir, f"negatives_to_add_{negative_hash}"
+            self.args.negative_samples_cache_dir,
+            "negative_sampling",
+            f"negatives_to_add_{negative_hash}",
         )
         # all negatives were stored only if _done.pkl exists
         if os.path.exists(
@@ -725,7 +741,7 @@ class ECReactSubstrate(ECReactGraph):
             if not os.path.exists(path_to_negatives):
                 os.makedirs(path_to_negatives)
 
-            if not split_group in ["train", "dev"]:
+            if split_group in ["train", "dev"]:
                 all_substrates = set(
                     d["reactant"] for d in dataset if d["split"] == split_group
                 )
@@ -749,7 +765,7 @@ class ECReactSubstrate(ECReactGraph):
 
                 smile_similarity = smile_fps @ smile_fps.T
                 similarity_idx = np.where(
-                    (smile_similarity < min_sim) | (smile_similarity > max_sim)
+                    (smile_similarity <= min_sim) | (smile_similarity >= max_sim)
                 )
 
             ec_to_positives = defaultdict(set)
@@ -775,7 +791,20 @@ class ECReactSubstrate(ECReactGraph):
 
             rowid = len(dataset)
             negatives_to_add = []
-            for ec, negatives in ec_to_negatives.items():
+            for ec, negatives in tqdm(
+                ec_to_negatives.items(), desc="Processing negatives"
+            ):
+                if self.args.sample_k_negatives is not None:
+                    if len(negatives) < self.args.sample_k_negatives:
+                        print(
+                            f"Not enough negatives to sample from, using all negatives for {ec}"
+                        )
+                        negatives = list(negatives)
+                    else:
+                        negatives = random.sample(
+                            negatives, self.args.sample_k_negatives
+                        )
+
                 for rid, reactant in enumerate(negatives):
                     sample = {
                         "reactant": reactant,
