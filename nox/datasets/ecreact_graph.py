@@ -181,6 +181,29 @@ class DatasetInfo:
 
 @register_object("ecreact_graph", "dataset")
 class ECReactGraph(ECReact_RXNS):
+    def init_class(self, args, split_group: str) -> None:
+        """Perform Class-Specific init methods
+           Default is to load JSON dataset
+
+        Args:
+            args (argparse.ArgumentParser)
+            split_group (str)
+        """
+        self.load_dataset(args)
+
+        self.ec2uniprot = pickle.load(
+            open(
+                "/Mounts/rbg-storage1/datasets/Enzymes/ECReact/ecreact_ec2uniprot.p",
+                "rb",
+            )
+        )
+        self.valid_ec2uniprot = {}
+        self.uniprot2sequence = pickle.load(
+            open(
+                "/Mounts/rbg-storage1/datasets/Enzymes/ECReact/ecreact_proteins.p", "rb"
+            )
+        )
+
     def post_process(self, args):
         split_group = self.split_group
 
@@ -597,6 +620,10 @@ class ECReactSubstrate(ECReactGraph):
     def skip_sample(self, sample, split_group) -> bool:
         if super().skip_sample(sample, split_group):
             return True
+
+        # underspecified EC number
+        if "-" in sample["ec"]: 
+            return True 
 
         # skip graphs of size 1
         mol_size = rdkit.Chem.MolFromSmiles(sample["smiles"]).GetNumAtoms()
