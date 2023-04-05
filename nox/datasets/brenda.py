@@ -528,6 +528,12 @@ class Brenda(AbstractDataset):
             help="maximum reactant size",
         )
         parser.add_argument(
+            "--max_product_size",
+            type=int,
+            default=None,
+            help="maximum reactant size",
+        )
+        parser.add_argument(
             "--topk_substrates_to_remove",
             type=int,
             default=None,
