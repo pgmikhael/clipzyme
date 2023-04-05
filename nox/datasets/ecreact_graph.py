@@ -538,7 +538,7 @@ class ECReactSubstrate(ECReactGraph):
         uniprot_substrates = set()
 
         if self.args.topk_substrates_to_remove is not None:
-            substrates = Counter([r for d in dataset for r in d[reaction_side_key]]).most_common(self.args.topk_substrates_to_remove)
+            substrates = Counter([r for d in self.metadata_json for r in d[reaction_side_key]]).most_common(self.args.topk_substrates_to_remove)
             self.common_substrates = [s[0] for s in substrates]
 
         for rowid, reaction in tqdm(
