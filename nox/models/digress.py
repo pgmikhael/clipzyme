@@ -14,7 +14,7 @@ from nox.utils.classes import set_nox_type
 from rich import print
 import copy
 import numpy as np
-
+from torch_geometric.data import Batch
 
 @register_object("digress", "model")
 class Digress(AbstractModel):
@@ -732,16 +732,12 @@ class DigressMappedReactants(Digress):
         :param keep_chain_steps: number of timesteps to save for each chain
         :return: molecule_list. Each element of this list is a tuple (atom_types, charges, positions)
         """
-        if num_nodes is None:
-            n_nodes = self.node_dist.sample_n(batch_size, self.devicevar.device)
-        elif type(num_nodes) == int:
-            n_nodes = num_nodes * torch.ones(
-                batch_size, device=self.devicevar.device, dtype=torch.int
-            )
-        else:
-            assert isinstance(num_nodes, torch.Tensor)
-            n_nodes = num_nodes
-        n_max = torch.max(n_nodes).item()
+        rand_batch = np.random.choice(range(len(dataset)), batch_size)
+        reactions = [dataset[i]['reactants'].to(self.devicevar.device) for i in rand_batch]
+        
+        n_nodes = torch.tensor([r.x.shape[0] for r in reactions]).to(self.devicevar.device)
+        n_max = max(n_nodes).item()
+
         # Build the masks
         arange = (
             torch.arange(n_max, device=self.devicevar.device)
@@ -749,13 +745,21 @@ class DigressMappedReactants(Digress):
             .expand(batch_size, -1)
         )
         node_mask = arange < n_nodes.unsqueeze(1)
-        # TODO: how to move node_mask on the right device in the multi-gpu case?
-        # TODO: everything else depends on its device
         # Sample noise  -- z has size (n_samples, n_nodes, n_features)
         z_T = diffusion_utils.sample_discrete_feature_noise(
             limit_dist=self.limit_dist, node_mask=node_mask
         )
         X, E, y = z_T.X, z_T.E, z_T.y
+
+        # overwrite with reactants
+        reactants = Batch.from_data_list(reactions, None, None)
+        reactant_dense_data, reactant_node_mask = diffusion_utils.to_dense(
+            reactants.x, reactants.edge_index, reactants.edge_attr, reactants.batch
+        )
+        reactant_dense_data = reactant_dense_data.mask(reactant_node_mask)
+        
+        X = reactant_dense_data.X
+        E_rxn = torch.concat([E, reactant_dense_data.E], dim = -1)
 
         assert (E == torch.transpose(E, 1, 2)).all()
         assert number_chain_steps < self.T
@@ -778,10 +782,10 @@ class DigressMappedReactants(Digress):
 
             # Sample z_s
             sampled_s, discrete_sampled_s = self.sample_p_zs_given_zt(
-                s_norm, t_norm, X, E, y, node_mask
+                s_norm, t_norm, X, E, E_rxn, y, node_mask
             )
             X, E, y = sampled_s.X, sampled_s.E, sampled_s.y
-
+            
             # Save the first keep_chain graphs
             write_index = (s_int * number_chain_steps) // self.T
             chain_X[write_index] = discrete_sampled_s.X[:keep_chain]
@@ -815,6 +819,99 @@ class DigressMappedReactants(Digress):
             molecule_list.append([atom_types, edge_types])
 
         return {"chain_X": chain_X, "chain_E": chain_E, "molecules": molecule_list}
+
+    def sample_p_zs_given_zt(self, s, t, X_t, E_t, E_rxn, y_t, node_mask):
+        """Samples from zs ~ p(zs | zt). Only used during sampling.
+        if last_step, return the graph prediction as well"""
+        bs, n, dxs = X_t.shape
+        beta_t = self.noise_schedule(
+            t_normalized=t
+        )  # (bs, 1) the noise level associated with the timestep
+        alpha_s_bar = self.noise_schedule.get_alpha_bar(t_normalized=s)
+        alpha_t_bar = self.noise_schedule.get_alpha_bar(t_normalized=t)
+
+        # Retrieve transitions matrix
+        Qtb = self.transition_model.get_Qt_bar(alpha_t_bar, self.devicevar.device)
+        Qsb = self.transition_model.get_Qt_bar(alpha_s_bar, self.devicevar.device)
+        Qt = self.transition_model.get_Qt(beta_t, self.devicevar.device)
+
+        # Neural net predictions
+        noisy_data = {
+            "X_t": X_t,
+            "E_t": E_rxn,
+            "y_t": y_t,
+            "t": t,
+            "node_mask": node_mask,
+        }
+        extra_data = self.compute_extra_data(noisy_data)
+
+        denoiser_input = {
+            "X": torch.cat((noisy_data["X_t"], extra_data.X), dim=2).float(),
+            "E": torch.cat((noisy_data["E_t"], extra_data.E), dim=3).float(),
+            "y": torch.hstack((noisy_data["y_t"], extra_data.y)).float(),
+            "node_mask": node_mask,
+        }
+
+        pred = self.model(denoiser_input)
+
+        # Normalize predictions to get p(x) and p(e) (prior in EQN 6)
+        pred_X = F.softmax(pred.X, dim=-1)  # bs, n, d0
+        pred_E = F.softmax(pred.E, dim=-1)  # bs, n, n, d0
+
+        # Compute posterior q(s | t, x) EQN 1
+        p_s_and_t_given_0_X = (
+            diffusion_utils.compute_batched_over0_posterior_distribution(
+                X_t=X_t, Qt=Qt.X, Qsb=Qsb.X, Qtb=Qtb.X
+            )
+        )
+
+        p_s_and_t_given_0_E = (
+            diffusion_utils.compute_batched_over0_posterior_distribution(
+                X_t=E_t, Qt=Qt.E, Qsb=Qsb.E, Qtb=Qtb.E
+            )
+        )
+
+        # Compute EQN 6
+        # Dim of these two tensors: bs, N, d0, d_t-1
+        weighted_X = pred_X.unsqueeze(-1) * p_s_and_t_given_0_X  # bs, n, d0, d_t-1
+        unnormalized_prob_X = weighted_X.sum(dim=2)  # bs, n, d_t-1
+        unnormalized_prob_X[torch.sum(unnormalized_prob_X, dim=-1) == 0] = 1e-5
+        prob_X = unnormalized_prob_X / torch.sum(
+            unnormalized_prob_X, dim=-1, keepdim=True
+        )  # bs, n, d_t-1
+
+        pred_E = pred_E.reshape((bs, -1, pred_E.shape[-1]))
+        weighted_E = pred_E.unsqueeze(-1) * p_s_and_t_given_0_E  # bs, N, d0, d_t-1
+        unnormalized_prob_E = weighted_E.sum(dim=-2)
+        unnormalized_prob_E[torch.sum(unnormalized_prob_E, dim=-1) == 0] = 1e-5
+        prob_E = unnormalized_prob_E / torch.sum(
+            unnormalized_prob_E, dim=-1, keepdim=True
+        )
+        prob_E = prob_E.reshape(bs, n, n, pred_E.shape[-1])
+
+        assert ((prob_X.sum(dim=-1) - 1).abs() < 1e-4).all()
+        assert ((prob_E.sum(dim=-1) - 1).abs() < 1e-4).all()
+
+        sampled_s = diffusion_utils.sample_discrete_features(
+            prob_X, prob_E, node_mask=node_mask
+        )
+
+        X_s = F.one_hot(sampled_s.X, num_classes=self.Xdim_output).float()
+        E_s = F.one_hot(sampled_s.E, num_classes=self.Edim_output).float()
+
+        assert (E_s == torch.transpose(E_s, 1, 2)).all()
+        assert (X_t.shape == X_s.shape) and (E_t.shape == E_s.shape)
+
+        out_one_hot = diffusion_utils.PlaceHolder(
+            X=X_s, E=E_s, y=torch.zeros(y_t.shape[0], 0)
+        )
+        out_discrete = diffusion_utils.PlaceHolder(
+            X=X_s, E=E_s, y=torch.zeros(y_t.shape[0], 0)
+        )
+
+        return out_one_hot.mask(node_mask).type_as(y_t), out_discrete.mask(
+            node_mask, collapse=True
+        ).type_as(y_t)
 
 @register_object("digress_substrate", "model")
 class DigressSubstrate(Digress):
