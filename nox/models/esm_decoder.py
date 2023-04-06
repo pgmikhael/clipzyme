@@ -348,8 +348,9 @@ class ESMGraphDecoder(AbstractModel):
                 "golds": batch["products"],
             }
 
+        sequences = [seq[:1024] for seq in batch["sequence"]]
         encoder_input_ids = self.esm_tokenizer(
-            batch["sequence"],
+            sequences,
             padding="longest",
             return_tensors="pt",
             return_special_tokens_mask=True,
