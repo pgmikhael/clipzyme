@@ -737,6 +737,8 @@ class ECReactSubstrate(ECReactGraph):
             default="reactant",
             choices=["reactant", "product"],
             help="choice of reactant or product to use as target",
+        )
+        parser.add_argument(
             "--negative_samples_cache_dir",
             type=str,
             default=None,
