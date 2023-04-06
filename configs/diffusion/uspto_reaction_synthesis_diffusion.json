@@ -35,7 +35,7 @@
     "callback_names": ["lr_monitor"],
     "metric_names": ["molecule_classification_metrics"], 
     "checkpoint_save_last": [false],
-    "monitor": ["val_top_1"],
+    "monitor": ["val_top1_smile_accuracy"],
     "num_workers": [24],
     "optimizer_name": ["adam"],
     "patience": [5],
