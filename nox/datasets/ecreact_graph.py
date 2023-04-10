@@ -203,6 +203,7 @@ class ECReactGraph(ECReact_RXNS):
                 "/Mounts/rbg-storage1/datasets/Enzymes/ECReact/ecreact_proteins.p", "rb"
             )
         )
+        self.uniprot2cluster =  pickle.load(open('/Mounts/rbg-storage1/datasets/Enzymes/ECReact/ecreact_mmseq_clusters.p', 'rb'))
 
     def post_process(self, args):
         split_group = self.split_group
@@ -239,11 +240,15 @@ class ECReactGraph(ECReact_RXNS):
         parse_ec = lambda ec: ".".join(ec.split(".")[: self.args.ec_level + 1])
         dataset = []
         if self.args.assign_splits:
-            if self.args.split_type in ["sequence", "ec", "product"]:
+            if self.args.split_type in ["mmseqs", "sequence", "ec", "product"]:
                 for sample in processed_dataset:
                     if self.args.split_type == "sequence":
                         if self.to_split[sample["protein_id"]] != split_group:
                             continue
+                    elif self.args.split_type == "mmseqs":
+                        cluster = self.uniprot2cluster[sample["protein_id"]]
+                        if self.to_split[cluster] != split_group:
+                            continue 
                     elif self.args.split_type == "ec":
                         ec = parse_ec(sample["ec"])
                         if self.to_split[ec] != split_group:
@@ -255,11 +260,6 @@ class ECReactGraph(ECReact_RXNS):
 
             elif self.args.split_type == "random":
                 for sample in processed_dataset:
-                    # reaction_string = (
-                    #     ".".join(sample["reactants"])
-                    #     + ">>"
-                    #     + ".".join(sample["products"])
-                    # )
                     reaction_string = sample["reaction_string"]
                     if self.to_split[reaction_string] != split_group:
                         continue
@@ -604,6 +604,7 @@ class ECReactSubstrate(ECReactGraph):
                             "split": reaction["split"],
                             "y": 1,
                             "uniprot_id": valid_uni,
+                            "protein_id": valid_uni,
                         })
                 else:
                     dataset.append({

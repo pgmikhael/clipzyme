@@ -45,6 +45,7 @@ class ECReact(BrendaReaction):
                 "/Mounts/rbg-storage1/datasets/Enzymes/ECReact/ecreact_proteins.p", "rb"
             )
         )
+        self.uniprot2cluster =  pickle.load(open('/Mounts/rbg-storage1/datasets/Enzymes/ECReact/ecreact_mmseq_clusters.p', 'rb'))
 
     def create_dataset(
         self, split_group: Literal["train", "dev", "test"]
@@ -119,6 +120,11 @@ class ECReact(BrendaReaction):
                 if self.args.split_type == "sequence":
                     if self.to_split[sample["protein_id"]] != split_group:
                         continue
+
+                if self.args.split_type == "mmseqs":
+                    cluster = self.uniprot2cluster[sample["protein_id"]]
+                    if self.to_split[cluster] != split_group:
+                        continue 
 
                 if self.args.split_type == "ec":
                     ec = ".".join(sample["ec"].split(".")[: self.args.ec_level + 1])
@@ -314,6 +320,7 @@ class ECReact_RXNS(ECReact):
                 "/Mounts/rbg-storage1/datasets/Enzymes/ECReact/ecreact_proteins.p", "rb"
             )
         )
+        self.uniprot2cluster =  pickle.load(open('/Mounts/rbg-storage1/datasets/Enzymes/ECReact/ecreact_mmseq_clusters.p', 'rb'))
         self.mcsa_data = self.load_mcsa_data(self.args)
 
     def assign_splits(self, metadata_json, split_probs, seed=0) -> None:
@@ -327,7 +334,10 @@ class ECReact_RXNS(ECReact):
         np.random.seed(seed)
 
         # assign groups
-        if self.args.split_type in ["sequence", "ec", "product"]:
+        if self.args.split_type in ["mmseqs", "sequence", "ec", "product"]:
+            
+            if self.args.split_type == "mmseqs":
+                samples = list(self.uniprot2cluster.values())
 
             if self.args.split_type == "sequence":
                 # split based on uniprot_id
@@ -519,6 +529,12 @@ class ECReact_RXNS(ECReact):
                 split_ec = ".".join(ec.split(".")[: self.args.ec_level + 1])
                 if self.to_split[split_ec] != split_group:
                     continue
+
+            elif self.args.split_type == "mmseqs":
+                cluster = self.uniprot2cluster[sample["protein_id"]]
+                if self.to_split[cluster] != split_group:
+                    continue 
+                    
 
             elif self.args.split_type in ["product", "recoverable_mapping_product"]:
                 products = sample["products"]
