@@ -32,6 +32,7 @@ import nox.datasets.ecreact
 import nox.datasets.ecreact_graph
 import nox.datasets.qm9
 import nox.datasets.chembl
+import nox.datasets.iocb_synthases
 
 # augmentation
 import nox.augmentations.rawinput
@@ -48,6 +49,7 @@ import nox.lightning.diffusion
 
 # optimizers
 import nox.learning.optimizers.basic
+import nox.learning.optimizers.lamb
 
 # scheduler
 import nox.learning.schedulers.basic
