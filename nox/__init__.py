@@ -88,7 +88,6 @@ import nox.models.seq2seq
 import nox.models.contrastive
 import nox.models.graph_denoisers
 import nox.models.digress
-import nox.models.clip
 import nox.models.esm_decoder
 import nox.models.protmol
 import nox.models.noncanonnet
