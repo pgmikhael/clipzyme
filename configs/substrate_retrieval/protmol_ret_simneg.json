@@ -8,7 +8,7 @@
     "precomputed_esm_features_dir":["/Mounts/rbg-storage1/datasets/Enzymes/ECReact/esm2_t12_35M_UR50D/"],
     "extra_features_type": ["all"],
     "assign_splits": [true],
-    "split_type": ["ec"],
+    "split_type": ["mmseqs"],
     "ec_level": [0],
     "use_residues_in_reaction":[false],
     "randomize_order_in_reaction": [false],
@@ -33,7 +33,7 @@
     "test": [true],
     "num_sanity_val_steps": [0],
     "val_check_interval": [1.0],
-    "gpus": [2],
+    "gpus": [8],
     "ignore_warnings": [false],
     "dropout": [0],
     "checkpoint_dir": ["/Mounts/rbg-storage1/snapshots/metabolomics/"],
@@ -59,5 +59,5 @@
     "class_bal_key": ["y"],
     "negative_samples_cache_dir": ["/Mounts/rbg-storage1/datasets/Enzymes/ECReact_negatives/"]
   },
-  "available_gpus": ["0,1"]
+  "available_gpus": ["0,1,2,3,4,5,6,7"]
 }
