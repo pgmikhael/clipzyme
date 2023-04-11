@@ -841,6 +841,11 @@ class ESMDecoder(AbstractModel):
             "logit": metric_logits,
             "y": metric_labels,
         }
+
+        preds =  torch.argmax( metric_logits, dim =-1 ) * decoder_input_ids["attention_mask"][:,1:]
+        decoded_preds = self.bert_tokenizer.batch_decode(preds, skip_special_tokens=True)
+        decoded_preds = [s.replace(" ", "") for s in decoded_preds]
+        output["pred_smiles"] = decoded_preds
         return output
 
     def generate(self, batch):
