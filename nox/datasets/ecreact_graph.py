@@ -540,6 +540,7 @@ class ECReactSubstrate(ECReactGraph):
 
         dataset = []
         uniprot_substrates = set()
+        self.uniprot2substrates = defaultdict(set)
 
         if self.args.topk_substrates_to_remove is not None:
             substrates = Counter(
@@ -588,6 +589,7 @@ class ECReactSubstrate(ECReactGraph):
                             continue
                         else:
                             uniprot_substrates.add(f"{valid_uni}_{smiles}")
+                            self.uniprot2substrates[valid_uni].add(smiles)
 
                         sample_to_check = {
                             "smiles": smiles,
@@ -1024,6 +1026,7 @@ class ECReactSubstratePlainGraph(ECReactSubstrate):
             reactant.y = sample["y"]
             reactant.ec = sample["ec"]
             reactant.all_reactants = sample["reaction_string"].split(">>")[0].split(".")
+            reactant.all_smiles =  self.uniprot2substrates[uniprot_id]
 
             return reactant
 

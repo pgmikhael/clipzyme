@@ -382,8 +382,14 @@ class ReactionEncoder(AbstractModel):
 class EnzymaticReactionEncoder(ReactionEncoder):
     def __init__(self, args):
         super().__init__(args)
+        self.freeze_encoder = args.freeze_encoder
         if args.enzyme_model is not None:
             self.protein_model = get_object(args.enzyme_model, "model")(args)
+        elif args.esm_model_version is not None:
+            self.esm_tokenizer = AutoTokenizer.from_pretrained(args.esm_model_version)
+            self.protein_model = EsmModel.from_pretrained(args.esm_model_version)
+            if self.freeze_encoder:
+                self.protein_model.eval()
         else:
             assert args.precomputed_esm_features_dir is not None
 
@@ -392,13 +398,49 @@ class EnzymaticReactionEncoder(ReactionEncoder):
         if args.hidden_size != args.protein_feature_dim:
             self.protein_fc = nn.Linear(args.protein_feature_dim, args.hidden_size)
 
+    def encode_sequence(self, batch):
+        if self.args.enzyme_model is not None:
+            if self.freeze_encoder:
+                with torch.no_grad():
+                    protein_output = self.protein_model(batch)
+                    protein_attention = torch.ne(
+                        protein_output["tokens"], self.protein_model.alphabet.padding_idx
+                    ).long()
+            else:
+                protein_output = self.protein_model(batch)
+                protein_attention = torch.ne(
+                    protein_output["tokens"], self.protein_model.alphabet.padding_idx
+                ).long()
+            return protein_output, protein_attention
+
+        elif self.args.esm_model_version is not None:
+            encoder_input_ids = self.esm_tokenizer(
+                batch["sequence"],
+                padding="longest",
+                return_tensors="pt",
+                return_special_tokens_mask=True,
+            )
+            for k, v in encoder_input_ids.items():
+                encoder_input_ids[k] = v.to(self.devicevar.device)
+
+            if self.freeze_encoder:
+                with torch.no_grad():
+                    encoder_outputs = self.protein_model(
+                        input_ids=encoder_input_ids["input_ids"],
+                        attention_mask=encoder_input_ids["attention_mask"],
+                    )
+            else:
+                encoder_outputs = self.protein_model(
+                    input_ids=encoder_input_ids["input_ids"],
+                    attention_mask=encoder_input_ids["attention_mask"],
+                )
+            encoder_hidden_states = encoder_outputs
+            return encoder_hidden_states, encoder_input_ids["attention_mask"]
+
     def encode_reactants_and_enzyme(self, batch, encoder_input_ids):
         # pass sequences through protein model or use precomputed hiddens
         if hasattr(self, "protein_model"):
-            protein_output = self.protein_model(batch)
-            protein_attention = torch.ne(
-                protein_output["tokens"], self.protein_model.alphabet.padding_idx
-            ).long()
+            protein_output, protein_attention = self.encode_sequence(batch) 
         else:
             protein_output = batch
             protein_attention = torch.zeros(
@@ -416,7 +458,7 @@ class EnzymaticReactionEncoder(ReactionEncoder):
             protein_embeds = self.protein_fc(protein_embeds)
 
         # combine protein - reactants attention mask
-        if self.protein_representation_key == "token_hiddens":
+        if self.protein_representation_key in ["token_hiddens", "last_hidden_state"]:
             protein_reactants_attention_mask = torch.cat(
                 [protein_attention, encoder_input_ids["attention_mask"]], dim=-1
             )
@@ -586,6 +628,12 @@ class EnzymaticReactionEncoder(ReactionEncoder):
     def add_args(parser) -> None:
         super(EnzymaticReactionEncoder, EnzymaticReactionEncoder).add_args(parser)
         parser.add_argument(
+            "--esm_model_version",
+            type=str,
+            default=None,
+            help="which version of ESM to use",
+        )
+        parser.add_argument(
             "--enzyme_model",
             action=set_nox_type("model"),
             default=None,
@@ -601,7 +649,7 @@ class EnzymaticReactionEncoder(ReactionEncoder):
             "--protein_representation_key",
             type=str,
             default="hidden",
-            choices=["hidden", "token_hiddens"],
+            choices=["hidden", "token_hiddens", "last_hidden_state"],
             help="which protein encoder output to uses",
         )
         parser.add_argument(
@@ -793,6 +841,11 @@ class ESMDecoder(AbstractModel):
             "logit": metric_logits,
             "y": metric_labels,
         }
+
+        preds =  torch.argmax( metric_logits, dim =-1 ) * decoder_input_ids["attention_mask"][:,1:]
+        decoded_preds = self.bert_tokenizer.batch_decode(preds, skip_special_tokens=True)
+        decoded_preds = [s.replace(" ", "") for s in decoded_preds]
+        output["pred_smiles"] = decoded_preds
         return output
 
     def generate(self, batch):
@@ -984,4 +1037,50 @@ class ESMDecoder(AbstractModel):
             action="store_true",
             default=False,
             help=" Whether to renormalize the logits after applying all the logits processors or warpers (including the custom ones). It's highly recommended to set this flag to `True` as the search algorithms suppose the score logits are normalized but some logit processors or warpers break the normalization.",
+        )
+
+from transformers import RobertaModel
+@register_object("esm_pretrained_decoder", "model")
+class ESMPretrainedDecoder(ESMDecoder):
+    def __init__(self, args):
+        super().__init__(args)
+
+        # make esm tokenizer + molecule tokenzier
+        self.esm_tokenizer = AutoTokenizer.from_pretrained(args.esm_model_version)
+        esm_encoder_model = EsmModel.from_pretrained(args.esm_model_version)
+        
+        # chem decoder 
+        self.bert_tokenizer  = AutoTokenizer.from_pretrained(args.decoder_model)
+        bert_decoder_model = AutoModelForCausalLM.from_pretrained(args.decoder_model, is_decoder=True,add_cross_attention=True)
+        
+        # state_dict = bert_decoder_model.state_dict()
+        # chem_decoder_state_dict = {k.replace("roberta.", "") if k.startswith('roberta') else k: v for k,v in state_dict.items() }
+        # chem_decoder_config = bert_decoder_model.config
+        # config.is_decoder = True
+        # config.add_cross_attention = True
+        # rebuild as decoder
+        # bert_decoder_model = RobertaModel(config)
+        # attach weights for keys that match 
+        # bert_decoder_model.load_state_dict(chem_decoder_state_dict, strict=False)
+        
+        self.model = EncoderDecoderModel.from_encoder_decoder_pretrained(
+            encoder_model=esm_encoder_model, decoder_model=bert_decoder_model
+        )
+        self.config = self.model.config
+        self.args = args
+        self.register_buffer("devicevar", torch.zeros(1, dtype=torch.int8))
+
+        self.generation_config = self.make_generation_config(args)
+        self.freeze_encoder = args.freeze_encoder
+        if self.freeze_encoder:
+            self.model.encoder.eval()
+    
+    @staticmethod
+    def add_args(parser) -> None:
+        super(ESMPretrainedDecoder,ESMPretrainedDecoder).add_args(parser)
+        parser.add_argument(
+            "--decoder_model",
+            type=str,
+            default="DeepChem/ChemBERTa-77M-MLM",
+            help="which decoder to use",
         )

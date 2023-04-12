@@ -321,7 +321,7 @@ class ECReact_RXNS(ECReact):
             )
         )
         self.uniprot2cluster =  pickle.load(open('/Mounts/rbg-storage1/datasets/Enzymes/ECReact/ecreact_mmseq_clusters.p', 'rb'))
-        self.mcsa_data = self.load_mcsa_data(self.args)
+        # self.mcsa_data = self.load_mcsa_data(self.args)
 
     def assign_splits(self, metadata_json, split_probs, seed=0) -> None:
         """
@@ -472,7 +472,7 @@ class ECReact_RXNS(ECReact):
                 continue
 
             if ec not in self.valid_ec2uniprot:
-                self.valid_ec2uniprot[ec].update(valid_uniprots)
+                self.valid_ec2uniprot[ec] = valid_uniprots
 
             sample = {
                 "reactants": reactants,
@@ -677,6 +677,123 @@ class ECReact_RXNS(ECReact):
         """
         return statement
 
+
+@register_object("ecreact_reactions_full", "dataset")
+class ECReactRxnsFull(ECReact_RXNS):
+   
+    def create_dataset(
+        self, split_group: Literal["train", "dev", "test"]
+    ) -> List[dict]:
+
+        dataset = []
+
+        for rowid, reaction in tqdm(
+            enumerate(self.metadata_json),
+            desc="Building dataset",
+            total=len(self.metadata_json),
+            ncols=100,
+        ):
+
+            ec = reaction["ec"]
+            reactants = reaction["reactants"]
+            products = reaction["products"]
+            reaction_string = ".".join(reactants) + ">>" + ".".join(products)
+
+            valid_uniprots = []
+            for uniprot in self.ec2uniprot.get(ec, []):
+                temp_sample = {
+                    "reactants": reactants,
+                    "products": products,
+                    "ec": ec,
+                    "reaction_string": reaction_string,
+                    "protein_id": uniprot,
+                    "sequence": self.uniprot2sequence[uniprot],
+                    "split": reaction["split"],
+                    "mapped_reaction": reaction.get("mapped_reaction", None),
+                }
+                if self.skip_sample(temp_sample, split_group):
+                    continue
+
+                valid_uniprots.append(uniprot)
+
+            if len(valid_uniprots) == 0:
+                continue
+
+            for uniprot in valid_uniprots:
+
+                sample = {
+                    "reactants": reactants,
+                    "products": products,
+                    "ec": ec,
+                    "split": reaction["split"],
+                    "reaction_string": reaction_string,
+                    "rowid": f"{uniprot}_{rowid}",
+                    "uniprot_id": uniprot,
+                }
+                # add reaction sample to dataset
+                dataset.append(sample)
+
+        return dataset
+
+    def __getitem__(self, index):
+        sample = self.dataset[index]
+
+        try:
+            reactants, products = copy.deepcopy(sample["reactants"]), copy.deepcopy(
+                sample["products"]
+            )
+
+            ec = sample["ec"]
+            uniprot_id = sample['uniprot_id']
+            sequence = self.uniprot2sequence[uniprot_id]
+
+            reaction = "{}>>{}".format(".".join(reactants), ".".join(products))
+            # randomize order of reactants and products
+            if self.args.randomize_order_in_reaction:
+                np.random.shuffle(reactants)
+                np.random.shuffle(products)
+                reaction = "{}>>{}".format(".".join(reactants), ".".join(products))
+
+            if self.args.use_random_smiles_representation:
+                try:
+                    reactants = [randomize_smiles_rotated(s) for s in reactants]
+                    products = [randomize_smiles_rotated(s) for s in products]
+                    reaction = "{}>>{}".format(".".join(reactants), ".".join(products))
+                except:
+                    pass
+
+            # sample_id = hashlib.md5(f"{uniprot_id}_{sample['reaction_string']}".encode()).hexdigest()
+            sample_id = sample["rowid"]
+            item = {
+                "reaction": reaction,
+                "reactants": ".".join(reactants),
+                "products": ".".join(products),
+                "sequence": sequence,
+                "ec": ec,
+                "organism": sample.get("organism", "none"),
+                "protein_id": uniprot_id,
+                "sample_id": sample_id,
+            }
+
+            return item
+
+        except Exception:
+            warnings.warn(f"Could not load sample: {sample['sample_id']}")
+
+    @property
+    def SUMMARY_STATEMENT(self) -> None:
+        reactions = [
+            "{}>>{}".format(".".join(d["reactants"]), ".".join(d["products"]))
+            for d in self.dataset
+        ]
+        proteins = [d["uniprot_id"] for d in self.dataset]
+        ecs = [d["ec"] for d in self.dataset]
+        statement = f""" 
+        * Number of reactions: {len(set(reactions))}
+        * Number of proteins: {len(set(proteins))}
+        * Number of ECs: {len(set(ecs))}
+        """
+        return statement
 
 @register_object("ecreact_multiproduct_reactions", "dataset")
 class ECReact_MultiProduct_RXNS(ECReact_RXNS):
