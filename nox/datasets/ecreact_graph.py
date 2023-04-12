@@ -582,19 +582,6 @@ class ECReactSubstrate(ECReactGraph):
                 self.valid_ec2uniprot[ec] = valid_uniprots
 
             for rid, smiles in enumerate(target_molecules):
-                sample_to_check = {
-                    "smiles": smiles,
-                    "reactants": reactants,
-                    "products": products,
-                    "ec": ec,
-                    "reaction_string": reaction_string,
-                    "protein_id": uniprot,
-                    "sequence": self.uniprot2sequence[uniprot],
-                    "split": reaction.get("split", None),
-                }
-                if self.skip_sample(sample_to_check, split_group):
-                    continue
-
                 if self.args.use_all_proteins:
                     for valid_uni in valid_uniprots:
                         if f"{valid_uni}_{smiles}" in uniprot_substrates:
@@ -602,18 +589,20 @@ class ECReactSubstrate(ECReactGraph):
                         else:
                             uniprot_substrates.add(f"{valid_uni}_{smiles}")
 
-                        dataset.append(
-                            {
-                                "smiles": smiles,
-                                "ec": ec,
-                                "reaction_string": reaction_string,
-                                "rowid": f"{rid}{rowid}",
-                                "split": reaction["split"],
-                                "y": 1,
-                                "uniprot_id": valid_uni,
-                                "protein_id": valid_uni,
-                            }
-                        )
+                        sample_to_check = {
+                            "smiles": smiles,
+                            "ec": ec,
+                            "reaction_string": reaction_string,
+                            "rowid": f"{rid}{rowid}",
+                            "split": reaction["split"],
+                            "y": 1,
+                            "sequence": self.uniprot2sequence[valid_uni],
+                            "uniprot_id": valid_uni,
+                            "protein_id": valid_uni,
+                        }
+                        if self.skip_sample(sample_to_check, split_group):
+                            continue
+                        dataset.append(sample_to_check)
                 else:
                     dataset.append(
                         {
@@ -669,9 +658,24 @@ class ECReactSubstrate(ECReactGraph):
                 uniprot_id = sample["uniprot_id"]
                 sequence = self.uniprot2sequence[uniprot_id]
             else:
-                valid_uniprots = self.valid_ec2uniprot[ec]
-                uniprot_id = random.sample(valid_uniprots, 1)[0]
-                sequence = self.uniprot2sequence[uniprot_id]
+                # in the case where we are not using all proteins, we need to sample a valid sequence
+                # so we check if the sequence is valid, if not we sample a new one
+                # if we cant find a new one then we skip this sample in batch
+                valid_seq = True
+                maxiters = 20
+                iters = 0
+                while valid_seq:
+                    if iters > maxiters:
+                        print("Could not find a valid sequence for this EC number")
+                        return None  # will just skip this sample in the batch
+                    valid_uniprots = self.valid_ec2uniprot[ec]
+                    uniprot_id = random.sample(valid_uniprots, 1)[0]
+                    sequence = self.uniprot2sequence[uniprot_id]
+                    sample_to_check = sample
+                    sample_to_check["sequence"] = sequence
+                    sample_to_check["protein_id"] = uniprot_id
+                    valid_seq = self.skip_sample(sample_to_check, self.split_group)
+                    iters += 1
 
             # first feature is atomic number
             mol.x = F.one_hot(mol.x[:, 0], len(x_map["atomic_num"])).to(torch.float)
@@ -761,6 +765,7 @@ class ECReactSubstrate(ECReactGraph):
         )
 
     def add_negatives(self, dataset, split_group):
+        # caching
         args_str = str(
             [
                 self.args.dataset_file_path,
@@ -781,6 +786,10 @@ class ECReactSubstrate(ECReactGraph):
         # to avoid deleting cached negatives
         if self.args.sample_k_negatives is not None:
             args_str += str(self.args.sample_k_negatives)
+        if self.args.topk_substrates_to_remove is not None:
+            args_str += str(self.args.topk_substrates_to_remove)
+        if self.args.use_all_proteins is not None:
+            args_str += str(self.args.use_all_proteins)
         negative_hash = hashlib.md5(args_str.encode()).hexdigest()
         path_to_negatives = os.path.join(
             self.args.negative_samples_cache_dir,
@@ -864,6 +873,7 @@ class ECReactSubstrate(ECReactGraph):
             for ec, negatives in tqdm(
                 ec_to_negatives.items(), desc="Processing negatives"
             ):
+                # for each EC include only k negatives
                 if self.args.sample_k_negatives is not None:
                     if len(negatives) < self.args.sample_k_negatives:
                         print(
@@ -875,18 +885,54 @@ class ECReactSubstrate(ECReactGraph):
                             negatives, self.args.sample_k_negatives
                         )
 
-                for rid, reactant in enumerate(negatives):
-                    sample = {
-                        "smiles": reactant,
+                # get all the valid uniprots for each EC if use_all_proteins is True
+                valid_uniprots = []
+                for uniprot in self.ec2uniprot.get(ec, []):
+                    # this is all to check that the sequence is valid
+                    temp_sample = {
                         "ec": ec,
-                        "reaction_string": "",
-                        "rowid": f"{rid}{rowid}",
-                        "split": split_group,
-                        "y": 0,
+                        "protein_id": uniprot,
+                        "sequence": self.uniprot2sequence[uniprot],
                     }
-                    rowid += 1
-                    negatives_to_add.append(sample)
-                    # dataset.append(sample)
+                    if super().skip_sample(temp_sample, split_group):
+                        continue
+
+                    valid_uniprots.append(uniprot)
+
+                if len(valid_uniprots) == 0:
+                    continue
+
+                # TODO: generalize to either reaction side, not just reactants (substrates)
+                for rid, reactant in enumerate(negatives):
+                    if self.args.use_all_proteins:
+                        for valid_uni in valid_uniprots:
+                            sample = {
+                                "smiles": reactant,
+                                "ec": ec,
+                                "uniprot_id": valid_uni,
+                                "protein_id": valid_uni,
+                                "sequence": self.uniprot2sequence[valid_uni],
+                                "reaction_string": "",
+                                "rowid": f"{rid}{rowid}",
+                                "split": split_group,
+                                "y": 0,
+                            }
+                            if super().skip_sample(sample, split_group):
+                                continue
+                            rowid += 1
+                            negatives_to_add.append(sample)
+                    else:
+                        sample = {
+                            "smiles": reactant,
+                            "ec": ec,
+                            "reaction_string": "",
+                            "rowid": f"{rid}{rowid}",
+                            "split": split_group,
+                            "y": 0,
+                        }
+                        rowid += 1
+                        negatives_to_add.append(sample)
+
                     sample_hash = hashlib.md5(str(sample).encode()).hexdigest()
                     sample_path = os.path.join(
                         path_to_negatives, f"{negative_hash}_{sample_hash}.pkl"
@@ -905,8 +951,6 @@ class ECReactSubstrate(ECReactGraph):
                     "wb",
                 ),
             )
-            # pickle negatives_to_add for caching -> Too slow
-            # pickle.dump(negatives_to_add, open(path_to_negatives, "wb"))
 
         dataset += negatives_to_add
         return dataset
@@ -942,9 +986,24 @@ class ECReactSubstratePlainGraph(ECReactSubstrate):
                 uniprot_id = sample["uniprot_id"]
                 sequence = self.uniprot2sequence[uniprot_id]
             else:
-                valid_uniprots = self.valid_ec2uniprot[ec]
-                uniprot_id = random.sample(valid_uniprots, 1)[0]
-                sequence = self.uniprot2sequence[uniprot_id]
+                # in the case where we are not using all proteins, we need to sample a valid sequence
+                # so we check if the sequence is valid, if not we sample a new one
+                # if we cant find a new one then we skip this sample in batch
+                valid_seq = True
+                maxiters = 20
+                iters = 0
+                while valid_seq:
+                    if iters > maxiters:
+                        print("Could not find a valid sequence for this EC number")
+                        return None  # will just skip this sample in the batch
+                    valid_uniprots = self.valid_ec2uniprot[ec]
+                    uniprot_id = random.sample(valid_uniprots, 1)[0]
+                    sequence = self.uniprot2sequence[uniprot_id]
+                    sample_to_check = sample
+                    sample_to_check["sequence"] = sequence
+                    sample_to_check["protein_id"] = uniprot_id
+                    valid_seq = self.skip_sample(sample_to_check, self.split_group)
+                    iters += 1
 
             reactant.sample_id = sample["rowid"]
             reactant.sequence = sequence
