@@ -57,7 +57,10 @@
     "sample_negatives_range": ["0.7 1.0"],
     "class_bal": [true],
     "class_bal_key": ["y"],
-    "negative_samples_cache_dir": ["/Mounts/rbg-storage1/datasets/Enzymes/ECReact_negatives/"]
+    "negative_samples_cache_dir": ["/Mounts/rbg-storage1/datasets/Enzymes/ECReact_negatives/"],
+    "use_all_proteins": [true],
+    "topk_substrates_to_remove": [10],
+    "sample_k_negatives": [2]
   },
   "available_gpus": ["0,1,2,3,4,5,6,7"]
 }
