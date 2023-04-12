@@ -203,7 +203,12 @@ class ECReactGraph(ECReact_RXNS):
                 "/Mounts/rbg-storage1/datasets/Enzymes/ECReact/ecreact_proteins.p", "rb"
             )
         )
-        self.uniprot2cluster =  pickle.load(open('/Mounts/rbg-storage1/datasets/Enzymes/ECReact/ecreact_mmseq_clusters.p', 'rb'))
+        self.uniprot2cluster = pickle.load(
+            open(
+                "/Mounts/rbg-storage1/datasets/Enzymes/ECReact/ecreact_mmseq_clusters.p",
+                "rb",
+            )
+        )
 
     def post_process(self, args):
         split_group = self.split_group
@@ -248,7 +253,7 @@ class ECReactGraph(ECReact_RXNS):
                     elif self.args.split_type == "mmseqs":
                         cluster = self.uniprot2cluster[sample["protein_id"]]
                         if self.to_split[cluster] != split_group:
-                            continue 
+                            continue
                     elif self.args.split_type == "ec":
                         ec = parse_ec(sample["ec"])
                         if self.to_split[ec] != split_group:
@@ -477,7 +482,6 @@ class ECReactGraph(ECReact_RXNS):
         )
 
 
-
 @register_object("ecreact_multiproduct_graph", "dataset")
 class ECReact_MultiProduct_Graph(ECReact_MultiProduct_RXNS):
     @staticmethod
@@ -497,7 +501,7 @@ class ECReactSubstrate(ECReactGraph):
 
         smiles = set()
         for d in train_dataset:
-            smiles.add(d['smiles'])
+            smiles.add(d["smiles"])
         smiles = list(smiles)
 
         data_info = DatasetInfo(smiles, args)
@@ -539,7 +543,9 @@ class ECReactSubstrate(ECReactGraph):
         self.uniprot2substrates = defaultdict(set)
 
         if self.args.topk_substrates_to_remove is not None:
-            substrates = Counter([r for d in self.metadata_json for r in d[reaction_side_key]]).most_common(self.args.topk_substrates_to_remove)
+            substrates = Counter(
+                [r for d in self.metadata_json for r in d[reaction_side_key]]
+            ).most_common(self.args.topk_substrates_to_remove)
             self.common_substrates = [s[0] for s in substrates]
 
         for rowid, reaction in tqdm(
@@ -589,34 +595,38 @@ class ECReactSubstrate(ECReactGraph):
                 }
                 if self.skip_sample(sample_to_check, split_group):
                     continue
-                
+
                 if self.args.use_all_proteins:
                     for valid_uni in valid_uniprots:
                         if f"{valid_uni}_{smiles}" in uniprot_substrates:
-                            continue 
+                            continue
                         else:
                             uniprot_substrates.add(f"{valid_uni}_{smiles}")
                             self.uniprot2substrates[valid_uni].add(smiles)
-                            
-                        dataset.append({
+
+                        dataset.append(
+                            {
+                                "smiles": smiles,
+                                "ec": ec,
+                                "reaction_string": reaction_string,
+                                "rowid": f"{rid}{rowid}",
+                                "split": reaction["split"],
+                                "y": 1,
+                                "uniprot_id": valid_uni,
+                                "protein_id": valid_uni,
+                            }
+                        )
+                else:
+                    dataset.append(
+                        {
                             "smiles": smiles,
                             "ec": ec,
                             "reaction_string": reaction_string,
                             "rowid": f"{rid}{rowid}",
                             "split": reaction["split"],
                             "y": 1,
-                            "uniprot_id": valid_uni,
-                            "protein_id": valid_uni,
-                        })
-                else:
-                    dataset.append({
-                    "smiles": smiles,
-                    "ec": ec,
-                    "reaction_string": reaction_string,
-                    "rowid": f"{rid}{rowid}",
-                    "split": reaction["split"],
-                    "y": 1,
-                })
+                        }
+                    )
 
         return dataset
 
@@ -625,8 +635,8 @@ class ECReactSubstrate(ECReactGraph):
             return True
 
         # underspecified EC number
-        if "-" in sample["ec"]: 
-            return True 
+        if "-" in sample["ec"]:
+            return True
 
         # skip graphs of size 1
         mol_size = rdkit.Chem.MolFromSmiles(sample["smiles"]).GetNumAtoms()
@@ -643,7 +653,7 @@ class ECReactSubstrate(ECReactGraph):
                 mol_size > self.args.max_product_size
             ):
                 return True
-        
+
         if self.args.topk_substrates_to_remove is not None:
             if sample["smiles"] in self.common_substrates:
                 return True
@@ -658,21 +668,19 @@ class ECReactSubstrate(ECReactGraph):
 
             ec = sample["ec"]
             if self.args.use_all_proteins:
-                uniprot_id =sample["uniprot_id"]
-                sequence = self.uniprot2sequence[uniprot_id] 
+                uniprot_id = sample["uniprot_id"]
+                sequence = self.uniprot2sequence[uniprot_id]
             else:
                 valid_uniprots = self.valid_ec2uniprot[ec]
                 uniprot_id = random.sample(valid_uniprots, 1)[0]
                 sequence = self.uniprot2sequence[uniprot_id]
 
             # first feature is atomic number
-            mol.x = F.one_hot(mol.x[:, 0], len(x_map["atomic_num"])).to(
+            mol.x = F.one_hot(mol.x[:, 0], len(x_map["atomic_num"])).to(torch.float)
+            # first feature is bond type
+            mol.edge_attr = F.one_hot(mol.edge_attr[:, 0], len(e_map["bond_type"])).to(
                 torch.float
             )
-            # first feature is bond type
-            mol.edge_attr = F.one_hot(
-                mol.edge_attr[:, 0], len(e_map["bond_type"])
-            ).to(torch.float)
 
             mol.sample_id = sample["rowid"]
             mol.sequence = sequence
@@ -807,10 +815,10 @@ class ECReactSubstrate(ECReactGraph):
 
             if split_group in ["train", "dev"]:
                 all_substrates = set(
-                    d[self.args.reaction_side] for d in dataset if d["split"] == split_group
+                    d["smiles"] for d in dataset if d["split"] == split_group
                 )
             else:  # if test, need to use all substrates
-                all_substrates = set(d[self.args.reaction_side] for d in dataset)
+                all_substrates = set(d["smiles"] for d in dataset)
             all_substrates_list = list(all_substrates)
 
             # filter out negatives based on some metric (e.g. similarity)
@@ -839,11 +847,11 @@ class ECReactSubstrate(ECReactGraph):
                 ):  # even in test, leave, since we want only test prots
                     ec = sample["ec"]
                     # if ec not in ec_to_positives:
-                    ec_to_positives[ec].add(sample[self.args.reaction_side])
+                    ec_to_positives[ec].add(sample["smiles"])
 
                     if self.args.sample_negatives_range is not None:
                         # add to positives so that we don't sample them as negatives
-                        idx = all_substrates_list.index(sample[self.args.reaction_side])
+                        idx = all_substrates_list.index(sample["smiles"])
                         ec_to_positives[ec].update(
                             all_substrates_list[j]
                             for j in similarity_idx[1][similarity_idx[0] == idx]
@@ -933,8 +941,8 @@ class ECReactSubstratePlainGraph(ECReactSubstrate):
 
             ec = sample["ec"]
             if self.args.use_all_proteins:
-                uniprot_id =sample["uniprot_id"]
-                sequence = self.uniprot2sequence[uniprot_id] 
+                uniprot_id = sample["uniprot_id"]
+                sequence = self.uniprot2sequence[uniprot_id]
             else:
                 valid_uniprots = self.valid_ec2uniprot[ec]
                 uniprot_id = random.sample(valid_uniprots, 1)[0]
