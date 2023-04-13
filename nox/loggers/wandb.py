@@ -3,7 +3,7 @@ import pytorch_lightning as pl
 import os
 from nox.utils.classes import Nox
 import wandb
-
+import rdkit 
 
 @register_object("wandb", "logger")
 class WandB(pl.loggers.WandbLogger, Nox):
@@ -42,6 +42,13 @@ class WandB(pl.loggers.WandbLogger, Nox):
                         for dataitem in datalist
                     ]
                 )
+            elif datatype == "smiles":
+                fd = []
+                for dataitem in datalist:
+                    mol = rdkit.Chem.Draw.MolToImage(rdkit.Chem.MolFromSmiles(dataitem), size=(200, 200))
+                    item = wandb.Image(mol)
+                    fd.append(item)
+                formatted_data.append(fd)
             else:
                 formatted_data.append(datalist)
 

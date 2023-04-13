@@ -101,6 +101,7 @@ class Base(pl.LightningModule, Nox):
             "spearman",
             "cosine_similarity",
             "top",
+            "coverage",
         ]
 
     @property
@@ -146,6 +147,14 @@ class Base(pl.LightningModule, Nox):
         ):
             self.log_image(model_output, batch)
 
+        if (self.args.log_predictions_to_table) and (self.global_step % self.args.log_predictions_to_table_every == 0):
+            table_columns=["sample", "gold mol", "gold smiles", "pred", "step"]
+            data_types=["str", "smiles", "str", "str", "str"]
+            table_data=[batch["sample_id"], batch["smiles"], batch["smiles"], model_output[f"pred_smiles"], [self.current_epoch] * len(batch["smiles"])]
+            self.logger.log_table(
+                table_columns, table_data, data_types, table_name=f"{self.phase}_samples"
+                )
+
         return logged_output
 
     def forward(self, batch, batch_idx=0):
@@ -168,12 +177,14 @@ class Base(pl.LightningModule, Nox):
             )
             predictions_dict = self.store_in_predictions(predictions_dict, batch)
             predictions_dict = self.store_in_predictions(predictions_dict, model_output)
-            self.call_metric(predictions_dict, "update")
             logged_output["loss"] = loss
         else:
+            logging_dict = {}
             predictions_dict = {}
             predictions_dict = self.store_in_predictions(predictions_dict, batch)
             predictions_dict = self.store_in_predictions(predictions_dict, model_output)
+        
+        self.call_metric(predictions_dict, "update")
 
         logged_output.update(logging_dict)
         logged_output["preds_dict"] = predictions_dict
@@ -182,6 +193,7 @@ class Base(pl.LightningModule, Nox):
 
         if (self.args.log_gen_image) and (batch_idx == 0):
             self.log_image(model_output, batch)
+        
         return logged_output
 
     def training_step(self, batch, batch_idx, optimizer_idx=None):
@@ -265,8 +277,8 @@ class Base(pl.LightningModule, Nox):
         outputs = gather_step_outputs(outputs)
         if isinstance(outputs.get("loss", 0), torch.Tensor):
             outputs["loss"] = outputs["loss"].mean()
-        if not self.args.predict:
-            outputs.update(self.call_metric({}, "compute"))
+        
+        outputs.update(self.call_metric({}, "compute"))
         self.log_outputs(outputs, "test")
         for metric_fn in self.metrics["test"]:
             metric_fn.reset()
@@ -476,12 +488,25 @@ class Base(pl.LightningModule, Nox):
             help="Whether to compute model metrics every step. Default is to compute at end of full epoch",
         )
         parser.add_argument(
+            "--log_predictions_to_table",
+            action="store_true",
+            default=False,
+            help="Whether to log predictions to a wandb table",
+        )
+        parser.add_argument(
+            "--log_predictions_to_table_every",
+            type=int,
+            default=100,
+            help="How often to log table predictions",
+        )
+        parser.add_argument(
             "--scheduler_interval",
             type=str,
             default="epoch",
             choices=["epoch", "step"],
             help="how often to apply scheduling on model parameters.",
         )
+        
 
 
 def gather_step_outputs(outputs):
