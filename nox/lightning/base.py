@@ -526,12 +526,14 @@ def gather_step_outputs(outputs):
             output_dict[k] = gather_step_outputs(
                 [output["preds_dict"] for output in outputs]
             )
-        elif (
-            isinstance(outputs[-1][k], torch.Tensor) and len(outputs[-1][k].shape) == 0
-        ):
-            output_dict[k] = torch.stack([output[k] for output in outputs])
         elif isinstance(outputs[-1][k], torch.Tensor):
-            output_dict[k] = torch.cat([output[k] for output in outputs], dim=0)
+            # check shapes are the same
+            if not all(output[k].shape == outputs[-1][k].shape for output in outputs):
+                output_dict[k] = [output[k] for output in outputs]
+            elif len(outputs[-1][k].shape) == 0:
+                output_dict[k] = torch.stack([output[k] for output in outputs])
+            else:
+                output_dict[k] = torch.cat([output[k] for output in outputs], dim=0)
         elif isinstance(outputs[-1][k], list):
             output_dict[k] = [olist for output in outputs for olist in output[k]]
         else:
