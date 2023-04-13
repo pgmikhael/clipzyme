@@ -529,7 +529,7 @@ def gather_step_outputs(outputs):
         elif isinstance(outputs[-1][k], torch.Tensor):
             # check shapes are the same
             if not all(output[k].shape == outputs[-1][k].shape for output in outputs):
-                output_dict[k] = [output[k] for output in outputs]
+                output_dict[k] = [o for output in outputs for o in output[k]]
             elif len(outputs[-1][k].shape) == 0:
                 output_dict[k] = torch.stack([output[k] for output in outputs])
             else:
