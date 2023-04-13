@@ -22,10 +22,10 @@ class TopK(Metric, Nox):
         self.topk_values = args.topk_values
         for k in args.topk_values:
             self.add_state(
-                f"num_correct_top{k}", default=torch.tensor(0.0), dist_reduce_fx="sum"
+                f"num_correct_top{k}", default=torch.tensor(0), dist_reduce_fx="sum"
             )
             self.add_state(
-                f"total_top{k}", default=torch.tensor(0.0), dist_reduce_fx="sum"
+                f"total_top{k}", default=torch.tensor(0), dist_reduce_fx="sum"
             )
 
     @property
@@ -62,7 +62,7 @@ class TopK(Metric, Nox):
 
     def compute(self) -> Dict:
         stats_dict = {
-            f"top_{k}": getattr(self, f"num_correct_top{k}")
+            f"top_{k}": getattr(self, f"num_correct_top{k}").float()
             / getattr(self, f"total_top{k}")
             for k in self.topk_values
         }
@@ -105,15 +105,17 @@ class MolTopK(Metric, Nox):
 
     @property
     def metric_keys(self):
-        return ["pred_smiles", "all_smiles"]
+        return ["pred_smiles", "all_smiles", "preds", "golds"]
 
     def update(self, predictions_dict, args) -> None:
         """Computes top-k accuracy for some defined value(s) of k"""
-        preds = predictions_dict["pred_smiles"]  # B, k (list)
-        golds = predictions_dict["all_smiles"]  # B, k (list)
+        preds = predictions_dict[args.mol_topk_pred_key]  # B (list)
+        golds = predictions_dict[args.mol_topk_gold_key]  # B, k (list)
         golds = [[canonicalize_smiles(g) for g in glist] for glist in golds]
         ranks = []
         for top_preds, gold in zip(preds, golds):
+            if not isinstance(top_preds, list):
+                top_preds = [top_preds]
             standardized_preds = [canonicalize_smiles(g) for g in top_preds]
             matches = [p in gold for p in standardized_preds]    
             match_idx = matches.index(True) + 1 if sum(matches) > 0 else 0
@@ -158,4 +160,16 @@ class MolTopK(Metric, Nox):
             nargs="+",
             default=[1],
             help="Values of k for which to obtain top-k accuracies",
+        )
+        parser.add_argument(
+            "--mol_topk_gold_key",
+            type=str,
+            default="all_smiles",
+            help="key for gold",
+        )
+        parser.add_argument(
+            "--mol_topk_pred_key",
+            type=str,
+            default="pred_smiles"
+            help="key for predictions",
         )
