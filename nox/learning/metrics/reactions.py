@@ -170,6 +170,6 @@ class MolTopK(Metric, Nox):
         parser.add_argument(
             "--mol_topk_pred_key",
             type=str,
-            default="pred_smiles"
+            default="pred_smiles",
             help="key for predictions",
         )
