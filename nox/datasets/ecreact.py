@@ -223,20 +223,6 @@ class ECReact(BrendaReaction):
             warnings.warn(f"Could not load sample: {sample['sample_id']}")
 
 
-@register_object("ecreact+orgos", "dataset")
-class EC_Orgo_React(ECReact):
-    def load_dataset(self, args: argparse.ArgumentParser) -> None:
-        super(EC_Orgo_React, EC_Orgo_React).load_dataset(args)
-        self.orgo_reactions = get_object("chemical_reactions", "dataset")(args)
-
-    def create_dataset(
-        self, split_group: Literal["train", "dev", "test"]
-    ) -> List[dict]:
-        dataset = super(EC_Orgo_React, EC_Orgo_React).create_dataset(split_group)
-
-        return self.orgo_reactions.dataset + dataset
-
-
 @register_object("ecreact_proteins", "dataset")
 class ECReactProteins(AbstractDataset):
     def load_dataset(self, args: argparse.ArgumentParser) -> None:
@@ -811,3 +797,44 @@ class ECReact_MultiProduct_RXNS(ECReact_RXNS):
             return True
 
         return False
+
+
+@register_object("ecreact+orgos", "dataset")
+class EC_Orgo_React(ECReact_RXNS):
+    def init_class(self, args, split_group) -> None:
+        super(EC_Orgo_React, EC_Orgo_React).init_class(self, args, split_group)
+        if split_group == 'train':
+            orgo_args = copy.deepcopy(args)
+            orgo_args.dataset_file_path = "/Mounts/rbg-storage1/datasets/ChemicalReactions/uspto_synthesis_dataset.json"
+            orgo_args.assign_splits = False 
+            orgo_args.class_bal = False 
+            orgo_reactions = []
+            for split in ["train", "dev", "test"]:
+                orgo_reactions += get_object("chemical_reactions", "dataset")(orgo_args, split).dataset
+            
+            self.valid_ec2uniprot["z.z.z.z"] = []
+            for sample in orgo_reactions:
+                sampleid = sample["sample_id"]
+                reaction = sample["x"].split(">>")
+                sample.update({
+                    "reactants": reaction[0].split('.'),
+                    "products": reaction[-1].split('.'),
+                    "split": "train",
+                    "protein_id": "spontaneous",
+                    "rowid": sampleid,
+                    "ec": "z.z.z.z",
+                    "sequence": "<pad>", # esm pad token
+                    "source": "uspto"
+                })
+            self.valid_ec2uniprot["z.z.z.z"]= ["spontaneous"]
+            self.uniprot2sequence["spontaneous"] = "<pad>"
+            self.orgo_reactions = orgo_reactions
+        
+            
+    def get_split_group_dataset(self, processed_dataset, split_group):
+        dataset = super(EC_Orgo_React, EC_Orgo_React).get_split_group_dataset(self, processed_dataset, split_group)
+        for d in dataset: d["source"] = "ec"
+        if split_group == "train":
+            dataset = dataset + self.orgo_reactions
+        
+        return dataset
