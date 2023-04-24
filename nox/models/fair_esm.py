@@ -136,7 +136,7 @@ class FairEsm2(FairEsm):
 
 
 @register_object("protein_encoder", "model")
-class ProteinEncoder(FairEsm):
+class ProteinEncoder(AbstractModel):
     def __init__(self, args):
         super(ProteinEncoder, self).__init__()
         self.args = args
