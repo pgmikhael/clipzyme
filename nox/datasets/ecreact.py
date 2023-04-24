@@ -17,7 +17,7 @@ import numpy as np
 from p_tqdm import p_map
 import random
 from collections import defaultdict
-
+import rdkit 
 
 @register_object("ecreact", "dataset")
 class ECReact(BrendaReaction):
@@ -422,7 +422,8 @@ class ECReact_RXNS(ECReact):
     def create_dataset(
         self, split_group: Literal["train", "dev", "test"]
     ) -> List[dict]:
-
+        self.mol2size = {}
+        self.uniprot2substrates = defaultdict(set)
         dataset = []
 
         for rowid, reaction in tqdm(
@@ -451,6 +452,8 @@ class ECReact_RXNS(ECReact):
                 }
                 if self.skip_sample(temp_sample, split_group):
                     continue
+                
+                self.uniprot2substrates[uniprot].update(products)
 
                 valid_uniprots.append(uniprot)
 
@@ -489,6 +492,9 @@ class ECReact_RXNS(ECReact):
         return dataset
 
     def skip_sample(self, sample, split_group) -> bool:
+        if '-' in sample['ec']:
+            return True 
+            
         # if sequence is unknown
         sequence = sample["sequence"]
         if (sequence is None) or (len(sequence) == 0):
@@ -501,6 +507,21 @@ class ECReact_RXNS(ECReact):
 
         if sample["mapped_reaction"] is None:
             True
+
+        
+        if self.args.max_reactant_size is not None:
+            for mol in sample["reactants"]:
+                if not (mol in self.mol2size):
+                    self.mol2size[mol] = rdkit.Chem.MolFromSmiles(mol).GetNumAtoms()
+                if self.mol2size[mol] > self.args.max_reactant_size:
+                    return True 
+
+        if self.args.max_product_size is not None:
+            for mol in sample["products"]:
+                if not (mol in self.mol2size):
+                    self.mol2size[mol] = rdkit.Chem.MolFromSmiles(mol).GetNumAtoms()
+                if self.mol2size[mol] > self.args.max_product_size:
+                    return True 
 
         return False
 
@@ -598,7 +619,7 @@ class ECReact_RXNS(ECReact):
                     pass
 
             # sample_id = hashlib.md5(f"{uniprot_id}_{sample['reaction_string']}".encode()).hexdigest()
-            sample_id = sample["rowid"]
+            sample_id = f"{sample['ec']}_{uniprot_id}"
             item = {
                 "reaction": reaction,
                 "reactants": ".".join(reactants),
@@ -609,6 +630,11 @@ class ECReact_RXNS(ECReact):
                 "protein_id": uniprot_id,
                 "sample_id": sample_id,
             }
+
+            if sample.get("source", False):
+                sample["all_smiles"] = products
+            else:
+                sample["all_smiles"] = self.uniprot2substrates[uniprot_id]
 
             if self.args.add_active_residues_to_item:
                 item.update(
@@ -679,6 +705,7 @@ class ECReactRxnsFull(ECReact_RXNS):
             total=len(self.metadata_json),
             ncols=100,
         ):
+            self.mol2size = {}
 
             ec = reaction["ec"]
             reactants = reaction["reactants"]
@@ -824,7 +851,8 @@ class EC_Orgo_React(ECReact_RXNS):
                     "rowid": sampleid,
                     "ec": "z.z.z.z",
                     "sequence": "<pad>", # esm pad token
-                    "source": "uspto"
+                    "source": "uspto",
+                    "all_smiles": reaction[-1].split('.')
                 })
             self.valid_ec2uniprot["z.z.z.z"]= ["spontaneous"]
             self.uniprot2sequence["spontaneous"] = "<pad>"
