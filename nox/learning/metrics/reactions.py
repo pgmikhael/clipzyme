@@ -22,10 +22,10 @@ class TopK(Metric, Nox):
         self.topk_values = args.topk_values
         for k in args.topk_values:
             self.add_state(
-                f"num_correct_top{k}", default=torch.tensor(0), dist_reduce_fx="sum"
+                f"num_correct_top{k}", default=torch.tensor(0.0), dist_reduce_fx="sum"
             )
             self.add_state(
-                f"total_top{k}", default=torch.tensor(0), dist_reduce_fx="sum"
+                f"total_top{k}", default=torch.tensor(0.0), dist_reduce_fx="sum"
             )
 
     @property
