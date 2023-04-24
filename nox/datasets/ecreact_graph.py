@@ -849,6 +849,17 @@ class ECReactSubstrate(ECReactGraph):
                     (smile_similarity <= min_sim) | (smile_similarity >= max_sim)
                 )
 
+            if self.args.sample_negatives_range is not None:
+                smiles2positives = defaultdict(set)
+                for smi_i, smile in tqdm(
+                    enumerate(all_substrates_list), desc="Retrieving all negatives"
+                ):
+                    if smile not in smiles2positives:
+                        smiles2positives[smile].update(
+                            all_substrates_list[j]
+                            for j in similarity_idx[1][similarity_idx[0] == smi_i]
+                        )
+
             ec_to_positives = defaultdict(set)
             for sample in tqdm(dataset, desc="Sampling negatives"):
                 if (
@@ -860,11 +871,12 @@ class ECReactSubstrate(ECReactGraph):
 
                     if self.args.sample_negatives_range is not None:
                         # add to positives so that we don't sample them as negatives
-                        idx = all_substrates_list.index(sample["smiles"])
-                        ec_to_positives[ec].update(
-                            all_substrates_list[j]
-                            for j in similarity_idx[1][similarity_idx[0] == idx]
-                        )
+                        # idx = all_substrates_list.index(sample["smiles"])
+                        # ec_to_positives[ec].update(
+                        #     all_substrates_list[j]
+                        #     for j in similarity_idx[1][similarity_idx[0] == idx]
+                        # )
+                        ec_to_positives[ec].update(smiles2positives[sample["smiles"]])
 
             ec_to_negatives = {
                 k: all_substrates - v for k, v in ec_to_positives.items()
@@ -872,42 +884,46 @@ class ECReactSubstrate(ECReactGraph):
 
             rowid = len(dataset)
             negatives_to_add = []
+            no_negatives = 0
             for ec, negatives in tqdm(
                 ec_to_negatives.items(), desc="Processing negatives"
             ):
-                # for each EC include only k negatives
-                if self.args.sample_k_negatives is not None:
-                    if len(negatives) < self.args.sample_k_negatives:
-                        print(
-                            f"Not enough negatives to sample from, using all negatives for {ec}"
-                        )
-                        negatives = list(negatives)
-                    else:
-                        negatives = random.sample(
-                            negatives, self.args.sample_k_negatives
-                        )
-
-                # get all the valid uniprots for each EC if use_all_proteins is True
-                valid_uniprots = []
-                for uniprot in self.ec2uniprot.get(ec, []):
-                    # this is all to check that the sequence is valid
-                    temp_sample = {
-                        "ec": ec,
-                        "protein_id": uniprot,
-                        "sequence": self.uniprot2sequence[uniprot],
-                    }
-                    if super().skip_sample(temp_sample, split_group):
-                        continue
-
-                    valid_uniprots.append(uniprot)
-
-                if len(valid_uniprots) == 0:
+                if len(negatives) == 0:
+                    no_negatives += 1
                     continue
 
-                # TODO: generalize to either reaction side, not just reactants (substrates)
-                for rid, reactant in enumerate(negatives):
-                    if self.args.use_all_proteins:
-                        for valid_uni in valid_uniprots:
+                if self.args.use_all_proteins:
+                    # get all the valid uniprots for each EC if use_all_proteins is True
+                    valid_uniprots = []
+                    for uniprot in self.ec2uniprot.get(ec, []):
+                        # this is all to check that the sequence is valid
+                        temp_sample = {
+                            "ec": ec,
+                            "protein_id": uniprot,
+                            "sequence": self.uniprot2sequence[uniprot],
+                        }
+                        if super().skip_sample(temp_sample, split_group):
+                            continue
+
+                        valid_uniprots.append(uniprot)
+
+                    if len(valid_uniprots) == 0:
+                        continue
+
+                    # TODO: generalize to either reaction side, not just reactants (substrates)
+                    for valid_uni in valid_uniprots:
+                        # for each EC include only k negatives
+                        if self.args.sample_k_negatives is not None:
+                            if len(negatives) < self.args.sample_k_negatives:
+                                print(
+                                    f"Not enough negatives to sample from, using all negatives for {ec}"
+                                )
+                                new_negatives = list(negatives)
+                            else:
+                                new_negatives = random.sample(
+                                    negatives, self.args.sample_k_negatives
+                                )
+                        for rid, reactant in enumerate(new_negatives):
                             sample = {
                                 "smiles": reactant,
                                 "ec": ec,
@@ -923,7 +939,26 @@ class ECReactSubstrate(ECReactGraph):
                                 continue
                             rowid += 1
                             negatives_to_add.append(sample)
-                    else:
+
+                            sample_hash = hashlib.md5(str(sample).encode()).hexdigest()
+                            sample_path = os.path.join(
+                                path_to_negatives, f"{negative_hash}_{sample_hash}.pkl"
+                            )
+                            if not os.path.exists(sample_path):
+                                pickle.dump(sample, open(sample_path, "wb"))
+                else:
+                    # for each EC include only k negatives
+                    if self.args.sample_k_negatives is not None:
+                        if len(negatives) < self.args.sample_k_negatives:
+                            print(
+                                f"Not enough negatives to sample from, using all negatives for {ec}"
+                            )
+                            new_negatives = list(negatives)
+                        else:
+                            new_negatives = random.sample(
+                                negatives, self.args.sample_k_negatives
+                            )
+                    for rid, reactant in enumerate(new_negatives):
                         sample = {
                             "smiles": reactant,
                             "ec": ec,
@@ -935,14 +970,15 @@ class ECReactSubstrate(ECReactGraph):
                         rowid += 1
                         negatives_to_add.append(sample)
 
-                    sample_hash = hashlib.md5(str(sample).encode()).hexdigest()
-                    sample_path = os.path.join(
-                        path_to_negatives, f"{negative_hash}_{sample_hash}.pkl"
-                    )
-                    if not os.path.exists(sample_path):
-                        pickle.dump(sample, open(sample_path, "wb"))
+                        sample_hash = hashlib.md5(str(sample).encode()).hexdigest()
+                        sample_path = os.path.join(
+                            path_to_negatives, f"{negative_hash}_{sample_hash}.pkl"
+                        )
+                        if not os.path.exists(sample_path):
+                            pickle.dump(sample, open(sample_path, "wb"))
 
             print(f"[magenta] Adding {len(negatives_to_add)} negatives [/magenta]")
+            print(f"[magenta] Missing any negatives for {no_negatives} ECs [/magenta]")
             # add a final pickle to indicate that we are done
             pickle.dump(
                 f"done pickling {negative_hash}",
@@ -1026,7 +1062,7 @@ class ECReactSubstratePlainGraph(ECReactSubstrate):
             reactant.y = sample["y"]
             reactant.ec = sample["ec"]
             reactant.all_reactants = sample["reaction_string"].split(">>")[0].split(".")
-            reactant.all_smiles =  self.uniprot2substrates[uniprot_id]
+            reactant.all_smiles = self.uniprot2substrates[uniprot_id]
 
             return reactant
 
