@@ -337,3 +337,67 @@ class IOCBClassification(IOCB):
         * Number of proteins: {len(set(proteins))}
         """
         return statement
+
+@register_object("iocb_products", "dataset")
+class IOCBProducts(IOCBClassification):
+
+    def create_dataset(self, split_group: Literal["train", "dev", "test"]) -> List[dict]:
+        dataset = []
+
+        # get column name of split
+        split_key = "product_phylo_split_simple" 
+        # get column names for smiles
+        smiles_key = "SMILES of product (including stereochemistry)" if self.args.use_stereo else "SMILES_product_canonical_no_stereo" 
+        smiles_id_key = "Product ChEBI ID"
+        smiles_name_key = "Name of product"
+
+        uni2smiles = defaultdict(list)
+        for rowid, row in tqdm(enumerate(self.metadata_json), total = len(self.metadata_json), desc="Creating dataset", ncols=50):
+            
+            uniprotid = row["Uniprot ID"]
+            molname = row[smiles_name_key]
+            sample = {
+                    "protein_id": uniprotid,
+                    "sequence": row["Amino acid sequence"],
+                    "sequence_name": row["Name"],
+                    "protein_type": row["Type (mono, sesq, di, \u2026)"],
+                    "smiles": row[smiles_key],
+                    "smiles_name": row[smiles_name_key],
+                    "smiles_chebi_id": row[smiles_id_key],
+                    "sample_id": f"{uniprotid}_{molname}_{rowid}",
+                    "species": row["Species"],
+                    "kingdom": row["Kingdom (plant, fungi, bacteria)"],
+                    "split": row[split_key],
+                }
+            
+            if self.skip_sample(sample):
+                continue 
+            
+            uni2smiles[uniprotid].append(sample)
+            
+        for uni, samples in uni2smiles.items():
+            assert all(s['split'] == samples[0]['split'] for s in samples)
+
+            sample = {
+                "protein_id": uni,
+                "x": row["Amino acid sequence"],
+                "sequence_name": row["Name"],
+                "protein_type": row["Type (mono, sesq, di, \u2026)"],
+                "sample_id": uni,
+                "species": samples[0]["species"],
+                "kingdom": samples[0]['kingdom'],
+                "split": samples[0]['split'],
+                "smiles": [s["smiles"] for s in samples]
+            }
+
+            dataset.append(sample)
+
+        return dataset 
+
+    @staticmethod
+    def set_args(args) -> None:
+        super(IOCB, IOCB).set_args(args)
+        args.dataset_file_path = (
+            "/Mounts/rbg-storage1/datasets/Enzymes/IOCB/iocb_products.json"
+        )
+        args.reaction_side = "product"
