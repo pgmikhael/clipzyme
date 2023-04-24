@@ -577,6 +577,11 @@ class EnzymaticReactionEncoder(ReactionEncoder):
             "y": metric_labels,
         }
 
+        preds =  torch.argmax( metric_logits, dim =-1 ) 
+        decoded_preds = self.tokenizer.batch_decode(preds, skip_special_tokens=True)
+        decoded_preds = [s.replace(" ", "") for s in decoded_preds]
+        output["pred_smiles"] = decoded_preds
+
         return output
 
     def generate(self, batch):
