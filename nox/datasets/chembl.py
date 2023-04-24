@@ -28,7 +28,126 @@ from nox.datasets.qm9 import (
 
 
 @register_object("chembl", "dataset")
-class Chembl(AbstractDataset, InMemoryDataset):
+class Chembl(AbstractDataset):
+    def __init__(self, args: argparse.ArgumentParser, split_group: str) -> None:
+        self.split_group = split_group
+        self.args = args
+        self.remove_h = args.remove_h
+
+        self.version = self.get_version()
+
+        self.name = "Chembl"
+        self.root = args.data_dir
+
+        self.dataset = self.create_dataset(split_group)
+
+        self.print_summary_statement(self.dataset, split_group)
+
+    def get_version(self):
+        """Checks if changes have been made that would effect the preprocessed graphs"""
+
+        args_hash = md5(
+            str(
+                [
+                    self.args.dataset_name,
+                    self.args.data_dir,
+                    self.args.remove_h,
+                    self.args.extra_features_type,
+                ]
+            )
+        )
+        return args_hash
+
+    @property
+    def raw_file_names(self):
+        return "chembl32_dataset.json"
+
+    @property
+    def raw_dir(self) -> str:
+        # self.root := args.data_dir
+        return self.root
+
+    @property
+    def processed_dir(self) -> None:
+        """Directory where processed data is stored or expected to be exist in"""
+        return os.path.join(self.root, "in_memory")
+
+    @property
+    def processed_file_names(self):
+        return ["chembl32_train.pt", "chembl32_dev.pt", "chembl32_test.pt"]
+
+    def create_dataset(self, split_group):
+        """
+        Creates the dataset of samples
+        """
+        chembl_data = json.load(open(os.path.join(self.root, self.raw_file_names), "r"))
+
+        self.assign_splits(chembl_data, self.args.split_probs, self.args.split_seed)
+
+        dataset = []
+        for data_item in tqdm(chembl_data[:1000], ncols=60):
+            if data_item["split"] != split_group:
+                continue
+
+            try:
+                mol = Chem.MolFromSmiles(data_item["smiles"])
+                if mol.GetNumAtoms() > 40:
+                    continue
+            except:
+                continue
+
+            dataset.append(data_item)
+
+        return dataset
+
+    def __getitem__(self, index):
+        try:
+            molecule_dict = self.dataset[index]
+
+            sample = {
+                "x": molecule_dict["smiles"],
+                "sample_id": molecule_dict["chembl_id"]
+            }
+
+            return sample
+
+        except Exception:
+            warnings.warn(f"Could not load sample: {molecule_dict['chembl_id']}")
+
+    def __len__(self):
+        return len(self.dataset)
+
+    @staticmethod
+    def add_args(parser) -> None:
+        """Add class specific args
+
+        Args:
+            parser (argparse.ArgumentParser): argument parser
+        """
+        super(Chembl, Chembl).add_args(parser)
+
+        parser.add_argument(
+            "--recompute_statistics",
+            action="store_true",
+            default=False,
+            help="recompute statistics",
+        )
+        parser.add_argument(
+            "--remove_h",
+            action="store_true",
+            default=False,
+            help="remove hydrogens from the molecules",
+        )
+        parser.add_argument(
+            "--extra_features_type",
+            type=str,
+            choices=["eigenvalues", "all", "cycles"],
+            default=None,
+            help="extra features to use",
+        )
+
+@register_object("chembl_graph", "dataset")
+class ChemblGraph(AbstractDataset, InMemoryDataset):
     def __init__(self, args: argparse.ArgumentParser, split_group: str) -> None:
         self.split_group = split_group
         self.args = args
