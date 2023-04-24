@@ -9,13 +9,19 @@ from rxn.chemutils.smiles_randomization import randomize_smiles_rotated
 from nox.utils.smiles import standardize_reaction
 import copy
 import numpy as np
-
+from collections import defaultdict
 
 @register_object("chemical_reactions", "dataset")
 class ChemRXN(AbstractDataset):
     def create_dataset(
         self, split_group: Literal["train", "dev", "test"]
     ) -> List[dict]:
+        reaction2products = defaultdict(set)
+        for rxn_dict in tqdm(self.metadata_json):
+            reaction2products[f"{'.'.join(rxn_dict['reactants'])}"].update(rxn_dict['products'])
+
+
+
         dataset = []
         for rxn_dict in tqdm(self.metadata_json):
             dataset.append(
@@ -23,6 +29,11 @@ class ChemRXN(AbstractDataset):
                     "x": rxn_dict["reaction"],
                     "sample_id": rxn_dict["rxnid"],
                     "split": rxn_dict["split"],
+                    "reactants": rxn_dict['reactants'],
+                    "products": rxn_dict['products'],
+                    "protein_id": "spontaneous",
+                    "sequence": "<pad>", # esm pad token
+                    "all_smiles": reaction2products['.'.join(rxn_dict['reactants'])]
                 }
             )
         return dataset
@@ -63,6 +74,7 @@ class ChemRXN(AbstractDataset):
             item["reactants"] = ".".join(reactants)
             item["products"] = ".".join(products)
             item["sample_id"] = sample["sample_id"]
+            item["sequence"] = sample["sequence"]
 
             if standardize_reaction(reaction) == ">>":
                 return
