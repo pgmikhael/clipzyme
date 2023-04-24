@@ -92,9 +92,16 @@ class BinaryCrossEntropyLoss(Nox):
                 * args.ce_loss_lambda
             )
         logging_dict["binary_cross_entropy_loss"] = loss.detach()
-        predictions["probs"] = torch.sigmoid(logit).detach()
-        predictions["golds"] = batch["y"]
-        predictions["preds"] = predictions["probs"] > 0.5
+        if args.use_top_prediction:
+            probs = torch.sigmoid(logit).detach()
+            predictions["probs"] = torch.max(probs, dim = -1)
+            prob_ids = torch.argmax(probs, dim = -1)
+            predictions["golds"] = batch["y"][prob_ids]
+            predictions["preds"] = predictions["probs"] > 0.5
+        else:
+            predictions["probs"] = torch.sigmoid(logit).detach()
+            predictions["golds"] = batch["y"]
+            predictions["preds"] = predictions["probs"] > 0.5
         return loss, logging_dict, predictions
 
     @staticmethod
@@ -109,6 +116,12 @@ class BinaryCrossEntropyLoss(Nox):
             type=float,
             default=1.0,
             help="Lambda to weigh the cross-entropy loss.",
+        )
+        parser.add_argument(
+            "--use_top_prediction",
+            action="store_true",
+            default=False,
+            help="store top prediction in predictions dict",
         )
 
 
