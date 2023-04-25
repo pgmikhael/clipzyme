@@ -466,7 +466,7 @@ class EnzymaticReactionEncoder(ReactionEncoder):
             token_type_ids = torch.cat(
                 [protein_attention * 0, encoder_input_ids["attention_mask"]], dim=-1
             ).long()
-        elif self.protein_representation_key == "hidden":
+        elif self.protein_representation_key in ["hidden", "pooler_output"]:
             protein_reactants_attention_mask = torch.cat(
                 [protein_attention[:, :1], encoder_input_ids["attention_mask"]], dim=-1
             )
