@@ -742,6 +742,7 @@ class ECReactRxnsFull(ECReact_RXNS):
                     "reaction_string": reaction_string,
                     "rowid": f"{uniprot}_{rowid}",
                     "uniprot_id": uniprot,
+                    "protein_id": uniprot,
                 }
                 # add reaction sample to dataset
                 dataset.append(sample)
