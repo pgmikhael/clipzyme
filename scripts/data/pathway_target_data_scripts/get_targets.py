@@ -35,25 +35,27 @@ def get_targets(args: Args) -> None:
 
     # Map compound ID to SMILES
     # NOTE: By default, uses the last SMILES that matches the ChEMBL compound ID
-    compound_id_to_smiles = dict(zip(data[CHEMBL_COMPOUND_ID_COLUMN], data[SMILES_COLUMN]))
+    compound_id_to_smiles = dict(
+        zip(data[CHEMBL_COMPOUND_ID_COLUMN], data[SMILES_COLUMN])
+    )
     compound_ids = sorted(compound_id_to_smiles)
-    print(f'Number of ChEMBL compound IDs = {len(compound_ids):,}')
+    print(f"Number of ChEMBL compound IDs = {len(compound_ids):,}")
 
     # Create SQL command
     query = [
-        'SELECT md.chembl_id AS compound_id,',
-        'td.chembl_id AS chembl_target_id,',
-        'cseq.accession AS uniprot_target_id',
-        'FROM component_sequences cseq',
-        '  JOIN target_components tc ON cseq.component_id = tc.component_id',
-        '  JOIN target_dictionary td ON tc.tid = td.tid',
-        '  JOIN assays a ON td.tid = a.tid',
-        '  JOIN activities act ON a.assay_id = act.assay_id',
-        '  JOIN molecule_dictionary md ON act.molregno = md.molregno',
-        f'    AND act.activity_comment IN {tuple(ACTIVE_COMMENTS)}',
-        f'WHERE md.chembl_id IN {tuple(compound_ids)}'
+        "SELECT md.chembl_id AS compound_id,",
+        "td.chembl_id AS chembl_target_id,",
+        "cseq.accession AS uniprot_target_id",
+        "FROM component_sequences cseq",
+        "  JOIN target_components tc ON cseq.component_id = tc.component_id",
+        "  JOIN target_dictionary td ON tc.tid = td.tid",
+        "  JOIN assays a ON td.tid = a.tid",
+        "  JOIN activities act ON a.assay_id = act.assay_id",
+        "  JOIN molecule_dictionary md ON act.molregno = md.molregno",
+        f"    AND act.activity_comment IN {tuple(ACTIVE_COMMENTS)}",
+        f"WHERE md.chembl_id IN {tuple(compound_ids)}",
     ]
-    command = '\n'.join(query)
+    command = "\n".join(query)
 
     # Connect to ChEMBL SQL database
     conn = sqlite3.connect(args.chembl_path)
@@ -62,7 +64,7 @@ def get_targets(args: Args) -> None:
     # Execute SQL command
     cursor.execute(command)
     results = cursor.fetchall()
-    print(f'Number of results = {len(results):,}')
+    print(f"Number of results = {len(results):,}")
 
     # Map compound ID to target IDs
     compound_id_to_chembl_target_ids = defaultdict(set)
@@ -74,45 +76,57 @@ def get_targets(args: Args) -> None:
 
     # Create datasets for ChEMBL and UniProt targets
     for name, compound_id_to_target_ids, save_path in [
-        ('ChEMBL', compound_id_to_chembl_target_ids, args.chembl_save_path),
-        ('UniProt', compound_id_to_uniprot_target_ids, args.uniprot_save_path)
+        ("ChEMBL", compound_id_to_chembl_target_ids, args.chembl_save_path),
+        ("UniProt", compound_id_to_uniprot_target_ids, args.uniprot_save_path),
     ]:
         # Create DataFrame for targets
         compound_ids = set(compound_id_to_target_ids)
-        target_ids = sorted({
-            target_id
-            for target_ids in compound_id_to_target_ids.values()
-            for target_id in target_ids if target_id is not None
-        })
-
-        target_data = pd.DataFrame(data={
-            SMILES_COLUMN: [compound_id_to_smiles[compound_id] for compound_id in compound_ids],
-            **{
-                target_id: [
-                    1 if target_id in compound_id_to_target_ids[compound_id] else 0
-                    for compound_id in compound_ids
-                ]
+        target_ids = sorted(
+            {
+                target_id
+                for target_ids in compound_id_to_target_ids.values()
                 for target_id in target_ids
+                if target_id is not None
             }
-        })
+        )
+
+        target_data = pd.DataFrame(
+            data={
+                SMILES_COLUMN: [
+                    compound_id_to_smiles[compound_id] for compound_id in compound_ids
+                ],
+                **{
+                    target_id: [
+                        1 if target_id in compound_id_to_target_ids[compound_id] else 0
+                        for compound_id in compound_ids
+                    ]
+                    for target_id in target_ids
+                },
+            }
+        )
 
         # Filter out targets with too few compounds
         include_target_ids = [
-            target_id for target_id in target_ids if target_data[target_id].sum() >= args.min_mols_per_target
+            target_id
+            for target_id in target_ids
+            if target_data[target_id].sum() >= args.min_mols_per_target
         ]
         target_data = target_data[[SMILES_COLUMN] + include_target_ids]
 
         # Print stats
         print()
-        print(f'Target type = {name}')
-        print(f'Number of unique compounds = {len(compound_ids):,}')
-        print(f'Number of unique targets = {len(include_target_ids):,}')
-        target_counts = sorted((target_data[target_id].sum() for target_id in include_target_ids), reverse=True)
-        print(f'Top 10 target counts = {target_counts[:10]}')
+        print(f"Target type = {name}")
+        print(f"Number of unique compounds = {len(compound_ids):,}")
+        print(f"Number of unique targets = {len(include_target_ids):,}")
+        target_counts = sorted(
+            (target_data[target_id].sum() for target_id in include_target_ids),
+            reverse=True,
+        )
+        print(f"Top 10 target counts = {target_counts[:10]}")
 
         # Save ChEMBL target data
         target_data.to_csv(save_path, index=False)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     get_targets(Args().parse_args())

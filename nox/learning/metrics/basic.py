@@ -1,42 +1,15 @@
 from typing import Dict
 from nox.utils.registry import register_object
-from collections import OrderedDict, defaultdict
 from nox.utils.classes import Nox
-import numpy as np
-import pdb
-from torchmetrics.functional import (
-    auc,
-    accuracy,
-    auroc,
-    precision_recall,
-    confusion_matrix,
-    f1,
-    precision_recall_curve,
-    average_precision,
-    mean_squared_error,
-    mean_absolute_error,
-    r2_score,
-    cosine_similarity,
-    pearson_corrcoef,
-    spearman_corrcoef
-)
+import torchmetrics
+from torchmetrics import Metric
+from torchmetrics.utilities.compute import auc as compute_auc
 import torch
-import copy
-
-EPSILON = 1e-6
-BINARY_CLASSIF_THRESHOLD = 0.5
 
 
 @register_object("classification", "metric")
-class BaseClassification(Nox):
+class BaseClassification(Metric, Nox):
     def __init__(self, args) -> None:
-        super().__init__()
-
-    @property
-    def metric_keys(self):
-        return ["probs", "preds", "golds"]
-
-    def __call__(self, predictions_dict, args) -> Dict:
         """
         Computes standard classification metrics
 
@@ -49,105 +22,121 @@ class BaseClassification(Nox):
             stats_dict (dict): contains (where applicable) values for accuracy, confusion matrix, precision, recall, f1, precision-recall auc, roc auc
 
         Note:
-            In multiclass setting (>2), accuracy, and micro-f1, micro-recall, micro-precision are equivalent
-            Macro: calculates metric per class then averages
+            Binary: two labels
+            Multiclass: more than two labels
+            Multilabel: potentially more than one label per sample (independent classes)
         """
-        stats_dict = OrderedDict()
+        super().__init__()
+        self.task_type = args.task_type
+        if args.task_type != "multilabel":
+            self.accuracy_metric = torchmetrics.Accuracy(
+                task=args.task_type,
+                num_classes=args.num_classes,
+            )
+            self.auroc_metric = torchmetrics.AUROC(
+                task=args.task_type, num_classes=args.num_classes
+            )
+            self.f1_metric = torchmetrics.F1Score(
+                task=args.task_type,
+                num_classes=args.num_classes,
+            )
+            self.macro_f1_metric = torchmetrics.F1Score(
+                task=args.task_type,
+                num_classes=args.num_classes,
+                average="macro",
+            )
+            self.ap_metric = torchmetrics.AveragePrecision(
+                task=args.task_type, num_classes=args.num_classes
+            )
+            self.auprc_metric = torchmetrics.PrecisionRecallCurve(
+                task=args.task_type, num_classes=args.num_classes
+            )
+            self.precision_metric = torchmetrics.Precision(
+                task=args.task_type,
+                num_classes=args.num_classes,
+            )
+            self.recall_metric = torchmetrics.Recall(
+                task=args.task_type,
+                num_classes=args.num_classes,
+            )
+        else:
+            self.accuracy_metric = torchmetrics.Accuracy(
+                task=args.task_type,
+                num_labels=args.num_classes,
+            )
+            self.auroc_metric = torchmetrics.AUROC(
+                task=args.task_type, num_labels=args.num_classes
+            )
+            self.f1_metric = torchmetrics.F1Score(
+                task=args.task_type,
+                num_labels=args.num_classes,
+            )
+            self.macro_f1_metric = torchmetrics.F1Score(
+                task=args.task_type,
+                num_labels=args.num_classes,
+                average="macro",
+            )
+            self.ap_metric = torchmetrics.AveragePrecision(
+                task=args.task_type, num_labels=args.num_classes
+            )
+            self.auprc_metric = torchmetrics.PrecisionRecallCurve(
+                task=args.task_type, num_labels=args.num_classes
+            )
+            self.precision_metric = torchmetrics.Precision(
+                task=args.task_type,
+                num_labels=args.num_classes,
+            )
+            self.recall_metric = torchmetrics.Recall(
+                task=args.task_type,
+                num_labels=args.num_classes,
+            )
 
+    @property
+    def metric_keys(self):
+        return ["probs", "preds", "golds"]
+
+    def update(self, predictions_dict, args) -> Dict:
         probs = predictions_dict["probs"]  # B, C (float)
         preds = predictions_dict["preds"]  # B
         golds = predictions_dict["golds"].int()  # B
-        stats_dict["accuracy"] = accuracy(golds, preds)
-        # stats_dict["confusion_matrix"] = confusion_matrix(
-        #     preds, golds, args.num_classes
-        # )
-        if args.num_classes == 2:
-            if len(probs.shape) == 1:
-                stats_dict["precision"], stats_dict["recall"] = precision_recall(
-                    probs, golds
-                )
-                stats_dict["f1"] = f1(probs, golds)
-                pr, rc, _ = precision_recall_curve(probs, golds)
-                stats_dict["pr_auc"] = auc(rc, pr)
-                try:
-                    stats_dict["roc_auc"] = auroc(probs, golds, pos_label=1)
-                except:
-                    pass
-            else:
-                stats_dict["precision"], stats_dict["recall"] = precision_recall(
-                    probs, golds, multiclass=False, num_classes=2
-                )
-                stats_dict["f1"] = f1(probs, golds, multiclass=False, num_classes=2)
-                pr, rc, _ = precision_recall_curve(probs, golds, num_classes=2)
-                stats_dict["pr_auc"] = auc(rc[-1], pr[-1])
-                try:
-                    stats_dict["roc_auc"] = auroc(probs, golds, num_classes=2)
-                except:
-                    pass
+
+        self.accuracy_metric.update(preds, golds)
+        self.auroc_metric.update(probs, golds)
+        self.auprc_metric.update(probs, golds)
+        self.f1_metric.update(probs, golds)
+        self.macro_f1_metric.update(probs, golds)
+        self.precision_metric.update(probs, golds)
+        self.recall_metric.update(probs, golds)
+        self.ap_metric.update(probs, golds)
+
+    def compute(self) -> Dict:
+        pr, rc, _ = self.auprc_metric.compute()
+        if self.task_type != "binary":  # list per class or per label if not binary task
+            pr_auc = [compute_auc(rc_i, pr_i) for rc_i, pr_i in zip(rc, pr)]
+            pr_auc = torch.mean(torch.stack(pr_auc))
         else:
-            stats_dict["precision"], stats_dict["recall"] = precision_recall(
-                probs, golds, num_classes=args.num_classes, average="macro"
-            )
-            stats_dict["f1"] = f1(
-                probs, golds, num_classes=args.num_classes, average="macro"
-            )
-            stats_dict["micro_f1"] = f1(
-                probs, golds, num_classes=args.num_classes, average="micro"
-            )
-            if len(torch.unique(golds)) == args.num_classes:
-                pr, rc, _ = precision_recall_curve(
-                    probs, golds, num_classes=args.num_classes
-                )
-                stats_dict["pr_auc"] = torch.mean(
-                    torch.stack([auc(rc[i], pr[i]) for i in range(args.num_classes)])
-                )
-                stats_dict["roc_auc"] = auroc(
-                    probs, golds, num_classes=args.num_classes, average="macro"
-                )
-
-            if args.store_classwise_metrics:
-                classwise_metrics = {}
-                (
-                    classwise_metrics["precisions"],
-                    classwise_metrics["recalls"],
-                ) = precision_recall(
-                    probs, golds, num_classes=args.num_classes, average="none"
-                )
-                classwise_metrics["f1s"] = f1(
-                    probs, golds, num_classes=args.num_classes, average="none"
-                )
-                pr, rc, _ = precision_recall_curve(
-                    probs, golds, num_classes=args.num_classes
-                )
-                classwise_metrics["pr_aucs"] = [
-                    auc(rc[i], pr[i]) for i in range(args.num_classes)
-                ]
-                classwise_metrics["accs"] = accuracy(
-                    golds, preds, num_classes=args.num_classes, average="none"
-                )
-                try:
-                    classwise_metrics["rocaucs"] = auroc(
-                        probs, golds, num_classes=args.num_classes, average="none"
-                    )
-                except:
-                    pass
-
-                for metricname in [
-                    "precisions",
-                    "recalls",
-                    "f1s",
-                    "rocaucs",
-                    "pr_aucs",
-                    "accs",
-                ]:
-                    if metricname in classwise_metrics:
-                        stats_dict.update(
-                            {
-                                "class{}_{}".format(i + 1, metricname): v
-                                for i, v in enumerate(classwise_metrics[metricname])
-                            }
-                        )
+            pr_auc = compute_auc(rc, pr)
+        stats_dict = {
+            "accuracy": self.accuracy_metric.compute(),
+            "roc_auc": self.auroc_metric.compute(),
+            "pr_auc": pr_auc,
+            "f1": self.f1_metric.compute(),
+            "macro_f1": self.macro_f1_metric.compute(),
+            "precision": self.precision_metric.compute(),
+            "recall": self.recall_metric.compute(),
+            "average_precision": self.ap_metric.compute(),
+        }
         return stats_dict
+
+    def reset(self):
+        self.accuracy_metric.reset()
+        self.auroc_metric.reset()
+        self.auprc_metric.reset()
+        self.f1_metric.reset()
+        self.macro_f1_metric.reset()
+        self.precision_metric.reset()
+        self.recall_metric.reset()
+        self.ap_metric.reset()
 
     @staticmethod
     def add_args(parser) -> None:
@@ -157,193 +146,375 @@ class BaseClassification(Nox):
             parser (argparse.ArgumentParser): argument parser
         """
         parser.add_argument(
-            "--store_classwise_metrics",
-            action="store_true",
-            default=False,
-            help="Whether to log metrics per class or just log average across classes",
+            "--task_type",
+            type=str,
+            default=None,
+            required=True,
+            choices=["binary", "multiclass", "multilabel"],
+            help="type of task",
         )
 
 
-@register_object("ordinal_classification", "metric")
-class Ordinal_Classification(BaseClassification):
-    def __call__(self, predictions_dict, args) -> Dict:
+@register_object("dummy_classification", "metric")
+class DummyBaseClassification(Metric, Nox):
+    def __init__(self, args) -> None:
         """
-        Computes classification for metrics when predicting multiple independent classes
+        Computes standard classification metrics
 
         Args:
             predictions_dict: dictionary obtained from computing loss and model outputs
+                * should contain the keys ['probs', 'preds', 'golds']
             args: argparser Namespace
 
         Returns:
-            stats_dict (dict): contains (where applicable) values for accuracy, confusion matrix, precision, recall, f1, precision-recall auc, roc auc, prefixed by col index
+            stats_dict (dict): contains (where applicable) values for accuracy, confusion matrix, precision, recall, f1, precision-recall auc, roc auc
+
+        Note:
+            Binary: two labels
+            Multiclass: more than two labels
+            Multilabel: potentially more than one label per sample (independent classes)
         """
-        stats_dict = OrderedDict()
-
-        probs = predictions_dict["probs"]  # B, C (float)
-        preds = predictions_dict["preds"]  # B
-        golds = predictions_dict["golds"]  # B
-        stats_dict["accuracy"] = accuracy(golds, preds)
-        #stats_dict["confusion_matrix"] = confusion_matrix(
-        #    preds, golds, args.num_classes + 1
-        #)
-
-        for classindex in range(golds.shape[-1]):
-            (
-                stats_dict["class{}_precision".format(classindex)],
-                stats_dict["class{}_recall".format(classindex)],
-            ) = precision_recall(probs, golds)
-            stats_dict["class{}_f1".format(classindex)] = f1(probs, golds)
-            pr, rc, _ = precision_recall_curve(probs, golds)
-            stats_dict["class{}_pr_auc".format(classindex)] = auc(rc, pr)
-            try:
-                stats_dict["class{}_roc_auc".format(classindex)] = auroc(
-                    probs, golds, pos_label=1
-                )
-            except:
-                pass
-
-        return stats_dict
-
-
-@register_object("survival_classification", "metric")
-class Survival_Classification(BaseClassification):
-    def __call__(self, predictions_dict, args):
-        stats_dict = OrderedDict()
-
-        golds = predictions_dict["golds"]
-        probs = predictions_dict["probs"]
-        preds = probs[:, -1].view(-1) > 0.5
-        probs = probs.reshape((-1, probs.shape[-1]))[:, -1]
-
-        stats_dict["accuracy"] = accuracy(golds, preds)
-
-        if (args.num_classes == 2) and not (
-            np.unique(golds)[-1] > 1 or np.unique(preds)[-1] > 1
-        ):
-            stats_dict["precision"], stats_dict["recall"] = precision_recall(
-                probs, golds
-            )
-            stats_dict["f1"] = f1(probs, golds)
-            num_pos = golds.sum()
-            if num_pos > 0 and num_pos < len(golds):
-                stats_dict["auc"] = auroc(probs, golds, pos_label=1)
-                stats_dict["ap_score"] = average_precision(probs, golds)
-                precision, recall, _ = precision_recall_curve(probs, golds)
-                stats_dict["prauc"] = auc(recall, precision)
-        return stats_dict
-
-
-@register_object("multitask_classification", "metric")
-class MultiTask_Classification(BaseClassification):
-    def __init__(self, args) -> None:
-        super().__init__(args)
-
-    @property
-    def metric_keys(self):
-        return ["probs", "preds", "golds"]
-
-    def __call__(self, predictions_dict, args):
-        stats_dict = OrderedDict()
-
-        golds = predictions_dict["golds"].int()
-        probs = predictions_dict["probs"]
-        preds = predictions_dict["preds"].int()
-
-        if "has_golds" in predictions_dict:
-            metrics = defaultdict(list)
-            for col in range(predictions_dict["golds"].shape[1]):
-                row = predictions_dict["has_golds"][:,col]
-                pr, rc = precision_recall(probs[row, col], golds[row, col])
-                metrics["precision"].append(pr)
-                metrics["recall"].append(rc)
-                metrics["f1"].append( f1(probs[row, col], golds[row, col] ))
-                metrics["roc_auc"].append( auroc(probs[row, col], golds[row, col] ) )
-            stats_dict = {k:torch.stack(v).mean() for k,v in metrics.items()}
-        else:
-            stats_dict["precision"], stats_dict["recall"] = precision_recall(probs, golds, multiclass=False)
-            stats_dict["f1"] = f1(probs, golds, multiclass=False, average="macro")
-            stats_dict["roc_auc"] = auroc(probs, golds, multiclass=False, num_classes=2)
-            
-        return stats_dict
-
-
-@register_object("regression", 'metric')
-class BaseRegression(Nox):
-    def __init__(self, args) -> None:
         super().__init__()
+        self.task_type = args.task_type
+
+        self.accuracy_metric = torchmetrics.Accuracy(
+            task=args.task_type,
+            num_classes=args.num_classes,
+        )
+        self.auroc_metric = torchmetrics.AUROC(
+            task=args.task_type, num_classes=args.num_classes
+        )
+        self.f1_metric = torchmetrics.F1Score(
+            task=args.task_type,
+            num_classes=args.num_classes,
+        )
+        self.macro_f1_metric = torchmetrics.F1Score(
+            task=args.task_type,
+            num_classes=args.num_classes,
+            average="macro",
+        )
+        self.ap_metric = torchmetrics.AveragePrecision(
+            task=args.task_type, num_classes=args.num_classes
+        )
+        self.auprc_metric = torchmetrics.PrecisionRecallCurve(
+            task=args.task_type, num_classes=args.num_classes
+        )
+        self.precision_metric = torchmetrics.Precision(
+            task=args.task_type,
+            num_classes=args.num_classes,
+        )
+        self.recall_metric = torchmetrics.Recall(
+            task=args.task_type,
+            num_classes=args.num_classes,
+        )
 
     @property
     def metric_keys(self):
-        return ['probs', 'golds']
+        return ["y", "probs", "preds", "golds"]
 
-    def __call__(self, logging_dict, args) -> Dict:
-        '''
-        Computes standard regresssion loss
-        Args:
-            logging_dict: dictionary obtained from computing loss and model outputs
-                * should contain the keys ['probs', 'golds']
-            args: argparser Namespace
+    def update(self, predictions_dict, args) -> Dict:
+        probs = predictions_dict["probs"]  # B, C (float)
+        probs = torch.diagonal(probs)  # I am only looking at samples I added
+        preds = predictions_dict["preds"]  # B
+        preds = torch.diagonal(preds)
+        golds = predictions_dict["y"].int()  # B
 
-        Returns:
-            stats_dict (dict): contains (where applicable) values for mse, mae, r2
-        '''
-        stats_dict = OrderedDict()
+        self.accuracy_metric.update(preds, golds)
+        self.auroc_metric.update(probs, golds)
+        self.auprc_metric.update(probs, golds)
+        self.f1_metric.update(probs, golds)
+        self.macro_f1_metric.update(probs, golds)
+        self.precision_metric.update(probs, golds)
+        self.recall_metric.update(probs, golds)
+        self.ap_metric.update(probs, golds)
 
-        probs = logging_dict['probs']
-        golds = logging_dict['golds']
-
-        stats_dict['mse'] = mean_squared_error(probs, golds)
-        stats_dict['mae'] = mean_absolute_error(probs, golds)
-        stats_dict['pearson'] = pearson_corrcoef(probs.view(-1), golds.view(-1))
-        stats_dict['spearman'] = spearman_corrcoef(probs.view(-1), golds.view(-1))
-
-        r2 = r2_score(probs, golds, multioutput='raw_values')
-        if probs.shape[-1] > 1:
-            stats_dict['r2'] = torch.stack([r for r in r2 if not torch.isinf(r)] ).mean()
-            stats_dict['cosine_similarity'] = cosine_similarity(probs, golds, reduction = 'mean')
+    def compute(self) -> Dict:
+        pr, rc, _ = self.auprc_metric.compute()
+        if self.task_type != "binary":  # list per class or per label if not binary task
+            pr_auc = [compute_auc(rc_i, pr_i) for rc_i, pr_i in zip(rc, pr)]
+            pr_auc = torch.mean(torch.stack(pr_auc))
         else:
-            stats_dict['r2'] = r2
-
+            pr_auc = compute_auc(rc, pr)
+        stats_dict = {
+            "accuracy": self.accuracy_metric.compute(),
+            "roc_auc": self.auroc_metric.compute(),
+            "pr_auc": pr_auc,
+            "f1": self.f1_metric.compute(),
+            "macro_f1": self.macro_f1_metric.compute(),
+            "precision": self.precision_metric.compute(),
+            "recall": self.recall_metric.compute(),
+            "average_precision": self.ap_metric.compute(),
+        }
         return stats_dict
+
+    def reset(self):
+        self.accuracy_metric.reset()
+        self.auroc_metric.reset()
+        self.auprc_metric.reset()
+        self.f1_metric.reset()
+        self.macro_f1_metric.reset()
+        self.precision_metric.reset()
+        self.recall_metric.reset()
+        self.ap_metric.reset()
+
+    @staticmethod
+    def add_args(parser) -> None:
+        """Add class specific args
+
+        Args:
+            parser (argparse.ArgumentParser): argument parser
+        """
+        parser.add_argument(
+            "--task_type",
+            type=str,
+            default=None,
+            required=True,
+            choices=["binary", "multiclass", "multilabel"],
+            help="type of task",
+        )
 
 
 @register_object("seq2seq_classification", "metric")
-class Seq2SeqClassification(BaseClassification):
+class Seq2SeqClassification(Metric, Nox):
+    """Same as BaseClassification but samplewise multidim_average"""
+
     def __init__(self, args) -> None:
-        super().__init__(args)
+        super().__init__()
+        self.ignore_index = args.ignore_index
+        self.task_type = args.task_type
+        self.accuracy_metric = torchmetrics.Accuracy(
+            task=args.task_type,
+            num_classes=args.num_classes,
+            num_labels=args.num_classes,
+            multidim_average="samplewise",
+            ignore_index=args.ignore_index,
+        )
+        self.f1_metric = torchmetrics.F1Score(
+            task=args.task_type,
+            num_classes=args.num_classes,
+            num_labels=args.num_classes,
+            multidim_average="samplewise",
+            ignore_index=args.ignore_index,
+        )
+        self.macro_f1_metric = torchmetrics.F1Score(
+            task=args.task_type,
+            num_labels=args.num_classes,
+            num_classes=args.num_classes,
+            average="macro",
+            multidim_average="samplewise",
+            ignore_index=args.ignore_index,
+        )
+        self.precision_metric = torchmetrics.Precision(
+            task=args.task_type,
+            num_labels=args.num_classes,
+            num_classes=args.num_classes,
+            multidim_average="samplewise",
+            ignore_index=args.ignore_index,
+        )
+        self.recall_metric = torchmetrics.Recall(
+            task=args.task_type,
+            num_labels=args.num_classes,
+            num_classes=args.num_classes,
+            multidim_average="samplewise",
+            ignore_index=args.ignore_index,
+        )
+        self.top_1_metric = TopK(
+            task=args.task_type,
+            num_labels=args.num_classes,
+            num_classes=args.num_classes,
+            ignore_index=args.ignore_index,
+        ).to(self.accuracy_metric.device)
+        # don't have multidim_average arg
+        self.auroc_metric = torchmetrics.AUROC(
+            task=args.task_type,
+            num_labels=args.num_classes,
+            num_classes=args.num_classes,
+            ignore_index=args.ignore_index,
+        )
+        self.ap_metric = torchmetrics.AveragePrecision(
+            task=args.task_type,
+            num_labels=args.num_classes,
+            num_classes=args.num_classes,
+            ignore_index=args.ignore_index,
+        )
+        self.auprc_metric = torchmetrics.PrecisionRecallCurve(
+            task=args.task_type,
+            num_labels=args.num_classes,
+            num_classes=args.num_classes,
+            ignore_index=args.ignore_index,
+        )
 
     @property
     def metric_keys(self):
         return ["probs", "preds", "golds"]
 
-    def __call__(self, predictions_dict, args) -> Dict:
-        stats_dict = defaultdict(list)
-
+    def update(self, predictions_dict, args) -> Dict:
         probs = predictions_dict["probs"]  # B, N, C (float)
         preds = predictions_dict["preds"]  # B, N
-        golds = predictions_dict["golds"].int()  # B, N
-        
-        top1_correct = 0
-        for sample_probs, sample_preds, sample_golds  in zip(probs, preds, golds):
-            sample_probs = sample_probs[sample_golds!=-100]
-            sample_preds = sample_preds[sample_golds!=-100]
-            sample_golds = sample_golds[sample_golds!=-100]
-            sample_stats = super().__call__(
-                {
-                    "probs": sample_probs, 
-                    "preds": sample_preds,
-                    "golds": sample_golds
-                }, args
-            )
-            top1_correct += torch.all(sample_preds == sample_golds).int()
-            for k,v in sample_stats.items():
-                if len(v.shape) < 2:
-                    stats_dict[k].append(v)
-        
-        for k,v in stats_dict.items():
-            stats_dict[k] = torch.stack(v).mean()
-        
-        stats_dict["top_1"] = top1_correct / len(golds)
+        golds = predictions_dict["golds"].long()  # B, N
 
+        self.accuracy_metric.update(preds, golds)
+        self.f1_metric.update(preds, golds)
+        self.macro_f1_metric.update(preds, golds)
+        self.precision_metric.update(preds, golds)
+        self.recall_metric.update(preds, golds)
+        self.top_1_metric.update(preds, golds)
+
+        for sample_prob, sample_gold in zip(probs, golds):
+            self.auroc_metric.update(sample_prob, sample_gold)
+            self.ap_metric.update(sample_prob, sample_gold)
+            self.auprc_metric.update(sample_prob, sample_gold)
+
+    def compute(self) -> Dict:
+        pr, rc, _ = self.auprc_metric.compute()
+        if self.task_type != "binary":  # list per class or per label if not binary task
+            pr_auc = [compute_auc(rc_i, pr_i) for rc_i, pr_i in zip(rc, pr)]
+            pr_auc = torch.mean(torch.stack(pr_auc))
+        else:
+            pr_auc = compute_auc(rc, pr)
+        stats_dict = {
+            "accuracy": self.accuracy_metric.compute().mean(),
+            "roc_auc": self.auroc_metric.compute(),
+            "pr_auc": pr_auc,
+            "f1": self.f1_metric.compute().mean(),
+            "macro_f1": self.macro_f1_metric.compute().mean(),
+            "precision": self.precision_metric.compute().mean(),
+            "recall": self.recall_metric.compute().mean(),
+            "top_1": self.top_1_metric.compute(),
+        }
         return stats_dict
-    
+
+    def reset(self):
+        self.accuracy_metric.reset()
+        self.auroc_metric.reset()
+        self.auprc_metric.reset()
+        self.f1_metric.reset()
+        self.macro_f1_metric.reset()
+        self.precision_metric.reset()
+        self.recall_metric.reset()
+        self.ap_metric.reset()
+        self.top_1_metric.reset()
+
+    @staticmethod
+    def add_args(parser) -> None:
+        """Add class specific args
+
+        Args:
+            parser (argparse.ArgumentParser): argument parser
+        """
+        parser.add_argument(
+            "--task_type",
+            type=str,
+            default=None,
+            required=True,
+            choices=["binary", "multiclass", "multilabel"],
+            help="type of task",
+        )
+        parser.add_argument(
+            "--ignore_index",
+            type=int,
+            default=-100,
+            help="type of task",
+        )
+
+
+@register_object("regression", "metric")
+class BaseRegression(Metric, Nox):
+    def __init__(self, args) -> None:
+        super().__init__()
+
+        self.num_classes = args.num_classes
+        self.mae = torchmetrics.MeanAbsoluteError()
+        self.mse = torchmetrics.MeanSquaredError()
+        self.pearson = torchmetrics.PearsonCorrCoef(num_outputs=args.num_classes)
+        self.spearman = torchmetrics.SpearmanCorrCoef(num_outputs=args.num_classes)
+        self.r2 = torchmetrics.R2Score(
+            num_outputs=args.num_classes, multioutput=args.r2_multioutput
+        )
+        self.cosine_similarity = torchmetrics.CosineSimilarity(reduction="mean")
+
+    @property
+    def metric_keys(self):
+        return ["probs", "golds"]
+
+    def update(self, predictions_dict, args) -> Dict:
+        probs = predictions_dict["probs"]  # B, C (float)
+        golds = predictions_dict["golds"]  # B
+
+        if probs.shape[-1] == 1:
+            probs = probs.view(-1)
+            golds = golds.view(-1)
+
+        self.mae.update(probs, golds)
+        self.mse.update(probs, golds)
+        self.pearson.update(probs, golds)
+        self.spearman.update(probs, golds)
+        self.r2.update(probs, golds)
+        if self.num_classes > 1:
+            self.cosine_similarity.update(probs, golds)
+
+    def compute(self) -> Dict:
+        stats_dict = {
+            "mae": self.mae.compute(),
+            "mse": self.mse.compute(),
+            "pearson": self.pearson.compute(),
+            "spearman": self.spearman.compute(),
+            "r2": self.r2.compute(),
+        }
+        if self.num_classes > 1:
+            stats_dict["cosine_similarity"] = self.cosine_similarity.compute()
+        return stats_dict
+
+    def reset(self):
+        self.mae.reset()
+        self.mse.reset()
+        self.pearson.reset()
+        self.spearman.reset()
+        self.r2.reset()
+        self.cosine_similarity.reset()
+
+    @staticmethod
+    def add_args(parser) -> None:
+        """Add class specific args
+
+        Args:
+            parser (argparse.ArgumentParser): argument parser
+        """
+        parser.add_argument(
+            "--r2_multioutput",
+            type=str,
+            default="uniform_average",
+            choices=["raw_values", "uniform_average", "variance_weighted"],
+            help="aggregation in the case of multiple output scores",
+        )
+
+
+class TopK(Metric):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        higher_is_better: Optional[bool] = True
+        is_differentiable = False
+        full_state_update: bool = False
+
+        self.ignore_index = kwargs["ignore_index"]
+        self.task = kwargs["task"]
+        self.num_classes = kwargs["num_classes"]
+
+        self.add_state("correct", default=torch.tensor(0), dist_reduce_fx="sum")
+        self.add_state("total", default=torch.tensor(0), dist_reduce_fx="sum")
+
+    def update(self, preds: torch.Tensor, target: torch.Tensor):
+        assert preds.shape == target.shape
+
+        if self.ignore_index is not None:
+            preds[target == self.ignore_index] = self.ignore_index
+
+        correct = (preds == target).sum(1) == preds.shape[1]
+        correct = correct.sum()
+        total = torch.tensor(preds.shape[0])
+
+        self.correct += correct.to(self.device)
+        self.total += total.to(self.device)
+
+    def compute(self):
+        return self.correct.float() / self.total

@@ -126,8 +126,15 @@ def get_metabolite_metadata(metabolite: Metabolite) -> dict:
                         changed_metabolite_id = True
                     bigg_scraped_metadata = link_metabolite_to_db(metabolite)
                     # change metabolite back since it can be called again
-                    if changed_metabolite_id and metabolite.id.endswith(f"_{metabolite.compartment}"):
-                        metabolite.id = metabolite.id.split("_")[0] + "[" + metabolite.compartment + "]"
+                    if changed_metabolite_id and metabolite.id.endswith(
+                        f"_{metabolite.compartment}"
+                    ):
+                        metabolite.id = (
+                            metabolite.id.split("_")[0]
+                            + "["
+                            + metabolite.compartment
+                            + "]"
+                        )
                     if "smiles" in bigg_scraped_metadata and (
                         len(bigg_scraped_metadata["smiles"]) > 0
                         or bigg_scraped_metadata["smiles"] is not None
@@ -201,13 +208,15 @@ def get_reaction_elements(rxn: Reaction) -> dict:
         }
         # check if existing
         fasta_dir = f"/Mounts/rbg-storage1/datasets/Metabo/Recon3D/Recon3D_GP/genes/{row['m_gene']}/{row['m_gene']}_protein/sequences/"
-        if os.path.exists(fasta_dir) and (row['seq_file'] == ""):
-            existing_seq_file = [f for f in os.listdir(fasta_dir) if f.endswith(".fasta") ]
+        if os.path.exists(fasta_dir) and (row["seq_file"] == ""):
+            existing_seq_file = [
+                f for f in os.listdir(fasta_dir) if f.endswith(".fasta")
+            ]
             if len(existing_seq_file) == 1:
-                row['seq_file'] == existing_seq_file[0]
-        
-        fasta_path = f"/Mounts/rbg-storage1/datasets/Metabo/Recon3D/Recon3D_GP/genes/{row['m_gene']}/{row['m_gene']}_protein/sequences/{row['seq_file']}"        
-        if os.path.exists(fasta_path) and (row['seq_file'] != ""):
+                row["seq_file"] == existing_seq_file[0]
+
+        fasta_path = f"/Mounts/rbg-storage1/datasets/Metabo/Recon3D/Recon3D_GP/genes/{row['m_gene']}/{row['m_gene']}_protein/sequences/{row['seq_file']}"
+        if os.path.exists(fasta_path) and (row["seq_file"] != ""):
             fasta_service = FASTA()
             fh = open(fasta_path, "r")
             data = fh.read()

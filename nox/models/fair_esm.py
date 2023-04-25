@@ -1,9 +1,14 @@
 import torch
 import torch.nn as nn
 import copy
+from typing import List
 from nox.models.abstract import AbstractModel
 from nox.utils.classes import set_nox_type
 from nox.utils.registry import register_object, get_object
+from nox.utils.amino_acids import AA_TO_SMILES
+from torch_geometric.data import Data, HeteroData, Batch
+from nox.utils.pyg import from_smiles
+from nox.utils.smiles import get_rdkit_feature
 
 
 @register_object("fair_esm", "model")
@@ -73,19 +78,10 @@ class FairEsm(AbstractModel):
             output["hidden"] = (
                 result["representations"][self.repr_layer] * sequence_mask
             ).sum(1) / sequence_mask.sum(1)
+            output["mask_hiddens"] = sequence_mask
 
         output["tokens"] = batch_tokens
         output["token_hiddens"] = result["representations"][self.repr_layer]
-        output["mask_hiddens"] = sequence_mask
-        
-        if self.args.esm_return_only_contacts:
-            del output["hidden"]
-            output["attentions"] = result["attentions"]
-        
-        if self.args.esm_return_only_attention:
-            del output["hidden"]
-            # B, (batch_tokens - 2), (batch_tokens - 2) because removes bos and eos tokens
-            output["contacts"] = result["contacts"]
 
         return output
 

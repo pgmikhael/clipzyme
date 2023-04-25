@@ -17,7 +17,6 @@ class BrendaKCat(AbstractDataset):
     def create_dataset(
         self, split_group: Literal["train", "dev", "test"]
     ) -> List[dict]:
-
         # get sequence,smiles pair to y-value
         seq_smi_2_y = defaultdict(list)
         for kcat_dict in self.metadata_json:
@@ -28,7 +27,6 @@ class BrendaKCat(AbstractDataset):
         # create samples
         dataset = []
         for kcat_dict in tqdm(self.metadata_json):
-
             if self.skip_sample(kcat_dict, split_group, seq_smi_2_y):
                 continue
             mol_datapoint = from_smiles(kcat_dict["Smiles"])
@@ -44,6 +42,9 @@ class BrendaKCat(AbstractDataset):
                 "sequence": kcat_dict["Sequence"],
                 "y": self.get_label(kcat_dict),
                 "sample_id": kcat_dict["sample_id"],
+                "ec": kcat_dict["ECNumber"],
+                "organism": kcat_dict["Organism"],
+                "type": kcat_dict["Type"],
             }
             if self.args.generate_3d_graphs:
                 sample["path"] = os.path.join(
@@ -72,8 +73,13 @@ class BrendaKCat(AbstractDataset):
 
         if float(sample["Value"]) <= 0:
             return True
-        
-        if self.args.generate_3d_graphs and not os.path.exists(os.path.join("/Mounts/rbg-storage1/datasets/Enzymes/DLKcat/DeeplearningApproach/Data/database/Kcat_combination_0918_wildtype_mutant_structures/", f"seq_id_{sample['seq_id']}.pdb")):
+
+        if self.args.generate_3d_graphs and not os.path.exists(
+            os.path.join(
+                "/Mounts/rbg-storage1/datasets/Enzymes/DLKcat/DeeplearningApproach/Data/database/Kcat_combination_0918_wildtype_mutant_structures/",
+                f"seq_id_{sample['seq_id']}.pdb",
+            )
+        ):
             print("Skipped because missing structure")
             return True
 
@@ -93,26 +99,26 @@ class BrendaKCat(AbstractDataset):
 
         return False
 
+    def get_split_group_dataset(self, processed_dataset, split_group):
+        return [
+            sample for sample in processed_dataset if sample["split"] == split_group
+        ]
+
     def assign_splits(self, metadata_json, split_probs, seed=0) -> None:
         np.random.seed(seed)
         if self.args.split_type == "random":
             super().assign_splits(metadata_json, split_probs, seed)
 
         elif self.args.split_type in ["smiles", "sequence", "ec", "organism"]:
-            if self.args.split_type == "smiles":
-                key = "Smiles"
-            elif self.args.split_type == "sequence":
-                key = "Sequence"
-            elif self.args.split_type == "ec":
-                key = "ECNumber"
-            elif self.args.split_type == "organism":
-                key = "Organism"
+            key = self.args.split_type
 
             #  split based on key
             samples = set([sample[key] for sample in metadata_json])
             samples = sorted(list(samples))
             np.random.shuffle(samples)
-            split_indices = np.cumsum(np.array(split_probs) * len(samples)).astype(int)
+            split_indices = np.ceil(
+                np.cumsum(np.array(split_probs) * len(samples))
+            ).astype(int)
             split_indices = np.concatenate([[0], split_indices])
             for i in range(len(split_indices) - 1):
                 for sample in metadata_json:
@@ -127,7 +133,7 @@ class BrendaKCat(AbstractDataset):
                 empirical_distribution, split_probs, atol=0.1, rtol=0
             ):
                 #  split based on sequence
-                samples = set([sample["Sequence"] for sample in metadata_json])
+                samples = set([sample["sequence"] for sample in metadata_json])
                 samples = sorted(list(samples))
                 np.random.shuffle(samples)
                 split_indices = np.cumsum(np.array(split_probs) * len(samples)).astype(
@@ -136,7 +142,7 @@ class BrendaKCat(AbstractDataset):
                 seq_split_indices = np.concatenate([[0], split_indices])
 
                 #  split based on smiles
-                samples = set([sample["Smiles"] for sample in metadata_json])
+                samples = set([sample["smiles"] for sample in metadata_json])
                 samples = sorted(list(samples))
                 np.random.shuffle(samples)
                 split_indices = np.cumsum(np.array(split_probs) * len(samples)).astype(
@@ -147,17 +153,16 @@ class BrendaKCat(AbstractDataset):
                 for i in range(len(split_indices) - 1):
                     for sample in metadata_json:
                         if (
-                            sample["Smiles"]
+                            sample["smiles"]
                             in smi_split_indices[
                                 split_indices[i] : split_indices[i + 1]
                             ]
                         ) and (
-                            sample["Sequence"]
+                            sample["sequence"]
                             in seq_split_indices[
                                 split_indices[i] : split_indices[i + 1]
                             ]
                         ):
-
                             sample["split"] = ["train", "test"][i]
 
                 # compute empirical distribution
@@ -180,12 +185,14 @@ class BrendaKCat(AbstractDataset):
             #  split based on mutation
             assert len(split_probs) == 2, "Mutation split only supports 2 splits"
             for sample in metadata_json:
-                if sample["Type"] == "wildtype":
+                if sample["type"] == "wildtype":
                     sample["split"] = "train"
                 else:
                     sample["split"] = np.random.choice(["dev", "test"], split_probs)
         else:
             raise ValueError("Split type not supported")
+
+        return metadata_json
 
     def __getitem__(self, index):
         """
@@ -200,10 +207,10 @@ class BrendaKCat(AbstractDataset):
         sample = self.dataset[index]
         if self.args.generate_3d_graphs:
             sample, data_params = get_protein_graphs_from_path([sample], self.args)
-            del sample['receptor']
-            del sample['receptor_atom']
-            del sample['receptor_seq']
-            del sample['receptor_xyz']
+            del sample["receptor"]
+            del sample["receptor_atom"]
+            del sample["receptor_seq"]
+            del sample["receptor_xyz"]
         try:
             return sample
         except Exception:
@@ -286,6 +293,34 @@ class BrendaKCat(AbstractDataset):
         * Number of proteins: {num_proteins}
         """
         return statement
+
+    def __getitem__(self, index):
+        """
+        Fetch single sample from dataset
+
+        Args:
+            index (int): random index of sample from dataset
+
+        Returns:
+            sample (dict): a sample
+        """
+        sample = self.dataset[index]
+        try:
+            return {
+                "smiles": sample["mol"],
+                "mol": sample["mol"],
+                "smiles_str": sample["smiles"],
+                "sequence": sample["sequence"],
+                "y": sample["y"],
+                "sample_id": sample["sample_id"],
+                "ec": sample["ec"],
+                "organism": sample["organism"],
+                "type": sample["type"],
+            }
+        except Exception:
+            warnings.warn(
+                LOAD_FAIL_MSG.format(sample["sample_id"], traceback.print_exc())
+            )
 
 
 @register_object("gsm_enzyme_interaction", "dataset")

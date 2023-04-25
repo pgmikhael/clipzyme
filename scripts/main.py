@@ -1,7 +1,8 @@
 import sys, os
+import rdkit
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
-
+os.environ["WANDB__SERVICE_WAIT"] = "300"
 from ast import arg
 from collections import OrderedDict
 import pickle
@@ -18,6 +19,7 @@ from nox.utils.registry import get_object
 import nox.utils.loading as loaders
 from nox.utils.callbacks import set_callbacks
 from rich import print
+
 
 def train(args):
 

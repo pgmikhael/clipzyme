@@ -1,5 +1,5 @@
 from tqdm import tqdm
-import json 
+import json
 from p_tqdm import p_umap
 
 """
@@ -12,27 +12,28 @@ with open(filename, "r") as f:
     molfile = f.read()
 mols = molfile.split("$$$$")
 
-if mols[-1] == '\n':
+if mols[-1] == "\n":
     mols = mols[:-1]
-    
+
 # chebi_db = {}
 # for m in tqdm(mols, total = len(mols)):
 def make_db(m):
     mol_db = {}
     moldata = [k for k in m.split("\n") if k != ""]
-    entries = [l for l in moldata if l.startswith('> <')]
+    entries = [l for l in moldata if l.startswith("> <")]
 
-    for i,j in zip(range(len(entries) - 1), range(1, len(entries))):
+    for i, j in zip(range(len(entries) - 1), range(1, len(entries))):
         start = m.index(entries[i]) + len(entries[i])
         end = m.index(entries[j])
-        entry_values = [k for k in m[start:end].split("\n") if k!= ""]
+        entry_values = [k for k in m[start:end].split("\n") if k != ""]
         if len(entry_values) == 1:
             entry_values = entry_values[0]
-            
-        mol_db[ entries[i].lstrip("> <").rstrip(">") ] = entry_values
-        
+
+        mol_db[entries[i].lstrip("> <").rstrip(">")] = entry_values
+
     # chebi_db[mol_db["ChEBI ID"]] = mol_db
     return (mol_db["ChEBI ID"], mol_db)
+
 
 if __name__ == "__main__":
 
@@ -40,9 +41,9 @@ if __name__ == "__main__":
         molfile = f.read()
     mols = molfile.split("$$$$")
 
-    if mols[-1] == '\n':
+    if mols[-1] == "\n":
         mols = mols[:-1]
-    
+
     chebi_db = p_umap(make_db, mols)
     chebi_db = {chebid: moldb for chebid, moldb in chebi_db}
 

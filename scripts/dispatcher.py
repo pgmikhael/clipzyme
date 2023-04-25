@@ -11,6 +11,7 @@ import json
 import nox.utils.parsing as parsing
 from nox.utils.registry import md5
 from rich import print
+
 EXPERIMENT_CRASH_MSG = "ALERT! job:[{}] has crashed! Check logfile at:[{}]"
 CONFIG_NOT_FOUND_MSG = "ALERT! {} config {} file does not exist!"
 SUCESSFUL_SEARCH_STR = "SUCCESS! Grid search results dumped to {}."
