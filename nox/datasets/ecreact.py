@@ -434,7 +434,7 @@ class ECReact_RXNS(ECReact):
         ):
 
             ec = reaction["ec"]
-            reactants = reaction["reactants"]
+            reactants = sorted(reaction["reactants"])
             products = reaction["products"]
             reaction_string = ".".join(reactants) + ">>" + ".".join(products)
 
@@ -559,6 +559,13 @@ class ECReact_RXNS(ECReact):
             dataset.append(sample)
         return dataset
 
+    def post_process(self, args):
+        # add all possible products
+        reaction_to_products = defaultdict(set)
+        for sample in self.dataset:
+            reaction_to_products[f"{sample['ec']}{'.'.join(sample['reactants'])}"].update(sample['products'])
+        self.reaction_to_products = reaction_to_products
+
     @staticmethod
     def set_args(args):
         args.dataset_file_path = "/Mounts/rbg-storage1/datasets/Enzymes/ECReact/ecreact_mapped_ibm_splits.json"
@@ -629,11 +636,13 @@ class ECReact_RXNS(ECReact):
                 "organism": sample.get("organism", "none"),
                 "protein_id": uniprot_id,
                 "sample_id": sample_id,
+                "all_smiles": list(self.reaction_to_products[f"{ec}{'.'.join(sorted(reactants))}"]),
+                "smiles": ".".join(products),
             }
 
             if sample.get("source", False):
                 sample["all_smiles"] = products
-            else:
+            elif "decoder" in self.args.model_name:
                 sample["all_smiles"] = self.uniprot2substrates[uniprot_id]
 
             if self.args.add_active_residues_to_item:
@@ -708,7 +717,7 @@ class ECReactRxnsFull(ECReact_RXNS):
             self.mol2size = {}
 
             ec = reaction["ec"]
-            reactants = reaction["reactants"]
+            reactants = sorted(reaction["reactants"])
             products = reaction["products"]
             reaction_string = ".".join(reactants) + ">>" + ".".join(products)
 
@@ -787,6 +796,8 @@ class ECReactRxnsFull(ECReact_RXNS):
                 "organism": sample.get("organism", "none"),
                 "protein_id": uniprot_id,
                 "sample_id": sample_id,
+                "smiles": ".".join(products),
+                "all_smiles": list(self.reaction_to_products[f"{ec}{'.'.join(sorted(reactants))}"]),
             }
 
             return item
