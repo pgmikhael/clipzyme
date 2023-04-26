@@ -568,20 +568,31 @@ class EnzymaticReactionEncoder(ReactionEncoder):
             labels.view(-1),
         )
 
-        metric_labels = labels  # .view(-1)
         metric_logits = shifted_logits  # .reshape(-1, self.model.decoder.config.vocab_size)[metric_labels!= -100]
-        metric_labels = metric_labels  # [ metric_labels!= -100]
+        
         output = {
             "loss": loss,
             "logit": metric_logits,
-            "y": metric_labels,
+            # "cross_attentions": decoder_outputs['cross_attentions'],
+            # "attention_idx": 
         }
 
-        preds =  torch.argmax( metric_logits, dim =-1 ) 
+        preds =  torch.argmax(metric_logits.detach(), dim =-1 ) 
         decoded_preds = self.tokenizer.batch_decode(preds, skip_special_tokens=True)
         decoded_preds = [s.replace(" ", "") for s in decoded_preds]
         output["pred_smiles"] = decoded_preds
 
+        pred_mask = (preds == self.tokenizer.eos_token_id).int().detach()
+        pred_mask_has_eos = pred_mask.sum(-1)
+        indices = torch.argmax(pred_mask, dim=1)
+        for r, i in enumerate(indices):
+            if pred_mask_has_eos[r] > 0:
+                pred_mask[r,i:] = self.tokenizer.eos_token_id # set everything after first eos to eos
+        output["preds_mask"] = pred_mask
+        
+        metric_labels = labels.clone()  # .view(-1)
+        metric_labels[metric_labels==-100] = self.tokenizer.eos_token_id
+        output["y"] = metric_labels
         return output
 
     def generate(self, batch):
@@ -654,7 +665,7 @@ class EnzymaticReactionEncoder(ReactionEncoder):
             "--protein_representation_key",
             type=str,
             default="hidden",
-            choices=["hidden", "token_hiddens", "last_hidden_state"],
+            choices=["hidden", "token_hiddens", "last_hidden_state", "pooler_output"],
             help="which protein encoder output to uses",
         )
         parser.add_argument(
