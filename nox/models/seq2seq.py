@@ -578,8 +578,9 @@ class EnzymaticReactionEncoder(ReactionEncoder):
         }
 
         preds =  torch.argmax(metric_logits.detach(), dim =-1 ) 
-        decoded_preds = self.tokenizer.batch_decode(preds, skip_special_tokens=True)
+        decoded_preds = self.tokenizer.batch_decode(preds, skip_special_tokens=False)
         decoded_preds = [s.replace(" ", "") for s in decoded_preds]
+        decoded_preds = [s[: s.index(self.tokenizer.eos_token)] if s.find(self.tokenizer.eos_token) > -1 else s for s in decoded_preds] # stop at first eos
         output["pred_smiles"] = decoded_preds
 
         pred_mask = (preds == self.tokenizer.eos_token_id).int().detach()
