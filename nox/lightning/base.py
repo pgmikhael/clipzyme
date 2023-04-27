@@ -331,8 +331,9 @@ class Base(pl.LightningModule, Nox):
             if func == "update":
                 metric_fn.update(predictions, self.args)
             elif func == "compute":
-                l_dict = metric_fn.compute()
-                logging_dict.update(l_dict)
+                if metric_fn._update_called:
+                    l_dict = metric_fn.compute()
+                    logging_dict.update(l_dict)
         return logging_dict
 
     def store_in_predictions(self, preds, storage_dict):
