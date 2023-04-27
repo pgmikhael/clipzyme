@@ -130,6 +130,7 @@ class BaseClassification(Metric, Nox):
         return stats_dict
 
     def reset(self):
+        super().reset()
         self.accuracy_metric.reset()
         self.auroc_metric.reset()
         self.auprc_metric.reset()
@@ -392,6 +393,7 @@ class Seq2SeqClassification(Metric, Nox):
         return stats_dict
 
     def reset(self):
+        super().reset()
         self.accuracy_metric.reset()
         #self.auroc_metric.reset()
         #self.auprc_metric.reset()
@@ -474,6 +476,7 @@ class BaseRegression(Metric, Nox):
         return stats_dict
 
     def reset(self):
+        super().reset()
         self.mae.reset()
         self.mse.reset()
         self.pearson.reset()

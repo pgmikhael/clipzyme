@@ -550,6 +550,7 @@ class TrainMolecularMetricsDiscrete(Metric, Nox):
         return stats_dict
 
     def reset(self):
+        super().reset()
         for metric in [
             self.train_atom_metrics,
             self.train_bond_metrics,
