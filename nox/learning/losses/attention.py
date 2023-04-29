@@ -26,7 +26,7 @@ class CrossAttentionLoss(Nox):
             loss = loss + kl_div_loss.sum() / sum(kl_div_loss.shape[:3]) # mean over first 3 dimensions (batch, heads, decoding tokens)
         
         loss = loss * args.attention_loss_lambda
-        logging_dict["cross_entropy_loss"] = loss.detach()
+        logging_dict["attention_loss"] = loss.detach()
 
         return loss, logging_dict, predictions
 
