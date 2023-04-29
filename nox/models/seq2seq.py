@@ -573,7 +573,7 @@ class EnzymaticReactionEncoder(ReactionEncoder):
         output = {
             "loss": loss,
             "logit": metric_logits,
-            # "cross_attentions": decoder_outputs['cross_attentions'],
+            "cross_attentions": decoder_outputs['cross_attentions'],
             # "attention_idx": 
         }
 
@@ -583,17 +583,45 @@ class EnzymaticReactionEncoder(ReactionEncoder):
         decoded_preds = [s[: s.index(self.tokenizer.eos_token)] if s.find(self.tokenizer.eos_token) > -1 else s for s in decoded_preds] # stop at first eos
         output["pred_smiles"] = decoded_preds
 
+        # pred_mask = (preds == self.tokenizer.eos_token_id).int().detach()
+        # pred_mask_has_eos = pred_mask.sum(-1)
+        # indices = torch.argmax(pred_mask, dim=1)
+        # for r, i in enumerate(indices):
+        #     if pred_mask_has_eos[r] > 0:
+        #         pred_mask[r,i:] = self.tokenizer.eos_token_id # set everything after first eos to eos
+        # output["preds_mask"] = pred_mask
+        
+        # metric_labels = labels.clone()  # .view(-1)
+        # metric_labels[metric_labels==-100] = self.tokenizer.eos_token_id
+        # output["y"] = metric_labels
+
+        # create predictions and labels to penalize errors due to early/late truncation but nothing after
+        # get mask of 1s until first eos token for predictions
         pred_mask = (preds == self.tokenizer.eos_token_id).int().detach()
         pred_mask_has_eos = pred_mask.sum(-1)
         indices = torch.argmax(pred_mask, dim=1)
+        pred_mask = torch.zeros_like(pred_mask)
         for r, i in enumerate(indices):
             if pred_mask_has_eos[r] > 0:
-                pred_mask[r,i:] = self.tokenizer.eos_token_id # set everything after first eos to eos
-        output["preds_mask"] = pred_mask
-        
-        metric_labels = labels.clone()  # .view(-1)
-        metric_labels[metric_labels==-100] = self.tokenizer.eos_token_id
+                pred_mask[r,:(i+1)] = 1 
+
+        metric_labels = labels.clone()
+
+        # get mask of 1s until first eos token that occurs last between prediction and label
+        mask = ((metric_labels!=-100) + pred_mask)>0
+
+        # prediction too long: make missing labels for extra (wrong) predictions different from predictions to count as wrong
+        metric_labels[torch.logical_and(metric_labels==-100, mask)] = (preds[torch.logical_and(metric_labels==-100, mask)] + 1) % self.args.num_classes 
+        # prediction too short: make missing predictions for labels different from labels to count as wrong 
+        preds[torch.logical_and(pred_mask==0, mask)]  = (metric_labels[torch.logical_and(pred_mask==0, mask)] + 1) % self.args.num_classes 
+
         output["y"] = metric_labels
+        output["preds"] = preds
+
+        preds_mask = mask.int()
+        preds_mask[preds_mask==0] = -100
+        output["preds_mask"] = preds_mask
+
         return output
 
     def generate(self, batch):
