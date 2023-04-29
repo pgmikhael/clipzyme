@@ -18,6 +18,7 @@ from p_tqdm import p_map
 import random
 from collections import defaultdict
 import rdkit 
+import torch
 
 @register_object("ecreact", "dataset")
 class ECReact(BrendaReaction):
@@ -141,6 +142,17 @@ class ECReact(BrendaReaction):
 
             dataset.append(sample)
         return dataset
+
+    def get_pesto_scores(self, uniprot):
+        filepath = f"{self.args.pesto_scores_directory}/AF-{uniprot}-F1-model_v4.pt"
+        if not os.path.exists(filepath):
+            return None
+        scores_dict = torch.load(filepath)
+        chain = "A:0"  # * NOTE: hardcoded because currently only option
+        residue_ids = scores_dict[chain]["resid"]
+        residue_ids_unique = np.unique(residue_ids, return_index=True)[1]
+        scores = scores_dict[chain]["ligand"][residue_ids_unique]
+        return torch.tensor(scores)
 
     @staticmethod
     def set_args(args) -> None:
@@ -584,6 +596,18 @@ class ECReact_RXNS(ECReact):
             default=False,
             help="whether to add active site residues to getitem sample if available",
         )
+        parser.add_argument(
+            "--use_pesto_scores",
+            action="store_true",
+            default=False,
+            help="use pesto scores",
+        )
+        parser.add_argument(
+            "--pesto_scores_directory",
+            type=str,
+            default="/Mounts/rbg-storage1/datasets/Enzymes/ECReact/pesto_ligands",
+            help="load pesto scores from directory predictions",
+        )
 
     def __getitem__(self, index):
         sample = self.dataset[index]
@@ -677,6 +701,13 @@ class ECReact_RXNS(ECReact):
                         "hidden": protein_hidden,
                     }
                 )
+            
+            if self.args.use_pesto_scores:
+                scores = self.get_pesto_scores(item["protein_id"])
+                if scores is None:
+                    # make all zeros of length sequence
+                    scores = torch.zeros(len(item["sequence"]))
+                item["sequence_annotation"] = scores
 
             return item
 
@@ -709,9 +740,9 @@ class ECReactRxnsFull(ECReact_RXNS):
         dataset = []
 
         for rowid, reaction in tqdm(
-            enumerate(self.metadata_json),
+            enumerate(self.metadata_json[:1000]),
             desc="Building dataset",
-            total=len(self.metadata_json),
+            total=len(self.metadata_json[:1000]),
             ncols=100,
         ):
             self.mol2size = {}
@@ -799,6 +830,13 @@ class ECReactRxnsFull(ECReact_RXNS):
                 "smiles": ".".join(products),
                 "all_smiles": list(self.reaction_to_products[f"{ec}{'.'.join(sorted(reactants))}"]),
             }
+
+            if self.args.use_pesto_scores:
+                scores = self.get_pesto_scores(item["protein_id"])
+                if scores is None:
+                    # make all zeros of length sequence
+                    scores = torch.zeros(len(item["sequence"]))
+                item["sequence_annotation"] = scores
 
             return item
 
