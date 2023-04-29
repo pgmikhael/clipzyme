@@ -740,9 +740,9 @@ class ECReactRxnsFull(ECReact_RXNS):
         dataset = []
 
         for rowid, reaction in tqdm(
-            enumerate(self.metadata_json[:1000]),
+            enumerate(self.metadata_json),
             desc="Building dataset",
-            total=len(self.metadata_json[:1000]),
+            total=len(self.metadata_json),
             ncols=100,
         ):
             self.mol2size = {}
