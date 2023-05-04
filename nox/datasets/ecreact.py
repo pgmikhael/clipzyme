@@ -704,7 +704,7 @@ class ECReact_RXNS(ECReact):
             
             if self.args.use_pesto_scores:
                 scores = self.get_pesto_scores(item["protein_id"])
-                if scores is None:
+                if (scores is None) or (scores.shape[0] != len(item["sequence"])):
                     # make all zeros of length sequence
                     scores = torch.zeros(len(item["sequence"]))
                 item["sequence_annotation"] = scores
@@ -833,7 +833,7 @@ class ECReactRxnsFull(ECReact_RXNS):
 
             if self.args.use_pesto_scores:
                 scores = self.get_pesto_scores(item["protein_id"])
-                if scores is None:
+                if (scores is None) or (scores.shape[0] != len(item["sequence"])):
                     # make all zeros of length sequence
                     scores = torch.zeros(len(item["sequence"]))
                 item["sequence_annotation"] = scores
