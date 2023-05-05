@@ -155,9 +155,7 @@ def prepare_training_config_for_eval(train_config):
 
     experiments, flags, experiment_axies = parse_dispatcher_config(eval_args)
 
-    if ("checkpoint_path" not in eval_args["cartesian_hyperparams"]) or (
-        "checkpoint_path" in train_args["cartesian_hyperparams"]
-    ):
+    if ("checkpoint_path" not in eval_args["cartesian_hyperparams"]):
         for (idx, e), s in zip(enumerate(experiments), stem_names):
             experiments[idx] += " --checkpoint_path {}".format(
                 os.path.join(train_config["log_dir"], "{}.args".format(s))
@@ -424,7 +422,7 @@ def get_parser():
         default=0,
         help="L2 Regularization penaty [default: 0]",
     )
-    
+
     # tune
     parser.add_argument(
         "--tune_hyperopt",

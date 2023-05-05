@@ -25,12 +25,12 @@ def get_chembl_id(smiles: str) -> Optional[str]:
     try:
         records = new_client.molecule.filter(
             molecule_structures__canonical_smiles__flexmatch=smiles
-        ).only(['molecule_chembl_id'])
+        ).only(["molecule_chembl_id"])
 
         if len(records) > 0:
-            return records[0]['molecule_chembl_id']
+            return records[0]["molecule_chembl_id"]
     except Exception as e:
-        print(f'Exception for {smiles}')
+        print(f"Exception for {smiles}")
         print(e)
 
     return None
@@ -45,19 +45,26 @@ def get_chembl_ids(args: Args):
     smiles_list = sorted(set(data[SMILES_COLUMN].dropna().unique()))
     smiles_to_chembl_ids = {}
     with Pool() as pool:
-        for smiles, chembl_id in tqdm(zip(smiles_list, pool.imap(get_chembl_id, smiles_list)), total=len(smiles_list)):
+        for smiles, chembl_id in tqdm(
+            zip(smiles_list, pool.imap(get_chembl_id, smiles_list)),
+            total=len(smiles_list),
+        ):
             if chembl_id is not None:
                 smiles_to_chembl_ids[smiles] = chembl_id
 
     # Add ChEMBL IDs to data
-    data[CHEMBL_COMPOUND_ID_COLUMN] = [smiles_to_chembl_ids.get(smiles, np.nan) for smiles in data[SMILES_COLUMN]]
+    data[CHEMBL_COMPOUND_ID_COLUMN] = [
+        smiles_to_chembl_ids.get(smiles, np.nan) for smiles in data[SMILES_COLUMN]
+    ]
 
-    print(f'Number of unique ChEMBL IDs = '
-          f'{len({chembl_id for chembl_ids in smiles_to_chembl_ids.values() for chembl_id in chembl_ids}):,}')
+    print(
+        f"Number of unique ChEMBL IDs = "
+        f"{len({chembl_id for chembl_ids in smiles_to_chembl_ids.values() for chembl_id in chembl_ids}):,}"
+    )
 
     # Save data
     data.to_csv(args.save_path, index=False)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     get_chembl_ids(Args().parse_args())

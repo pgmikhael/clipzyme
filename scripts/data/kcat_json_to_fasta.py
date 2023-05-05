@@ -1,5 +1,6 @@
 import sys, os
 import subprocess
+
 sys.path.append(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
 )
@@ -12,7 +13,9 @@ def json_to_fasta(args):
     # File input
     dataset = json.load(open(args.json_dir, "rb"))
 
-    fasta_file_name = args.save_dir + args.json_dir.split("/")[-1].replace("json", "fasta")
+    fasta_file_name = args.save_dir + args.json_dir.split("/")[-1].replace(
+        "json", "fasta"
+    )
     fasta_file = open(fasta_file_name, "w")
     seq_ids = set()
     for sample in tqdm(dataset):
@@ -28,6 +31,7 @@ def json_to_fasta(args):
         fasta_file.write(seq + "\n")
 
     fasta_file.close()
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(

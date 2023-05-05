@@ -162,7 +162,9 @@ def get_smiles(molinfo):
     """
     try:
         if molinfo.get("chebi_link", None):
-            molinfo["chebi_data"] = CHEBI_DB[molinfo["chebi_link"].split("chebiId=")[-1]]
+            molinfo["chebi_data"] = CHEBI_DB[
+                molinfo["chebi_link"].split("chebiId=")[-1]
+            ]
         elif molinfo.get("pubchem_link", None):
             molinfo["pubchem_data"] = pubchempy.get_compounds(
                 molinfo["pubchem_link"].split("term=")[-1], "inchikey"
@@ -194,7 +196,7 @@ if __name__ == "__main__":
                     brenda_mols.update(
                         [e for d in ecdict[key] for e in d.get("products", [])]
                     )
-            
+
             for key in ["turnover_number", "km_value", "ki_value", "ic50", "kcat_km"]:
                 if key in ecdict:
                     brenda_mols.update([d.get("value", None) for d in ecdict[key]])

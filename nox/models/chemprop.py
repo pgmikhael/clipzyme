@@ -21,9 +21,9 @@ def get_reverse_edge_indices(edge_index):
 
 
 def directed_mp(message, edge_index, revedge_index):
-    m = scatter_sum(message, edge_index[1], dim=0)
+    m = scatter_sum(message, edge_index[1], dim=0)  # all messages going to edge i
     m_all = m[edge_index[0]]
-    m_rev = message[revedge_index]
+    m_rev = message[revedge_index]  # reverse message for i -> j at index i
     return m_all - m_rev
 
 
@@ -79,6 +79,7 @@ class DMPNNEncoder(AbstractModel):
         # readout: pyg global pooling
         output = {}
         output["node_features"] = node_attr
+        output["edge_features"] = h  # for every pair (i,j) as in edge_index
         if self.pool_type != "none":
             output["graph_features"] = global_mean_pool(node_attr, batch)
             output["hidden"] = output["graph_features"]

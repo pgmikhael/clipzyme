@@ -271,3 +271,169 @@ class DCLWLoss(Nox):
             default=1.0,
             help="temperature for dcl-w loss.",
         )
+
+
+@register_object("clip_loss", "loss")
+class CLIPLoss(Nox):
+    def __init__(self) -> None:
+        super().__init__()
+
+    def __call__(self, model_output, batch, model, args):
+        logging_dict, predictions = {}, {}
+        substrate_features = model_output["substrate_features"]
+        protein_features = model_output["protein_features"]
+
+        # cosine similarity as logits
+        logit_scale = model.model.logit_scale.exp()
+        logits_per_substrate = logit_scale * substrate_features @ protein_features.t()
+        logits_per_protein = logits_per_substrate.t()
+
+        # labels
+        labels = torch.arange(logits_per_substrate.shape[0]).to(
+            logits_per_substrate.device
+        )
+        loss = (
+            F.cross_entropy(logits_per_substrate, labels)
+            + F.cross_entropy(logits_per_protein, labels)
+        ) / 2
+        logging_dict["clip_loss"] = loss.detach()
+
+        predictions["probs"] = F.softmax(logits_per_protein, dim=-1).detach()
+        predictions["preds"] = predictions["probs"].argmax(axis=-1).reshape(-1)
+        predictions["golds"] = labels
+
+        if predictions["probs"].shape[-1] != args.batch_size:
+            predictions["probs"] = torch.cat(
+                [
+                    predictions["probs"],
+                    torch.zeros(
+                        predictions["probs"].shape[0],
+                        args.batch_size - predictions["probs"].shape[1],
+                        device=logits_per_protein.device,
+                    ),
+                ],
+                dim=-1,
+            )
+
+        # predictions["projection1"] = substrate_features.detach()
+        # predictions["projection2"] = protein_features.detach()
+
+        return loss, logging_dict, predictions
+
+
+@register_object("supervised_clip_loss", "loss")
+class SupervisedCLIPLoss(Nox):
+    def __init__(self) -> None:
+        super().__init__()
+
+    def __call__(self, model_output, batch, model, args):
+        logging_dict, predictions = {}, {}
+        substrate_features = model_output["substrate_features"]
+        protein_features = model_output["protein_features"]
+
+        mask = []
+        for smiles in batch.smiles:
+            mask.append([smiles in r for r in batch.all_reactants])
+
+        mask_positives = torch.tensor(mask).float().to(substrate_features.device)
+
+        # cosine similarity as logits
+        logits = substrate_features @ protein_features.t() / args.supcon_temperature
+
+        loss_prots = self.norm_and_compute_loss(logits, mask_positives, args)
+        loss_substrates = self.norm_and_compute_loss(
+            logits.t(), mask_positives.t(), args
+        )
+
+        loss = (loss_prots + loss_substrates) / 2
+
+        logging_dict["clip_loss"] = loss.detach()
+
+        predictions["substrate_features"] = substrate_features.detach()
+        predictions["protein_features"] = protein_features.detach()
+
+        # logits substrates @ prots -> prots @ substrates
+        logits = logits.t()
+        probs = torch.sigmoid(logits.detach())
+        if logits.shape[-1] != args.batch_size:
+            logits = torch.cat(
+                [
+                    logits,
+                    torch.zeros(
+                        logits.shape[0],
+                        args.batch_size - logits.shape[1],
+                        device=logits.device,
+                    ),
+                ],
+                dim=-1,
+            )
+            probs = torch.cat(
+                [
+                    probs,
+                    torch.zeros(
+                        probs.shape[0],
+                        args.batch_size - probs.shape[1],
+                        device=logits.device,
+                    ),
+                ],
+                dim=-1,
+            )
+            mask_positives = torch.cat(
+                [
+                    mask_positives.t(),
+                    torch.zeros(
+                        mask_positives.t().shape[0],
+                        args.batch_size - mask_positives.t().shape[1],
+                        device=logits.device,
+                    ),
+                ],
+                dim=-1,
+            )
+            predictions["golds"] = mask_positives
+        else:
+            predictions[
+                "golds"
+            ] = mask_positives.t()  # so that mask is prots @ substrates
+
+        predictions["logits"] = logits
+        predictions["probs"] = probs
+        predictions["preds"] = (probs > 0.5).float()
+        predictions["y"] = batch.y  # labels of pairs, for testing
+
+        return loss, logging_dict, predictions
+
+    def norm_and_compute_loss(self, logits, mask_positives, args):
+        # for numerical stability
+        logits_max, _ = torch.max(logits, dim=1, keepdim=True)
+        eps = 1e-6  # to avoid log(0)
+        logits = logits - logits_max.detach() + eps
+        exp_logits = torch.exp(logits)
+
+        positive_logits = mask_positives * logits  # mask out negatives
+
+        # compute log_prob
+        log_prob = (
+            positive_logits + eps - torch.log(exp_logits.sum(1, keepdim=True) + eps)
+        )
+
+        # compute mean of log-likelihood over positives
+        pos_samples = mask_positives.sum(dim=1)
+
+        # loss_per_sample = -(log_prob * mask_combined).sum(dim=1) / pos_samples
+        loss_per_sample = -(log_prob * mask_positives).sum(dim=1) / pos_samples
+        loss = loss_per_sample.mean()
+        return loss
+
+    @staticmethod
+    def add_args(parser) -> None:
+        """Add class specific args
+
+        Args:
+            parser (argparse.ArgumentParser): argument parser
+        """
+        parser.add_argument(
+            "--supcon_temperature",
+            type=float,
+            default=0.07,
+            help="temperature for supervised contrastive loss.",
+        )
