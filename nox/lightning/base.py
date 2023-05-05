@@ -132,7 +132,8 @@ class Base(pl.LightningModule, Nox):
         self.call_metric(predictions_dict, "update")
         if self.args.compute_metrics_every_step:
             metrics = self.call_metric(predictions_dict, "compute")
-            self.log_outputs(metrics, "train")
+            self.log_outputs(metrics, self.phase)
+            self.log_outputs(logging_dict, self.phase)
             for metric_fn in self.metrics[self.phase]:
                 metric_fn.reset()
 
@@ -150,7 +151,7 @@ class Base(pl.LightningModule, Nox):
         if (self.args.log_predictions_to_table) and (self.global_step % self.args.log_predictions_to_table_every == 0):
             table_columns=["sample", "gold mol", "gold smiles", "pred", "step"]
             data_types=["str", "smiles", "str", "str", "str"]
-            table_data=[batch["sample_id"], batch["smiles"], batch["smiles"], model_output[f"pred_smiles"], [self.current_epoch] * len(batch["smiles"])]
+            table_data=[batch["sample_id"], batch["smiles"], batch["smiles"], model_output["pred_smiles"], [self.current_epoch] * len(batch["smiles"])]
             self.logger.log_table(
                 table_columns, table_data, data_types, table_name=f"{self.phase}_samples"
                 )
@@ -330,8 +331,9 @@ class Base(pl.LightningModule, Nox):
             if func == "update":
                 metric_fn.update(predictions, self.args)
             elif func == "compute":
-                l_dict = metric_fn.compute()
-                logging_dict.update(l_dict)
+                if metric_fn._update_called:
+                    l_dict = metric_fn.compute()
+                    logging_dict.update(l_dict)
         return logging_dict
 
     def store_in_predictions(self, preds, storage_dict):

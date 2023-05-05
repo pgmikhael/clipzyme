@@ -31,7 +31,7 @@ class IOCB(AbstractDataset):
 
         # assign groups
         if self.args.split_type == "fold":
-            samples = sorted(list(set(row["split_key"] for row in metadata_json)))
+            samples = sorted(list(set(row[split_key] for row in metadata_json)))
             np.random.shuffle(samples)
             split_indices = np.ceil(
                 np.cumsum(np.array(split_probs) * len(samples))
@@ -201,7 +201,7 @@ class IOCB(AbstractDataset):
             help="skip proteins longer than max_protein_length",
         )
         parser.add_argument(
-            "--max_substrate_size",
+            "--max_reactant_size",
             type=int,
             default=None,
             help="maximum reactant size",
@@ -401,3 +401,94 @@ class IOCBProducts(IOCBClassification):
             "/Mounts/rbg-storage1/datasets/Enzymes/IOCB/iocb_products.json"
         )
         args.reaction_side = "product"
+
+@register_object("iocb_reactions", "dataset")
+class IOCBReactions(IOCB):
+
+    def create_dataset(self, split_group: Literal["train", "dev", "test"]) -> List[dict]:
+        self.mol2size = {}
+
+        dataset = []
+        
+        # get column name of split
+        split_key = "product_stratified_phylogeny_based_split"
+        
+        # get column names for smiles
+        substrate_key = "SMILES_substrate_canonical_no_stereo" if self.args.use_stereo else "SMILES of substrate"
+        substrate_id_key = "Substrate ChEBI ID"
+        substrate_name_key = "Substrate (including stereochemistry)"
+
+        product_key = "SMILES of product (including stereochemistry)" if self.args.use_stereo else "SMILES_product_canonical_no_stereo" 
+        product_id_key = "Product ChEBI ID"
+        product_name_key = "Name of product"
+
+        for rowid, row in tqdm(enumerate(self.metadata_json), total = len(self.metadata_json), desc="Creating dataset", ncols=50):
+            
+            uniprotid = row["Uniprot ID"]
+        
+            sample = {
+                    "protein_id": uniprotid,
+                    "sequence": row["Amino acid sequence"],
+                    "sequence_name": row["Name"],
+                    "protein_type": row["Type (mono, sesq, di, \u2026)"],
+                    "reactants": [row[substrate_key]],
+                    "reactants_name": row[substrate_name_key],
+                    "reactants_chebi_id": row[substrate_id_key],
+                    "products": [row[product_key]],
+                    "products_name": row[product_name_key],
+                    "products_chebi_id": row[product_id_key],
+                    "sample_id": f"{uniprotid}_{rowid}",
+                    "species": row["Species"],
+                    "kingdom": row["Kingdom (plant, fungi, bacteria)"],
+                    "split": row[split_key],
+                    "all_smiles": [row[product_key]],
+                    "smiles": row[product_key],
+                }
+            
+            if self.skip_sample(sample):
+                continue 
+            
+            sample["reactants"] = ".".join(sample["reactants"])
+            sample["products"] = ".".join(sample["products"])
+            
+            dataset.append(sample)
+
+        return dataset 
+    
+    def skip_sample(self, sample) -> bool:
+        # if sequence is unknown
+        if (sample["sequence"] is None) or (len(sample["sequence"]) == 0):
+            return True
+
+        if (self.args.max_protein_length is not None) and len(
+            sample["sequence"]
+        ) > self.args.max_protein_length:
+            return True
+
+        if "Unknown" in sample["reactants"] + sample["products"]:
+            return True 
+
+        if self.args.max_reactant_size is not None:
+            for mol in sample["reactants"]:
+                if not (mol in self.mol2size):
+                    self.mol2size[mol] = rdkit.Chem.MolFromSmiles(mol).GetNumAtoms()
+                if self.mol2size[mol] > self.args.max_reactant_size:
+                    return True 
+
+        if self.args.max_product_size is not None:
+            for mol in sample["products"]:
+                if not (mol in self.mol2size):
+                    self.mol2size[mol] = rdkit.Chem.MolFromSmiles(mol).GetNumAtoms()
+                if self.mol2size[mol] > self.args.max_product_size:
+                    return True 
+
+        return False
+    
+    @property
+    def SUMMARY_STATEMENT(self) -> None:
+        proteins = [d["protein_id"] for d in self.dataset]
+        statement = f""" 
+        * Number of samples: {len(self.dataset)}
+        * Number of proteins: {len(set(proteins))}
+        """
+        return statement

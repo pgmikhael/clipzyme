@@ -129,6 +129,7 @@ class BaseClassification(Metric, Nox):
         return stats_dict
 
     def reset(self):
+        super().reset()
         self.accuracy_metric.reset()
         self.auroc_metric.reset()
         self.auprc_metric.reset()
@@ -346,36 +347,40 @@ class Seq2SeqClassification(Metric, Nox):
 
     @property
     def metric_keys(self):
-        return ["probs", "preds", "golds"]
+        return ["probs", "preds", "golds", "preds_mask"]
 
     def update(self, predictions_dict, args) -> Dict:
         probs = predictions_dict["probs"]  # B, N, C (float)
         preds = predictions_dict["preds"]  # B, N
         golds = predictions_dict["golds"].long()  # B, N
+        preds_mask = predictions_dict["preds_mask"]
+
+        if self.ignore_index is not None:
+            preds[preds_mask == self.ignore_index] = self.ignore_index
 
         self.accuracy_metric.update(preds, golds)
         self.f1_metric.update(preds, golds)
         self.macro_f1_metric.update(preds, golds)
         self.precision_metric.update(preds, golds)
         self.recall_metric.update(preds, golds)
-        self.top_1_metric.update(preds, golds)
+        self.top_1_metric.update(preds, golds, preds_mask)
 
-        for sample_prob, sample_gold in zip(probs, golds):
-            self.auroc_metric.update(sample_prob, sample_gold)
-            self.ap_metric.update(sample_prob, sample_gold)
-            self.auprc_metric.update(sample_prob, sample_gold)
+        # for sample_prob, sample_gold in zip(probs, golds):
+        #     self.auroc_metric.update(sample_prob, sample_gold)
+        #     self.ap_metric.update(sample_prob, sample_gold)
+        #     self.auprc_metric.update(sample_prob, sample_gold)
 
     def compute(self) -> Dict:
-        pr, rc, _ = self.auprc_metric.compute()
-        if self.task_type != "binary":  # list per class or per label if not binary task
-            pr_auc = [compute_auc(rc_i, pr_i) for rc_i, pr_i in zip(rc, pr)]
-            pr_auc = torch.mean(torch.stack(pr_auc))
-        else:
-            pr_auc = compute_auc(rc, pr)
+        # pr, rc, _ = self.auprc_metric.compute()
+        # if self.task_type != "binary":  # list per class or per label if not binary task
+        #     pr_auc = [compute_auc(rc_i, pr_i) for rc_i, pr_i in zip(rc, pr)]
+        #     pr_auc = torch.mean(torch.stack(pr_auc))
+        # else:
+        #     pr_auc = compute_auc(rc, pr)
         stats_dict = {
             "accuracy": self.accuracy_metric.compute().mean(),
-            "roc_auc": self.auroc_metric.compute(),
-            "pr_auc": pr_auc,
+            #"roc_auc": self.auroc_metric.compute(),
+            #pr_auc": pr_auc,
             "f1": self.f1_metric.compute().mean(),
             "macro_f1": self.macro_f1_metric.compute().mean(),
             "precision": self.precision_metric.compute().mean(),
@@ -385,9 +390,10 @@ class Seq2SeqClassification(Metric, Nox):
         return stats_dict
 
     def reset(self):
+        super().reset()
         self.accuracy_metric.reset()
-        self.auroc_metric.reset()
-        self.auprc_metric.reset()
+        #self.auroc_metric.reset()
+        #self.auprc_metric.reset()
         self.f1_metric.reset()
         self.macro_f1_metric.reset()
         self.precision_metric.reset()
@@ -466,6 +472,7 @@ class BaseRegression(Metric, Nox):
         return stats_dict
 
     def reset(self):
+        super().reset()
         self.mae.reset()
         self.mse.reset()
         self.pearson.reset()
@@ -503,11 +510,11 @@ class TopK(Metric):
         self.add_state("correct", default=torch.tensor(0), dist_reduce_fx="sum")
         self.add_state("total", default=torch.tensor(0), dist_reduce_fx="sum")
 
-    def update(self, preds: torch.Tensor, target: torch.Tensor):
+    def update(self, preds: torch.Tensor, target: torch.Tensor, preds_mask: torch.Tensor):
         assert preds.shape == target.shape
 
         if self.ignore_index is not None:
-            preds[target == self.ignore_index] = self.ignore_index
+            preds[preds_mask == self.ignore_index] = self.ignore_index
 
         correct = (preds == target).sum(1) == preds.shape[1]
         correct = correct.sum()

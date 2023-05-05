@@ -404,7 +404,8 @@ class EnzymaticReactionEncoder(ReactionEncoder):
                 with torch.no_grad():
                     protein_output = self.protein_model(batch)
                     protein_attention = torch.ne(
-                        protein_output["tokens"], self.protein_model.alphabet.padding_idx
+                        protein_output["tokens"],
+                        self.protein_model.alphabet.padding_idx,
                     ).long()
             else:
                 protein_output = self.protein_model(batch)
@@ -440,7 +441,7 @@ class EnzymaticReactionEncoder(ReactionEncoder):
     def encode_reactants_and_enzyme(self, batch, encoder_input_ids):
         # pass sequences through protein model or use precomputed hiddens
         if hasattr(self, "protein_model"):
-            protein_output, protein_attention = self.encode_sequence(batch) 
+            protein_output, protein_attention = self.encode_sequence(batch)
         else:
             protein_output = batch
             protein_attention = torch.zeros(
@@ -568,19 +569,68 @@ class EnzymaticReactionEncoder(ReactionEncoder):
             labels.view(-1),
         )
 
-        metric_labels = labels  # .view(-1)
         metric_logits = shifted_logits  # .reshape(-1, self.model.decoder.config.vocab_size)[metric_labels!= -100]
-        metric_labels = metric_labels  # [ metric_labels!= -100]
+
         output = {
             "loss": loss,
             "logit": metric_logits,
-            "y": metric_labels,
+            "cross_attentions": decoder_outputs["cross_attentions"],
+            # "attention_idx":
         }
 
-        preds =  torch.argmax( metric_logits, dim =-1 ) 
-        decoded_preds = self.tokenizer.batch_decode(preds, skip_special_tokens=True)
+        preds = torch.argmax(metric_logits.detach(), dim=-1)
+        decoded_preds = self.tokenizer.batch_decode(preds, skip_special_tokens=False)
         decoded_preds = [s.replace(" ", "") for s in decoded_preds]
+        decoded_preds = [
+            s[: s.index(self.tokenizer.eos_token)]
+            if s.find(self.tokenizer.eos_token) > -1
+            else s
+            for s in decoded_preds
+        ]  # stop at first eos
         output["pred_smiles"] = decoded_preds
+
+        # pred_mask = (preds == self.tokenizer.eos_token_id).int().detach()
+        # pred_mask_has_eos = pred_mask.sum(-1)
+        # indices = torch.argmax(pred_mask, dim=1)
+        # for r, i in enumerate(indices):
+        #     if pred_mask_has_eos[r] > 0:
+        #         pred_mask[r,i:] = self.tokenizer.eos_token_id # set everything after first eos to eos
+        # output["preds_mask"] = pred_mask
+
+        # metric_labels = labels.clone()  # .view(-1)
+        # metric_labels[metric_labels==-100] = self.tokenizer.eos_token_id
+        # output["y"] = metric_labels
+
+        # create predictions and labels to penalize errors due to early/late truncation but nothing after
+        # get mask of 1s until first eos token for predictions
+        pred_mask = (preds == self.tokenizer.eos_token_id).int().detach()
+        pred_mask_has_eos = pred_mask.sum(-1)
+        indices = torch.argmax(pred_mask, dim=1)
+        pred_mask = torch.zeros_like(pred_mask)
+        for r, i in enumerate(indices):
+            if pred_mask_has_eos[r] > 0:
+                pred_mask[r, : (i + 1)] = 1
+
+        metric_labels = labels.clone()
+
+        # get mask of 1s until first eos token that occurs last between prediction and label
+        mask = ((metric_labels != -100) + pred_mask) > 0
+
+        # prediction too long: make missing labels for extra (wrong) predictions different from predictions to count as wrong
+        metric_labels[torch.logical_and(metric_labels == -100, mask)] = (
+            preds[torch.logical_and(metric_labels == -100, mask)] + 1
+        ) % self.args.num_classes
+        # prediction too short: make missing predictions for labels different from labels to count as wrong
+        preds[torch.logical_and(pred_mask == 0, mask)] = (
+            metric_labels[torch.logical_and(pred_mask == 0, mask)] + 1
+        ) % self.args.num_classes
+
+        output["y"] = metric_labels
+        output["preds"] = preds
+
+        preds_mask = mask.int()
+        preds_mask[preds_mask == 0] = -100
+        output["preds_mask"] = preds_mask
 
         return output
 
@@ -654,7 +704,7 @@ class EnzymaticReactionEncoder(ReactionEncoder):
             "--protein_representation_key",
             type=str,
             default="hidden",
-            choices=["hidden", "token_hiddens", "last_hidden_state"],
+            choices=["hidden", "token_hiddens", "last_hidden_state", "pooler_output"],
             help="which protein encoder output to uses",
         )
         parser.add_argument(
@@ -810,7 +860,8 @@ class ESMDecoder(AbstractModel):
 
         # optionally project encoder_hidden_states
         if (
-            self.model.encoder.config.hidden_size != self.model.decoder.config.hidden_size
+            self.model.encoder.config.hidden_size
+            != self.model.decoder.config.hidden_size
             and self.model.decoder.config.cross_attention_hidden_size is None
         ):
             encoder_hidden_states = self.model.enc_to_dec_proj(encoder_hidden_states)
@@ -847,8 +898,13 @@ class ESMDecoder(AbstractModel):
             "y": metric_labels,
         }
 
-        preds =  torch.argmax( metric_logits, dim =-1 ) * decoder_input_ids["attention_mask"][:,1:]
-        decoded_preds = self.bert_tokenizer.batch_decode(preds, skip_special_tokens=True)
+        preds = (
+            torch.argmax(metric_logits, dim=-1)
+            * decoder_input_ids["attention_mask"][:, 1:]
+        )
+        decoded_preds = self.bert_tokenizer.batch_decode(
+            preds, skip_special_tokens=True
+        )
         decoded_preds = [s.replace(" ", "") for s in decoded_preds]
         output["pred_smiles"] = decoded_preds
         return output
@@ -1042,50 +1098,4 @@ class ESMDecoder(AbstractModel):
             action="store_true",
             default=False,
             help=" Whether to renormalize the logits after applying all the logits processors or warpers (including the custom ones). It's highly recommended to set this flag to `True` as the search algorithms suppose the score logits are normalized but some logit processors or warpers break the normalization.",
-        )
-
-from transformers import RobertaModel
-@register_object("esm_pretrained_decoder", "model")
-class ESMPretrainedDecoder(ESMDecoder):
-    def __init__(self, args):
-        super().__init__(args)
-
-        # make esm tokenizer + molecule tokenzier
-        self.esm_tokenizer = AutoTokenizer.from_pretrained(args.esm_model_version)
-        esm_encoder_model = EsmModel.from_pretrained(args.esm_model_version)
-        
-        # chem decoder 
-        self.bert_tokenizer  = AutoTokenizer.from_pretrained(args.decoder_model)
-        bert_decoder_model = AutoModelForCausalLM.from_pretrained(args.decoder_model, is_decoder=True,add_cross_attention=True)
-        
-        # state_dict = bert_decoder_model.state_dict()
-        # chem_decoder_state_dict = {k.replace("roberta.", "") if k.startswith('roberta') else k: v for k,v in state_dict.items() }
-        # chem_decoder_config = bert_decoder_model.config
-        # config.is_decoder = True
-        # config.add_cross_attention = True
-        # rebuild as decoder
-        # bert_decoder_model = RobertaModel(config)
-        # attach weights for keys that match 
-        # bert_decoder_model.load_state_dict(chem_decoder_state_dict, strict=False)
-        
-        self.model = EncoderDecoderModel.from_encoder_decoder_pretrained(
-            encoder_model=esm_encoder_model, decoder_model=bert_decoder_model
-        )
-        self.config = self.model.config
-        self.args = args
-        self.register_buffer("devicevar", torch.zeros(1, dtype=torch.int8))
-
-        self.generation_config = self.make_generation_config(args)
-        self.freeze_encoder = args.freeze_encoder
-        if self.freeze_encoder:
-            self.model.encoder.eval()
-    
-    @staticmethod
-    def add_args(parser) -> None:
-        super(ESMPretrainedDecoder,ESMPretrainedDecoder).add_args(parser)
-        parser.add_argument(
-            "--decoder_model",
-            type=str,
-            default="DeepChem/ChemBERTa-77M-MLM",
-            help="which decoder to use",
         )
