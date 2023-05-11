@@ -149,9 +149,9 @@ class Base(pl.LightningModule, Nox):
             self.log_image(model_output, batch)
 
         if (self.args.log_predictions_to_table) and (self.global_step % self.args.log_predictions_to_table_every == 0):
-            table_columns=["sample", "gold mol", "gold smiles", "pred", "step"]
-            data_types=["str", "smiles", "str", "str", "str"]
-            table_data=[batch["sample_id"], batch["smiles"], batch["smiles"], model_output["pred_smiles"], [self.current_epoch] * len(batch["smiles"])]
+            table_columns=["sample", "gold mol", "gold smiles", "pred", "step", "phase"]
+            data_types=["str", "smiles", "str", "str", "str", "str"]
+            table_data=[batch["sample_id"], batch["smiles"], batch["smiles"], model_output["pred_smiles"], [self.current_epoch] * len(batch["smiles"]), [self.phase] * len(batch["smiles"])]
             self.logger.log_table(
                 table_columns, table_data, data_types, table_name=f"{self.phase}_samples"
                 )
