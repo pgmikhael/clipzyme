@@ -124,7 +124,7 @@ class MolTopK(Metric, Nox):
             match_idx = matches.index(True) + 1 if sum(matches) > 0 else 0
             ranks.append(match_idx)
 
-            self.percent_coverage += len(set(gold).intersection(set(top_preds))) / max(len(gold), len(set(top_preds)))
+            self.percent_coverage += len(set(gold).intersection(set(top_preds))) / len(gold) # max(len(gold), len(set(top_preds)))
 
 
         ranks_np = np.array(ranks)
