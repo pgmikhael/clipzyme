@@ -16,6 +16,10 @@ import torch
 
 @register_object("enzymemap_reactions", "dataset")
 class EnzymeMap(AbstractDataset):
+    def __init__(self, args, split_group) -> None:
+        super(EnzymeMap, EnzymeMap).__init__(self, args, split_group)
+        self.metadata_json = None  # overwrite for memory
+
     def init_class(self, args: argparse.ArgumentParser, split_group: str) -> None:
         """Perform Class-Specific init methods
            Default is to load JSON dataset
@@ -292,8 +296,8 @@ class EnzymeMap(AbstractDataset):
                     continue
 
             elif self.args.split_type in ["product"]:
-                products = sample["products"]
-                if any(self.to_split[p] != split_group for p in products):
+                products = ".".join(sample["products"])
+                if self.to_split[products] != split_group:
                     continue
 
             elif self.args.split_type == "sequence":
