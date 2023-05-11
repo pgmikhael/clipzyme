@@ -19,7 +19,7 @@ parser = argparse.ArgumentParser(
     description="Make Enzyme Map Dataset (https://github.com/hesther/enzymemap)"
 )
 parser.add_argument(
-    "--react_path",
+    "--react_dir_or_path",
     type=str,
     default="/Mounts/rbg-storage1/datasets/Enzymes/EnzymeMap/raw_unmapped_brenda2022.csv",
     help="Path to Enzyme Map entries file or IBM splits directory",
@@ -34,13 +34,19 @@ parser.add_argument(
     "--make_dataset",
     action="store_true",
     default=False,
-    help="if from IBM processed splits",
+    help="make dataset files",
 )
 parser.add_argument(
-    "--from_raw",
+    "--from_ibm_splits",
     action="store_true",
     default=False,
     help="if from IBM processed splits",
+)
+parser.add_argument(
+    "--from_raw_file",
+    action="store_true",
+    default=False,
+    help="if from raw files",
 )
 parser.add_argument(
     "--get_ec_to_uniprots",
@@ -94,6 +100,13 @@ def get_protein_fasta(uniprot):
 
     return
 
+def transform_ec_number(ec_str):
+    """
+    transform input formatted as [vEC1] [uEC2] [tEC3] [qEC4] into EC1.EC2.EC3.EC4
+    """
+    ec_digits = re.findall(r"\d+|-", ec_str)
+    ec = ".".join(ec_digits)
+    return ec
 
 def get_uniprots_from_ec(ec):
     """Get uniprot ids from ec number using uniprot api"""
@@ -135,38 +148,98 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.make_dataset:
-        dataset = pd.read_csv(args.react_path)
-        dataset = dataset.to_dict("records")
+        if args.from_ibm_splits:
+            """Run first:
+            rbt-preprocess.py \
+                /Mounts/rbg-storage1/datasets/Enzymes/EnzymeMap/rbt_processed/[DATASET]_smarts.txt \
+                /Mounts/rbg-storage1/datasets/Enzymes/EnzymeMap/rbt_processed/processed   \ 
+                --remove-patterns /Mounts/rbg-storage1/datasets/Enzymes/ECReact/patterns.txt \ 
+                --remove-molecules /Mounts/rbg-storage1/datasets/Enzymes/ECReact/molecules.txt \
+                --ec-level 4 --max-products 3 --split-products
+            """
+            formatted_dataset = {
+            "train": {"src": [], "tgt": []},
+            "valid": {"src": [], "tgt": []},
+            "test": {"src": [], "tgt": []},
+            }
+            vocab = set()
 
-        json_dataset = []
-        for data_items in tqdm(dataset, ncols=100, total = len(dataset)):
-            if args.from_raw:
-                json_dataset.append(
-                    {
-                        "reactants": data_items["RXN"].split(">>")[0].split("."),
-                        "products": data_items["RXN"].split(">>")[-1].split("."),
-                        "ec": data_items["EC_NUM"],
-                        "rxnid": data_items["ID"],
-                        "reversible": data_items["REVERSIBLE"],
-                    }
-                )
-            else:
-                json_dataset.append(
-                    {
-                        "reactants": data_items["unmapped"].split(">>")[0].split("."),
-                        "products": data_items["unmapped"].split(">>")[-1].split("."),
-                        "mapped_reactants": data_items["mapped"].split(">>")[0].split("."),
-                        "mapped_products": data_items["mapped"].split(">>")[-1].split("."),
-                        "ec": data_items["ec_num"],
-                        "rxnid": data_items["rxn_idx"],
-                        "quality": data_items["quality"],
-                    }
-                )
+            split_files = os.listdir(args.react_dir_or_path)
 
-        json.dump(json_dataset, open(args.output_file_path, "w"), indent=2)
+            for filename in split_files:
+                if filename.endswith("combined.txt"):
+                    continue
+
+                filepath = os.path.join(args.react_dir_or_path, filename)
+                rxn_side, split = filename.split("-")
+                split, _ = os.path.splitext(split)
+                with open(filepath, "r") as f:
+                    for line in f:
+                        formatted_dataset[split][rxn_side].append(line.rstrip("\n"))
+
+            dataset = []
+            for split, data_items in formatted_dataset.items():
+                assert len(data_items["src"]) == len(data_items["tgt"])
+                for i, (src, tgt) in enumerate(zip(data_items["src"], data_items["tgt"])):
+                    reactants_str, ec_str = src.split("|")
+                    if split != "test":
+                        vocab.update(reactants_str.split(" "))
+                    ec = transform_ec_number(ec_str)
+                    reactants = reactants_str.replace(" ", "").split(".")
+                    products = tgt.replace(" ", "").split(".")
+
+                    dataset.append(
+                        {
+                            "reactants": reactants,
+                            "products": products,
+                            "ec": ec,
+                            "split": "dev" if split == "valid" else split,
+                            "rxnid": f"{split}_{i}",
+                        }
+                    )
+
+            # vocab = sorted(list(vocab))
+            # vocabpath, _ = os.path.splitext(args.output_file_path)
+            # with open(f"{vocabpath}_vocab.txt", "w") as f:
+            #     for tok in vocab:
+            #         f.write(tok)
+            #         f.write("\n")
+        
+            json.dump(dataset, open(args.output_file_path, "w"), indent=2)
+        
+        else:
+            dataset = pd.read_csv(args.react_dir_or_path)
+            dataset = dataset.to_dict("records")
+
+            json_dataset = []
+            for data_items in tqdm(dataset, ncols=100, total = len(dataset)):
+                if args.from_raw:
+                    json_dataset.append(
+                        {
+                            "reactants": data_items["RXN"].split(">>")[0].split("."),
+                            "products": data_items["RXN"].split(">>")[-1].split("."),
+                            "ec": data_items["EC_NUM"],
+                            "rxnid": data_items["ID"],
+                            "reversible": data_items["REVERSIBLE"],
+                        }
+                    )
+                else:
+                    json_dataset.append(
+                        {
+                            "reactants": data_items["unmapped"].split(">>")[0].split("."),
+                            "products": data_items["unmapped"].split(">>")[-1].split("."),
+                            "mapped_reactants": data_items["mapped"].split(">>")[0].split("."),
+                            "mapped_products": data_items["mapped"].split(">>")[-1].split("."),
+                            "ec": data_items["ec_num"],
+                            "rxnid": data_items["rxn_idx"],
+                            "quality": data_items["quality"],
+                        }
+                    )
+
+            json.dump(json_dataset, open(args.output_file_path, "w"), indent=2)
 
     if args.get_ec_to_uniprots:
-        react_dataset_rows = json.load(open(args.react_path, "r"))
+        react_dataset_rows = json.load(open(args.react_dir_or_path, "r"))
         ecs = list(set(r["ec"] for r in react_dataset_rows))
 
         # match ec to uniprots, sequences, and isoforms
