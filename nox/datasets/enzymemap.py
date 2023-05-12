@@ -104,6 +104,8 @@ class EnzymeMap(AbstractDataset):
                     "uniprot_id": uniprot,
                     "protein_id": uniprot,
                 }
+                if "split" in reaction:
+                    sample["split"] = reaction["split"]
                 # add reaction sample to dataset
                 dataset.append(sample)
 
@@ -469,6 +471,8 @@ class EnzymeMapSingle(EnzymeMap):
                         "uniprot_id": uniprot,
                         "protein_id": uniprot,
                     }
+                    if "split" in reaction:
+                        sample["split"] = reaction["split"]
                     # add reaction sample to dataset
                     dataset.append(sample)
 
