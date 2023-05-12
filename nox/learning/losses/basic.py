@@ -77,10 +77,13 @@ class BinaryCrossEntropyLoss(Nox):
     def __call__(self, model_output, batch, model, args):
         logging_dict, predictions = OrderedDict(), OrderedDict()
         logit = model_output["logit"]
+        if logit.shape[-1] == 1 and len(logit.shape) == 2:
+            logit = logit.squeeze(-1)
+            
         if "has_y" in batch:
             loss = (
                 F.binary_cross_entropy_with_logits(
-                    logit, batch["y"], reduction="none", weight=batch["has_y"]
+                    logit, batch["y"].float(), reduction="none", weight=batch["has_y"]
                 ).sum()
                 / batch["has_y"].sum()
                 * args.ce_loss_lambda
@@ -88,7 +91,7 @@ class BinaryCrossEntropyLoss(Nox):
             predictions["has_golds"] = batch["has_y"]
         else:
             loss = (
-                F.binary_cross_entropy_with_logits(logit, batch["y"])
+                F.binary_cross_entropy_with_logits(logit, batch["y"].float())
                 * args.ce_loss_lambda
             )
         logging_dict["binary_cross_entropy_loss"] = loss.detach()

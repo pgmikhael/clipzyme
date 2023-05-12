@@ -33,6 +33,7 @@ import nox.datasets.ecreact_graph
 import nox.datasets.qm9
 import nox.datasets.chembl
 import nox.datasets.iocb_synthases
+import nox.datasets.protein_graph
 
 # augmentation
 import nox.augmentations.rawinput
