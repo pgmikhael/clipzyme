@@ -28,6 +28,7 @@ import nox.datasets.gsm_chemistry
 import nox.datasets.reactions
 import nox.datasets.brenda
 import nox.datasets.dlkcat
+import nox.datasets.enzymemap
 import nox.datasets.ecreact
 import nox.datasets.ecreact_graph
 import nox.datasets.qm9
@@ -61,6 +62,7 @@ import nox.learning.losses.basic
 import nox.learning.losses.link_prediction
 import nox.learning.losses.contrastive
 import nox.learning.losses.digress
+import nox.learning.losses.attention
 
 # metrics
 import nox.learning.metrics.basic

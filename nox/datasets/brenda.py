@@ -1013,7 +1013,6 @@ class BrendaReaction(Brenda):
                 if "proteins" in ec_dict
                 else {}
             )
-
             organism2name = (
                 {k: v["value"] for k, v in ec_dict["organisms"].items()}
                 if "organisms" in ec_dict

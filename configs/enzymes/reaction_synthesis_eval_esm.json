@@ -1,0 +1,27 @@
+{
+  "script": "main",
+  "train_config": "configs/enzymes/reaction_synthesis_esm.json",
+  "log_dir": "/Mounts/rbg-storage1/logs/metabo/",
+  "available_gpus": [7],
+  "eval_args": {
+    "generation_renormalize_logits": [true],
+    "generation_num_return_sequences": [10],
+    "generation_num_beams": [10],
+    "generation_max_new_tokens": [2000],
+    "compute_metrics_every_step": [false],
+    "eval_on_train":[false],
+    "dev": [false],
+    "test": [true],
+    "predict": [true],
+    "metric_names_for_eval": ["topk_classification"],
+    "topk_values": ["1 5 10"],
+    "from_checkpoint": [true],
+    "checkpoint_path": ["/Mounts/rbg-storage1/snapshots/metabolomics/58311273965ac434681855f1d3e7b728/58311273965ac434681855f1d3e7b728epoch=13.ckpt"],
+    "assign_splits": [true],
+    "split_type": ["mmseqs"],
+    "split_probs": ["0.8 0.1 0.1"],
+    "split_seed": [2023],
+    "save_predictions": [true],
+    "inference_dir": ["/Mounts/rbg-storage1/results/metabolomics/predictions"]
+  }
+}

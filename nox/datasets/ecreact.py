@@ -18,6 +18,7 @@ from p_tqdm import p_map
 import random
 from collections import defaultdict
 import rdkit 
+import torch
 
 @register_object("ecreact", "dataset")
 class ECReact(BrendaReaction):
@@ -141,6 +142,17 @@ class ECReact(BrendaReaction):
 
             dataset.append(sample)
         return dataset
+
+    def get_pesto_scores(self, uniprot):
+        filepath = f"{self.args.pesto_scores_directory}/AF-{uniprot}-F1-model_v4.pt"
+        if not os.path.exists(filepath):
+            return None
+        scores_dict = torch.load(filepath)
+        chain = "A:0"  # * NOTE: hardcoded because currently only option
+        residue_ids = scores_dict[chain]["resid"]
+        residue_ids_unique = np.unique(residue_ids, return_index=True)[1]
+        scores = scores_dict[chain]["ligand"][residue_ids_unique]
+        return torch.tensor(scores)
 
     @staticmethod
     def set_args(args) -> None:
@@ -434,7 +446,7 @@ class ECReact_RXNS(ECReact):
         ):
 
             ec = reaction["ec"]
-            reactants = reaction["reactants"]
+            reactants = sorted(reaction["reactants"])
             products = reaction["products"]
             reaction_string = ".".join(reactants) + ">>" + ".".join(products)
 
@@ -559,6 +571,13 @@ class ECReact_RXNS(ECReact):
             dataset.append(sample)
         return dataset
 
+    def post_process(self, args):
+        # add all possible products
+        reaction_to_products = defaultdict(set)
+        for sample in self.dataset:
+            reaction_to_products[f"{sample['ec']}{'.'.join(sample['reactants'])}"].update(sample['products'])
+        self.reaction_to_products = reaction_to_products
+
     @staticmethod
     def set_args(args):
         args.dataset_file_path = "/Mounts/rbg-storage1/datasets/Enzymes/ECReact/ecreact_mapped_ibm_splits.json"
@@ -576,6 +595,18 @@ class ECReact_RXNS(ECReact):
             action="store_true",
             default=False,
             help="whether to add active site residues to getitem sample if available",
+        )
+        parser.add_argument(
+            "--use_pesto_scores",
+            action="store_true",
+            default=False,
+            help="use pesto scores",
+        )
+        parser.add_argument(
+            "--pesto_scores_directory",
+            type=str,
+            default="/Mounts/rbg-storage1/datasets/Enzymes/ECReact/pesto_ligands",
+            help="load pesto scores from directory predictions",
         )
 
     def __getitem__(self, index):
@@ -629,11 +660,13 @@ class ECReact_RXNS(ECReact):
                 "organism": sample.get("organism", "none"),
                 "protein_id": uniprot_id,
                 "sample_id": sample_id,
+                "all_smiles": list(self.reaction_to_products[f"{ec}{'.'.join(sorted(reactants))}"]),
+                "smiles": ".".join(products),
             }
 
             if sample.get("source", False):
                 sample["all_smiles"] = products
-            else:
+            elif "decoder" in self.args.model_name:
                 sample["all_smiles"] = self.uniprot2substrates[uniprot_id]
 
             if self.args.add_active_residues_to_item:
@@ -668,6 +701,13 @@ class ECReact_RXNS(ECReact):
                         "hidden": protein_hidden,
                     }
                 )
+            
+            if self.args.use_pesto_scores:
+                scores = self.get_pesto_scores(item["protein_id"])
+                if (scores is None) or (scores.shape[0] != len(item["sequence"])):
+                    # make all zeros of length sequence
+                    scores = torch.zeros(len(item["sequence"]))
+                item["sequence_annotation"] = scores
 
             return item
 
@@ -708,7 +748,7 @@ class ECReactRxnsFull(ECReact_RXNS):
             self.mol2size = {}
 
             ec = reaction["ec"]
-            reactants = reaction["reactants"]
+            reactants = sorted(reaction["reactants"])
             products = reaction["products"]
             reaction_string = ".".join(reactants) + ">>" + ".".join(products)
 
@@ -787,7 +827,16 @@ class ECReactRxnsFull(ECReact_RXNS):
                 "organism": sample.get("organism", "none"),
                 "protein_id": uniprot_id,
                 "sample_id": sample_id,
+                "smiles": ".".join(products),
+                "all_smiles": list(self.reaction_to_products[f"{ec}{'.'.join(sorted(reactants))}"]),
             }
+
+            if self.args.use_pesto_scores:
+                scores = self.get_pesto_scores(item["protein_id"])
+                if (scores is None) or (scores.shape[0] != len(item["sequence"])):
+                    # make all zeros of length sequence
+                    scores = torch.zeros(len(item["sequence"]))
+                item["sequence_annotation"] = scores
 
             return item
 

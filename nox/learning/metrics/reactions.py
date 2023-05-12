@@ -92,6 +92,9 @@ class MolTopK(Metric, Nox):
         is_differentiable = False
         full_state_update: bool = False
 
+        self.mol_topk_pred_key = args.mol_topk_pred_key
+        self.mol_topk_gold_key = args.mol_topk_gold_key
+
         self.topk_values = args.mol_topk_values
         self.add_state("percent_coverage", default=torch.tensor(0.0), dist_reduce_fx="sum")
     
@@ -105,7 +108,7 @@ class MolTopK(Metric, Nox):
 
     @property
     def metric_keys(self):
-        return ["pred_smiles", "all_smiles", "preds", "golds"]
+        return ["preds", "golds"] + [self.mol_topk_pred_key, self.mol_topk_gold_key]
 
     def update(self, predictions_dict, args) -> None:
         """Computes top-k accuracy for some defined value(s) of k"""
@@ -121,7 +124,7 @@ class MolTopK(Metric, Nox):
             match_idx = matches.index(True) + 1 if sum(matches) > 0 else 0
             ranks.append(match_idx)
 
-            self.percent_coverage += len(set(gold).intersection(set(top_preds))) / max(len(gold), len(set(top_preds)))
+            self.percent_coverage += len(set(gold).intersection(set(top_preds))) / len(gold) # max(len(gold), len(set(top_preds)))
 
 
         ranks_np = np.array(ranks)
