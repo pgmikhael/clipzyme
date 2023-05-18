@@ -94,6 +94,8 @@ import nox.models.digress
 import nox.models.esm_decoder
 import nox.models.protmol
 import nox.models.noncanonnet
+import nox.models.gpt
+import nox.models.modeling_gpt_neo
 
 # comet
 import nox.loggers.comet
