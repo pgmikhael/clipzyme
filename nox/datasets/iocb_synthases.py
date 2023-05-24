@@ -10,6 +10,8 @@ from rich import print as rprint
 from nox.utils.registry import register_object
 from nox.datasets.abstract import AbstractDataset
 import rdkit 
+import hashlib
+from nox.utils.pyg import from_smiles
 
 @register_object("iocb", "dataset")
 class IOCB(AbstractDataset):
@@ -492,3 +494,148 @@ class IOCBReactions(IOCB):
         * Number of proteins: {len(set(proteins))}
         """
         return statement
+
+
+@register_object("iocb_with_negatives", "dataset")
+class IOCBNegatives(IOCB):
+    def __init__(self, args, split_group):
+        super(IOCBNegatives, IOCBNegatives).__init__(self, args, split_group)
+
+    def assign_splits(self, dataset, split_probs, seed=0) -> None:
+        pass
+
+    def get_split_group_dataset(
+        self, processed_dataset, split_group: Literal["train", "dev", "test"]
+    ) -> List[dict]:
+
+        dataset = []
+        for sample in processed_dataset:
+            if sample['split'] != split_group:
+                continue
+
+            dataset.append(sample)
+
+        return dataset
+
+    def create_dataset(self, split_group: Literal["train", "dev", "test"]) -> List[dict]:
+        dataset = []
+
+        
+        if self.args.reaction_side == "reactant": 
+            smiles_key = "substrate_SMILES" if self.args.use_stereo else "substrate_SMILES_canonical_without_stereochem"
+
+        elif self.args.reaction_side == "product":
+            smiles_key = "SMILES of product (including stereochemistry)" if self.args.use_stereo else "SMILES_product_canonical_no_stereo" 
+
+        # if removing top K
+        if self.args.topk_substrates_to_remove is not None:
+            substrates = Counter([r for d in self.metadata_json for r in d[smiles_key]]).most_common(self.args.topk_substrates_to_remove)
+            self.common_substrates = [s[0] for s in substrates]
+
+        for rowid, row in tqdm(enumerate(self.metadata_json), total = len(self.metadata_json), desc="Creating dataset", ncols=50):
+            
+            uniprot_id = row["uniprot_id"]
+            molname = hashlib.md5(row[smiles_key].encode()).hexdigest()
+            if "*" in row['enzyme_seq']:
+                print(f"removed * from sequence: {row['enzyme_seq']}")
+                row['enzyme_seq'] = row['enzyme_seq'].replace("*", "")
+                
+            sample = {
+                    "protein_id": uniprot_id,
+                    "sequence": row["enzyme_seq"],
+                    # "sequence_name": row["Name"],
+                    # "protein_type": row["Type (mono, sesq, di, \u2026)"],
+                    "smiles": row[smiles_key],
+                    # "smiles_name": row[smiles_name_key],
+                    # "smiles_chebi_id": row[smiles_id_key],
+                    "sample_id": f"{uniprot_id}_{molname}_{rowid}",
+                    # "species": row["Species"],
+                    # "kingdom": row["Kingdom (plant, fungi, bacteria)"],
+                    "split": row["split"],
+                    "y": int(row['is_substrate_accepted'])
+                }
+            
+            if self.skip_sample(sample):
+                continue 
+            
+            dataset.append(sample)
+
+        return dataset 
+
+    
+
+    def skip_sample(self, sample) -> bool:
+        # if sequence is unknown
+        if (sample["sequence"] is None) or (len(sample["sequence"]) == 0):
+            return True
+
+        if (self.args.max_protein_length is not None) and len(
+            sample["sequence"]
+        ) > self.args.max_protein_length:
+            return True
+
+        
+        try:
+            mol_size = rdkit.Chem.MolFromSmiles(sample["smiles"]).GetNumAtoms()
+        except:
+            return True 
+            
+        # skip graphs of size 1
+        if mol_size <= 1:
+            return True
+
+        if self.args.reaction_side == "reactant":
+            if (self.args.max_reactant_size is not None) and (
+                mol_size > self.args.max_reactant_size
+            ):
+                return True
+        elif self.args.reaction_side == "product":
+            if (self.args.max_product_size is not None) and (
+                mol_size > self.args.max_product_size
+            ):
+                return True
+        
+        if self.args.topk_substrates_to_remove is not None:
+            if sample["smiles"] in self.common_substrates:
+                return True
+
+        if sample['sequence'] == "to be added":
+            return True
+
+        return False
+
+    @property
+    def SUMMARY_STATEMENT(self) -> None:
+        proteins = [d["protein_id"] for d in self.dataset]
+        substrates = [d["smiles"] for d in self.dataset]
+        statement = f""" 
+        * Number of samples: {len(self.dataset)}
+        * Number of substrates: {len(set(substrates))}
+        * Number of proteins: {len(set(proteins))}
+        """
+        return statement
+    
+    def __getitem__(self, index):
+        sample = self.dataset[index]
+
+        try:
+            reactant = from_smiles(sample["smiles"])
+
+            reactant.sample_id = sample["sample_id"]
+            reactant.sequence = sample["sequence"]
+            reactant.y = sample["y"]
+            reactant.uniprot_id = sample["protein_id"]
+
+            return reactant
+        
+        except Exception as e:
+            print(f"Could not load sample: {sample['sample_id']}, exception {e}")
+            
+            
+    
+    @staticmethod
+    def set_args(args) -> None:
+        super(IOCB, IOCB).set_args(args)
+        args.dataset_file_path = (
+            '/Mounts/rbg-storage1/datasets/Enzymes/IOCB/IOCB_TPS_substrate_enzyme_pairs_major_product_split.json'
+        )

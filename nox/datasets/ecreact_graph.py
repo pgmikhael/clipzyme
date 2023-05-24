@@ -662,7 +662,7 @@ class ECReactSubstrate(ECReactGraph):
             return True
 
         # underspecified EC number
-        if "-" in sample["ec"]:
+        if "ec" in sample and "-" in sample["ec"]:
             return True
 
         # skip graphs of size 1
@@ -813,7 +813,9 @@ class ECReactSubstrate(ECReactGraph):
             cache_path = f"/Mounts/rbg-storage1/datasets/Metabo/ecreact_{split_group}_negatives_temp.pt"
         elif min_sim == 0.85 and max_sim == 0.99:
             cache_path = f"/Mounts/rbg-storage1/datasets/Metabo/ecreact_{split_group}_negatives_temp_point9.pt"
-        if os.path.exists(cache_path):
+        else:
+            cache_path = None
+        if cache_path is not None and os.path.exists(cache_path):
             print(f"Loaded negatives from cache: {cache_path}")
             dataset_dict = torch.load(cache_path)
             negatives_to_add = dataset_dict["negatives"]
@@ -953,7 +955,8 @@ class ECReactSubstrate(ECReactGraph):
         dataset += negatives_to_add
 
         print(f"Saving negatives to cache: {cache_path}")
-        torch.save({"negatives": negatives_to_add}, cache_path)
+        if cache_path is not None:
+            torch.save({"negatives": negatives_to_add}, cache_path)
         return dataset
 
 
@@ -1245,3 +1248,522 @@ class ECReactProtMolGraph(ECReactSubstrate):
             return True
 
         return False
+
+@register_object("ecreact_iocb", "dataset")
+class ECReactIOCB(ECReactSubstrate):
+    def __init__(self, args, split_group):
+        super(ECReactIOCB, ECReactIOCB).__init__(self, args, split_group)
+        if args.use_protein_graphs:
+            esm_dir = "/Mounts/rbg-storage1/snapshots/metabolomics/esm2/checkpoints/esm2_t33_650M_UR50D.pt"
+            self.esm_dir = esm_dir
+            model, alphabet = pretrained.load_model_and_alphabet(esm_dir)
+            self.esm_model = model
+            self.alphabet = alphabet
+            self.batch_converter = alphabet.get_batch_converter()
+
+    @classproperty
+    def DATASET_ITEM_KEYS(cls) -> list:
+        """
+        List of keys to be included in sample when being batched
+
+        Returns:
+            list
+        """
+        standard = [
+            "sample_id",
+            "protein_features",
+            "substrate_features",
+            "sequence",
+            "smiles",
+        ]
+        return standard
+
+    def create_dataset(self, split_group: Literal["train", "dev", "test"]) -> List[dict]:
+        dataset = []
+
+        if self.args.reaction_side == "reactant": 
+            # get column name of split
+            if self.args.split_type != "pretrained_uniprots":
+                split_key = "substrate_stratified_phylogeny_based_split" 
+            else:
+                split_key = "Uniprot ID"
+            # get column names for smiles
+            smiles_key = "SMILES_substrate_canonical_no_stereo" if self.args.use_stereo else "SMILES of substrate"
+            smiles_id_key = "Substrate ChEBI ID"
+            smiles_name_key = "Substrate (including stereochemistry)"
+
+        elif self.args.reaction_side == "product":
+            # get column name of split
+            if self.args.split_type != "pretrained_uniprots":
+                split_key = "product_stratified_phylogeny_based_split" 
+            else:
+                split_key = "Uniprot ID"
+            # get column names for smiles
+            smiles_key = "SMILES of product (including stereochemistry)" if self.args.use_stereo else "SMILES_product_canonical_no_stereo" 
+            smiles_id_key = "Product ChEBI ID"
+            smiles_name_key = "Name of product"
+
+        # if removing top K
+        if self.args.topk_substrates_to_remove is not None:
+            substrates = Counter([r for d in self.metadata_json for r in d[smiles_key]]).most_common(self.args.topk_substrates_to_remove)
+            self.common_substrates = [s[0] for s in substrates]
+
+        for rowid, row in tqdm(enumerate(self.metadata_json), total = len(self.metadata_json), desc="Creating dataset", ncols=50):
+            
+            uniprotid = row["Uniprot ID"]
+            molname = row[smiles_name_key]
+            if self.args.use_protein_graphs:
+                sample = {
+                    "protein_id": uniprotid,
+                    "uniprot_id": uniprotid,
+                    "sequence": self.clean_seq(row["Amino acid sequence"]),
+                    # "sequence_name": row["Name"],
+                    # "protein_type": row["Type (mono, sesq, di, \u2026)"],
+                    "smiles": row[smiles_key],
+                    # "smiles_name": row[smiles_name_key],
+                    # "smiles_chebi_id": row[smiles_id_key],
+                    "sample_id": f"{uniprotid}_{molname}_{rowid}",
+                    # "species": row["Species"],
+                    # "kingdom": row["Kingdom (plant, fungi, bacteria)"],
+                    "split": row[split_key],
+                    "y": 1
+                }
+            else:
+                sample = {
+                        "protein_id": uniprotid,
+                        "uniprot_id": uniprotid,
+                        "sequence": self.clean_seq(row["Amino acid sequence"]),
+                        "sequence_name": row["Name"],
+                        "protein_type": row["Type (mono, sesq, di, \u2026)"],
+                        "smiles": row[smiles_key],
+                        "smiles_name": row[smiles_name_key],
+                        "smiles_chebi_id": row[smiles_id_key],
+                        "sample_id": f"{uniprotid}_{molname}_{rowid}",
+                        "species": row["Species"],
+                        "kingdom": row["Kingdom (plant, fungi, bacteria)"],
+                        "split": row[split_key],
+                        "y": 1
+                    }
+            
+            if self.skip_sample(sample, self.split_group):
+                continue 
+            
+            dataset.append(sample)
+
+        return dataset 
+    
+    def clean_seq(self, seq):
+        seq = seq.replace(" ", "")
+        seq = seq.replace("\n", "")
+        seq = seq.replace("*", "")
+        return seq
+
+    def __getitem__(self, index):
+        sample = self.dataset[index]
+
+        try:
+            if self.args.use_protein_graphs:
+                uniprot_id = sample["protein_id"]
+                sequence = sample["sequence"]
+
+                # load the protein graph
+                graph_path = os.path.join(self.args.protein_graphs_dir, "processed", f"{uniprot_id}_graph.pt")
+                structures_dir = os.path.join(self.args.protein_structures_dir, f"AF-{uniprot_id}-F1-model_v4.cif")
+                complex_path = os.path.join(self.args.protein_graphs_dir, "processed_complexes", f"{uniprot_id}_{hashlib.md5(sample['smiles'].encode()).hexdigest()}_graph.pt")
+
+                if not os.path.exists(structures_dir):
+                    print(f"Could not find structure for {uniprot_id} because missing structure path")
+                    return None
+
+                if os.path.exists(complex_path):
+                    data = torch.load(complex_path)
+                    return data
+
+                if not os.path.exists(graph_path):
+                    data = self.create_protein_graph(sample)
+                    torch.save(data, graph_path)
+                else:
+                    data = torch.load(graph_path)
+                    if data is None:
+                        data = self.create_protein_graph(sample)
+                        torch.save(data, graph_path)
+
+                data = self.add_additional_data_to_graph(data, sample)
+                # TODO: remove in the future
+                if not hasattr(data, "structure_sequence"):
+                    protein_letters_3to1.update({k.upper(): v for k, v in protein_letters_3to1.items()})
+                    AA_seq = ""
+                    for char in data['receptor'].seq:
+                        AA_seq += protein_letters_3to1[char]
+                    data.structure_sequence = AA_seq
+                if hasattr(data, "x") and not hasattr(data["receptor"], "x"):
+                    data["receptor"].x = data.x
+                if hasattr(data, "x"):
+                    delattr(data, "x")
+                if hasattr(data, "ec"):
+                    delattr(data, "ec")
+                if hasattr(data, "embedding_path"):
+                    delattr(data, "embedding_path")
+                if hasattr(data, "protein_path"):
+                    delattr(data, "protein_path")
+                if hasattr(data, "sample_hash"):
+                    delattr(data, "sample_hash")
+                if hasattr(data, "sequence_name"):
+                    delattr(data, "sequence_name")
+
+                # torch.save(data, complex_path)
+                return data
+            else:
+                reactant = from_smiles(sample["smiles"])
+
+                reactant.sample_id = sample["protein_id"]
+                reactant.sequence = sample["sequence"]
+                reactant.y = sample["y"]
+                reactant.uniprot_id = sample["protein_id"]
+
+                return reactant
+
+        except Exception as e:
+            warnings.warn(f"Could not load sample: {sample['protein_id']} due to error {e}")
+
+    def post_process(self, args):
+        if args.sample_negatives:
+            self.dataset = self.add_negatives(self.dataset, split_group=self.split_group)
+
+    def add_additional_data_to_graph(self, data, sample):
+        skipped_keys = set(["protein_path", "embedding_path"])
+        for key in sample.keys():
+            if not key in skipped_keys and key not in data.to_dict().keys():
+                data[key] = sample[key]
+        data["mol_data"] = from_smiles(sample["smiles"])
+        return data
+
+    def create_protein_graph(self, sample):
+        try:
+            raw_path = os.path.join(self.args.protein_structures_dir, f"AF-{sample['uniprot_id']}-F1-model_v4.cif")
+            sample_id = sample["uniprot_id"]
+            protein_parser = Bio.PDB.MMCIFParser()
+            protein_resolution = "residue"
+            graph_edge_args = {"knn_size": 10}
+            center_protein = True
+            esm_dir="/Mounts/rbg-storage1/snapshots/metabolomics/esm2/checkpoints/esm2_t33_650M_UR50D.pt"
+
+            # parse pdb
+            all_res, all_atom, all_pos = read_structure_file(
+                protein_parser, raw_path, sample_id
+            )
+            # filter resolution of protein (backbone, atomic, etc.)
+            atom_names, seq, pos = filter_resolution(
+                all_res,
+                all_atom,
+                all_pos,
+                protein_resolution=protein_resolution,
+            )
+            # generate graph
+            data = build_graph(atom_names, seq, pos, sample_id)
+            # kNN graph
+            data = compute_graph_edges(data, **graph_edge_args)
+            if center_protein:
+                center = data["receptor"].pos.mean(dim=0, keepdim=True)
+                data["receptor"].pos = data["receptor"].pos - center
+                data.center = center
+            data.structure_sequence = sample['sequence']
+            node_embeddings_args = {"model": self.esm_model, "model_location": self.esm_dir, "alphabet": self.alphabet, "batch_converter": self.batch_converter}
+
+            embedding_path = os.path.join(self.args.protein_graphs_dir, "precomputed_node_embeddings", f"{sample['uniprot_id']}.pt")
+            if os.path.exists(embedding_path):
+                node_embedding = torch.load(
+                    sample["embedding_path"]
+                )
+            else:
+                node_embedding = compute_node_embedding(
+                    data, **node_embeddings_args
+                )
+            # Fix sequence length mismatches
+            if len(data["receptor"].seq) != node_embedding.shape[0]:
+                print("Computing seq embedding for mismatched seq length")
+                protein_letters_3to1.update({k.upper(): v for k, v in protein_letters_3to1.items()})
+                AA_seq = ""
+                for char in seq:
+                    AA_seq += protein_letters_3to1[char]
+                # sequences = get_sequences(
+                #     self.protein_parser,
+                #     [sample["sample_id"]],
+                #     [os.path.join(self.structures_dir, f"AF-{sample['uniprot_id']}-F1-model_v4.cif")],
+                # )
+                
+                data.structure_sequence = AA_seq
+                data["receptor"].x = compute_node_embedding(
+                    data, **node_embeddings_args
+                )
+            else:
+                data["receptor"].x = node_embedding
+            
+            return data
+
+        except Exception as e:
+            print(f"Could not load sample {sample['uniprot_id']} because of exception {e}")
+            return None
+
+    def get_split_group_dataset(
+        self, processed_dataset, split_group: Literal["train", "dev", "test"]
+    ) -> List[dict]:
+
+        dataset = []
+        for sample in processed_dataset:
+            if self.to_split[sample['split']] != split_group:
+                continue
+
+            dataset.append(sample)
+
+        return dataset
+
+    def assign_splits(self, dataset, split_probs, seed=0) -> None:
+        """
+        Assigns each sample to a split group based on split_probs
+        """
+        # get all samples
+        print("Generating dataset in order to assign splits...")
+
+        if self.args.reaction_side == "reactant": 
+            split_key = "substrate_stratified_phylogeny_based_split" 
+        elif self.args.reaction_side == "product":
+            split_key = "product_stratified_phylogeny_based_split" 
+
+        # set seed
+        np.random.seed(seed)
+
+        # assign groups
+        if self.args.split_type == "fold":
+            samples = sorted(list(set(row[split_key] for row in metadata_json)))
+            np.random.shuffle(samples)
+            split_indices = np.ceil(
+                np.cumsum(np.array(split_probs) * len(samples))
+            ).astype(int)
+            split_indices = np.concatenate([[0], split_indices])
+
+            for i in range(len(split_indices) - 1):
+                self.to_split.update(
+                    {
+                        sample: ["train", "dev", "test"][i]
+                        for sample in samples[split_indices[i] : split_indices[i + 1]]
+                    }
+                )
+
+        elif self.args.split_type == "fixed":
+            self.to_split = {
+                "fold_0": "test",
+                "fold_1": "dev",
+                "fold_2": "train",
+                "fold_3": "train",
+                "fold_4": "train",
+            }
+        elif self.args.split_type == "pretrained_uniprots":
+            ec2uniprot = pickle.load(
+                open(
+                    "/Mounts/rbg-storage1/datasets/Enzymes/ECReact/ecreact_ec2uniprot.p",
+                    "rb",
+                )
+            )
+            uniprots = set(prot for l_prots in ec2uniprot.values() for prot in l_prots)
+            iocb_unique_uniprots = list(set([u['protein_id'] for u in dataset if not u['protein_id'] in uniprots]))
+            # shuffle iocb_unique_uniprots and then split into two
+            np.random.shuffle(iocb_unique_uniprots)
+            iocb_dev = iocb_unique_uniprots[:int(len(iocb_unique_uniprots)/2)]
+            iocb_test = iocb_unique_uniprots[int(len(iocb_unique_uniprots)/2):]
+            self.to_split = {
+                uniprot: "train" for uniprot in uniprots
+            }
+            self.to_split.update({
+                uniprot: "dev" for uniprot in iocb_dev
+            })
+            self.to_split.update({
+                uniprot: "test" for uniprot in iocb_test
+            })
+        else:
+            raise ValueError(f"Split {self.args.split_type} type not supported. Must be one of [fold, fixed]")
+
+    @property
+    def SUMMARY_STATEMENT(self) -> None:
+        # TODO: change if doing protein graph because too slow
+        proteins = [d["protein_id"] for d in self.dataset]
+        substrates = [d["smiles"] for d in self.dataset]
+        statement = f""" 
+        * Number of samples: {len(self.dataset)}
+        * Number of substrates: {len(set(substrates))}
+        * Number of proteins: {len(set(proteins))}
+        """
+        return statement
+
+    @staticmethod
+    def add_args(parser) -> None:
+        """Add class specific args
+
+        Args:
+            parser (argparse.ArgumentParser): argument parser
+        """
+        super(ECReactIOCB, ECReactIOCB).add_args(parser)
+        parser.add_argument(
+            "--use_protein_graphs",
+            action="store_true",
+            default=False,
+            help="whether to use and generate protein graphs",
+        )
+        parser.add_argument(
+            "--protein_graphs_dir",
+            type=str,
+            default=None,
+            help="directory to load protein graphs from",
+        )
+        parser.add_argument(
+            "--protein_structures_dir",
+            type=str,
+            default=None,
+            help="directory to load protein graphs from",
+        )
+        #####
+        parser.add_argument(
+            "--use_stereo",
+            action="store_true",
+            default=False,
+            help="use stereochemistry version of smiles",
+        )
+
+    def skip_sample(self, sample, split_group) -> bool:
+        if sample['sequence'] == "to be added" or sample['sequence'] == "tobeadded":
+            return True
+
+        if sample['smiles'] == 'Unknown':
+            return True
+
+        if super().skip_sample(sample, split_group):
+            return True
+
+        if self.args.use_protein_graphs:
+            if not os.path.exists(os.path.join(self.args.protein_structures_dir, f"AF-{sample['protein_id']}-F1-model_v4.cif")):
+                return True
+
+        # IOCB
+        # if sequence is unknown
+        if (sample["sequence"] is None) or (len(sample["sequence"]) == 0):
+            return True
+
+        if (self.args.max_protein_length is not None) and len(
+            sample["sequence"]
+        ) > self.args.max_protein_length:
+            return True
+
+        try:
+            mol_size = rdkit.Chem.MolFromSmiles(sample["smiles"]).GetNumAtoms()
+        except:
+            return True 
+
+        # skip graphs of size 1
+        if mol_size <= 1:
+            return True
+
+        if self.args.reaction_side == "reactant":
+            if (self.args.max_reactant_size is not None) and (
+                mol_size > self.args.max_reactant_size
+            ):
+                return True
+
+        elif self.args.reaction_side == "product":
+            if (self.args.max_product_size is not None) and (
+                mol_size > self.args.max_product_size
+            ):
+                return True
+
+        if self.args.topk_substrates_to_remove is not None:
+            if sample["smiles"] in self.common_substrates:
+                return True
+
+        return False
+
+    @staticmethod
+    def set_args(args) -> None:
+        super(ECReactIOCB, ECReactIOCB).set_args(args)
+        args.dataset_file_path = (
+            "/Mounts/rbg-storage1/datasets/Enzymes/IOCB/IOCB_TPS-1April2023_verified_non_minor_tps_with_neg.json"
+        )
+
+    def add_negatives(self, dataset, split_group):
+        # uniprot2sequence = { d['protein_id']: d['sequence'] for d in dataset }
+        uniprot2sequence = {}
+        uniprot2split = {}
+        for d in dataset:
+            if d['protein_id'] not in uniprot2sequence:
+                uniprot2sequence[d['protein_id']] = d['sequence']
+                uniprot2split[d['protein_id']] = d['split']
+                
+        all_substrates = set(d["smiles"] for d in dataset)
+        all_substrates_list = list(all_substrates)
+
+        # filter out negatives based on some metric (e.g. similarity)
+        if self.args.sample_negatives_range is not None:
+            min_sim, max_sim = self.args.sample_negatives_range
+
+            smile_fps = np.array(
+                [
+                    get_rdkit_feature(mol=smile, method="morgan_binary")
+                    / np.linalg.norm(
+                        get_rdkit_feature(mol=smile, method="morgan_binary")
+                    )
+                    for smile in all_substrates
+                ]
+            )
+
+            smile_similarity = smile_fps @ smile_fps.T
+            similarity_idx = np.where(
+                (smile_similarity <= min_sim) | (smile_similarity >= max_sim)
+            )
+
+            smiles2positives = defaultdict(set)
+            for smi_i, smile in tqdm(
+                enumerate(all_substrates_list), desc="Retrieving all negatives", total=len(all_substrates_list)
+            ):
+                if smile not in smiles2positives:
+                    smiles2positives[smile].update(
+                        all_substrates_list[j]
+                        for j in similarity_idx[1][similarity_idx[0] == smi_i]
+                    )
+
+        prot_id_to_positives = defaultdict(set)
+        for sample in tqdm(dataset, desc="Sampling negatives"):
+            prot_id = sample["protein_id"]
+            prot_id_to_positives[prot_id].add(sample["smiles"])
+
+            if self.args.sample_negatives_range is not None:
+                prot_id_to_positives[prot_id].update(smiles2positives[sample["smiles"]])
+
+        prot_id_to_negatives = {k: all_substrates - v for k, v in prot_id_to_positives.items()}
+        
+        rowid = len(dataset)
+        negatives_to_add = []
+        no_negatives = 0
+        for prot_id, negatives in tqdm(prot_id_to_negatives.items(), desc="Processing negatives"):
+            if len(negatives) == 0:
+                no_negatives += 1
+                continue
+
+            for rid, reactant in enumerate(negatives):
+                sample = {
+                    "smiles": reactant,
+                    "uniprot_id": prot_id,
+                    "protein_id": prot_id,
+                    "sequence": uniprot2sequence[prot_id],
+                    "split": uniprot2split[prot_id],
+                    "y": 0,
+                }
+                if super().skip_sample(sample, split_group):
+                    continue
+
+                negatives_to_add.append(sample)
+
+        print(f"[magenta] Adding {len(negatives_to_add)} negatives [/magenta]")
+        print(f"[magenta] Missing any negatives for {no_negatives} ECs [/magenta]")
+        print(f"[magenta] Total number of positive samples: {len(dataset)} [/magenta]")
+        dataset += negatives_to_add
+
+        return dataset
+
