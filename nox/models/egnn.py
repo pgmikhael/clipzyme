@@ -75,7 +75,7 @@ class EGNN_Sparse(MessagePassing):
         self.coor_weights_clamp_value = self.args.coor_weights_clamp_value
 
         self.edge_input_dim = self.edge_attr_dim + 1 + (self.feats_dim * 2)
-        self.dropout = nn.Dropout(dropout) if self.args.dropout > 0 else nn.Identity()
+        self.dropout = nn.Dropout(self.args.dropout) if self.args.dropout > 0 else nn.Identity()
 
         # EDGES
         # \phi_e
