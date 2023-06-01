@@ -27,7 +27,6 @@ from Bio.Data.IUPACData import protein_letters_3to1
 from esm import pretrained
 import Bio
 import Bio.PDB
-from Bio.Data.IUPACData import protein_letters_3to1
 from collections import Counter
 from nox.utils.protein_utils import (
     read_structure_file,
@@ -40,6 +39,7 @@ from nox.utils.protein_utils import (
 )
 from torch_geometric.data import HeteroData, Data
 from torch_geometric.data import Dataset
+import argparse
 
 
 class DatasetInfo:
@@ -554,15 +554,15 @@ class ECReactSubstrate(ECReactGraph):
     ) -> List[dict]:
 
         # TODO remove when I finish debugging
-        cache_path = f"/Mounts/rbg-storage1/datasets/Metabo/ecreact_{split_group}_dataset_temp.pt"
-        if os.path.exists(cache_path):
-            print(f"Loaded dataset from cache: {cache_path}")
-            dataset_dict = torch.load(cache_path)
-            dataset = dataset_dict["dataset"]
-            self.valid_ec2uniprot = dataset_dict["valid_ec2uniprot"]
-            self.uniprot2substrates = dataset_dict["uniprot2substrates"]
-            self.common_substrates = dataset_dict["common_substrates"] if self.args.topk_substrates_to_remove is not None else None
-            return dataset
+        # cache_path = f"/Mounts/rbg-storage1/datasets/Metabo/ecreact_{split_group}_dataset_temp.pt"
+        # if os.path.exists(cache_path):
+        #     print(f"Loaded dataset from cache: {cache_path}")
+        #     dataset_dict = torch.load(cache_path)
+        #     dataset = dataset_dict["dataset"]
+        #     self.valid_ec2uniprot = dataset_dict["valid_ec2uniprot"]
+        #     self.uniprot2substrates = dataset_dict["uniprot2substrates"]
+        #     self.common_substrates = dataset_dict["common_substrates"] if self.args.topk_substrates_to_remove is not None else None
+        #     return dataset
 
         reaction_side_key = f"{self.args.reaction_side}s"
 
@@ -646,13 +646,13 @@ class ECReactSubstrate(ECReactGraph):
                     )
         
         # TODO remove when I finish debugging
-        print(f"Saving dataset to cache: {cache_path}")
-        torch.save({
-            "dataset": dataset,
-            "valid_ec2uniprot": self.valid_ec2uniprot,
-            "uniprot2substrates": self.uniprot2substrates,
-            "common_substrates": self.common_substrates if self.args.topk_substrates_to_remove is not None else None,
-            }, cache_path)
+        # print(f"Saving dataset to cache: {cache_path}")
+        # torch.save({
+        #     "dataset": dataset,
+        #     "valid_ec2uniprot": self.valid_ec2uniprot,
+        #     "uniprot2substrates": self.uniprot2substrates,
+        #     "common_substrates": self.common_substrates if self.args.topk_substrates_to_remove is not None else None,
+        #     }, cache_path)
 
         return dataset
         
@@ -1124,6 +1124,8 @@ class ECReactProtMolGraph(ECReactSubstrate):
                 data.structure_sequence = AA_seq
             if hasattr(data, "x") and not hasattr(data["receptor"], "x"):
                 data["receptor"].x = data.x
+            if hasattr(data, "x"):
+                delattr(data, "x")
             if hasattr(data, "embedding_path"):
                 delattr(data, "embedding_path")
             if hasattr(data, "protein_path"):
@@ -1219,6 +1221,33 @@ class ECReactProtMolGraph(ECReactSubstrate):
         """
         return statement
 
+    def set_sample_weights(self, args: argparse.ArgumentParser) -> None:
+        """
+        Set weights for each sample
+
+        Args:
+            args (argparse.ArgumentParser)
+        """
+        if args.class_bal:
+            # label_counts = []
+            # for sample in self.metadata_json:
+            #     cluster = self.uniprot2cluster[sample["uniprot_id"]]
+            #     if self.to_split[cluster] == split_group:
+            #         label_counts.append(sample[args.class_bal_key])
+
+            label_dist = [d[args.class_bal_key] for d in self.dataset]
+            label_counts = Counter(label_dist)
+            weight_per_label = 1.0 / len(label_counts)
+            label_weights = {
+                label: weight_per_label / count for label, count in label_counts.items()
+            }
+
+            print("Class counts are: {}".format(label_counts))
+            print("Label weights are {}".format(label_weights))
+            self.weights = [label_weights[d[args.class_bal_key]] for d in self.dataset]
+        else:
+            pass
+
     @staticmethod
     def add_args(parser) -> None:
         """Add class specific args
@@ -1303,6 +1332,8 @@ class ECReactIOCB(ECReactSubstrate):
             smiles_id_key = "Product ChEBI ID"
             smiles_name_key = "Name of product"
 
+        self.substrate_count = Counter([s[smiles_key] for s in self.metadata_json])
+
         # if removing top K
         if self.args.topk_substrates_to_remove is not None:
             substrates = Counter([r for d in self.metadata_json for r in d[smiles_key]]).most_common(self.args.topk_substrates_to_remove)
@@ -1312,6 +1343,7 @@ class ECReactIOCB(ECReactSubstrate):
             
             uniprotid = row["Uniprot ID"]
             molname = row[smiles_name_key]
+            hashed_molname = hashlib.md5(molname.encode()).hexdigest()
             if self.args.use_protein_graphs:
                 sample = {
                     "protein_id": uniprotid,
@@ -1322,7 +1354,7 @@ class ECReactIOCB(ECReactSubstrate):
                     "smiles": row[smiles_key],
                     # "smiles_name": row[smiles_name_key],
                     # "smiles_chebi_id": row[smiles_id_key],
-                    "sample_id": f"{uniprotid}_{molname}_{rowid}",
+                    "sample_id": f"{uniprotid}_{hashed_molname}",
                     # "species": row["Species"],
                     # "kingdom": row["Kingdom (plant, fungi, bacteria)"],
                     "split": row[split_key],
@@ -1338,7 +1370,7 @@ class ECReactIOCB(ECReactSubstrate):
                         "smiles": row[smiles_key],
                         "smiles_name": row[smiles_name_key],
                         "smiles_chebi_id": row[smiles_id_key],
-                        "sample_id": f"{uniprotid}_{molname}_{rowid}",
+                        "sample_id": f"{uniprotid}_{hashed_molname}",
                         "species": row["Species"],
                         "kingdom": row["Kingdom (plant, fungi, bacteria)"],
                         "split": row[split_key],
@@ -1416,7 +1448,7 @@ class ECReactIOCB(ECReactSubstrate):
             else:
                 reactant = from_smiles(sample["smiles"])
 
-                reactant.sample_id = sample["protein_id"]
+                reactant.sample_id = sample["sample_id"]
                 reactant.sequence = sample["sequence"]
                 reactant.y = sample["y"]
                 reactant.uniprot_id = sample["protein_id"]
@@ -1566,13 +1598,14 @@ class ECReactIOCB(ECReactSubstrate):
                 )
             )
             uniprots = set(prot for l_prots in ec2uniprot.values() for prot in l_prots)
+            iocb_trained_on = list(set([u['protein_id'] for u in dataset if u['protein_id'] in uniprots]))
             iocb_unique_uniprots = list(set([u['protein_id'] for u in dataset if not u['protein_id'] in uniprots]))
             # shuffle iocb_unique_uniprots and then split into two
             np.random.shuffle(iocb_unique_uniprots)
             iocb_dev = iocb_unique_uniprots[:int(len(iocb_unique_uniprots)/2)]
             iocb_test = iocb_unique_uniprots[int(len(iocb_unique_uniprots)/2):]
             self.to_split = {
-                uniprot: "train" for uniprot in uniprots
+                uniprot: "train" for uniprot in iocb_trained_on
             }
             self.to_split.update({
                 uniprot: "dev" for uniprot in iocb_dev
@@ -1628,8 +1661,17 @@ class ECReactIOCB(ECReactSubstrate):
             default=False,
             help="use stereochemistry version of smiles",
         )
+        parser.add_argument(
+            "--min_substrate_count",
+            type=int,
+            default=0,
+            help="minimum number of times a substrate must appear in the dataset",
+        )
 
     def skip_sample(self, sample, split_group) -> bool:
+        if self.substrate_count[sample['smiles']] <= self.args.min_substrate_count:
+            return True
+
         if sample['sequence'] == "to be added" or sample['sequence'] == "tobeadded":
             return True
 
@@ -1747,12 +1789,14 @@ class ECReactIOCB(ECReactSubstrate):
                 continue
 
             for rid, reactant in enumerate(negatives):
+                hashed_molname = hashlib.md5(reactant.encode()).hexdigest()
                 sample = {
                     "smiles": reactant,
                     "uniprot_id": prot_id,
                     "protein_id": prot_id,
                     "sequence": uniprot2sequence[prot_id],
                     "split": uniprot2split[prot_id],
+                    "sample_id": f"{prot_id}_{hashed_molname}",
                     "y": 0,
                 }
                 if super().skip_sample(sample, split_group):

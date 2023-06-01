@@ -95,6 +95,7 @@ import nox.models.digress
 import nox.models.esm_decoder
 import nox.models.protmol
 import nox.models.noncanonnet
+import nox.models.wln
 
 # comet
 import nox.loggers.comet
