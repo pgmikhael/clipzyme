@@ -6,7 +6,7 @@ import argparse
 import pickle
 from rxn.chemutils.smiles_randomization import randomize_smiles_rotated
 from nox.utils.smiles import get_rdkit_feature
-from nox.utils.pyg import from_smiles
+from nox.utils.pyg import from_smiles, from_mapped_smiles
 import warnings
 import copy, os
 import numpy as np
@@ -1027,9 +1027,8 @@ class EnzymeMapGraph(EnzymeMap):
             self.mol2size = {}
 
             ec = reaction["ec"]
-            # reactants = sorted(reaction["mapped_reactants"])
-            # products = sorted(reaction["mapped_products"])
-            reactants = sorted(reaction["reactants"])
+            
+            reactants = sorted([s for s in reaction["reactants"] if s != '[H+]'])
             products = sorted(reaction["products"])
             products = [p for p in products if p not in reactants]
 
@@ -1123,8 +1122,11 @@ class EnzymeMapGraph(EnzymeMap):
                     pass
             
 
-            reactants = from_smiles(".".join(reactants), return_atom_number=True)
-            products = from_smiles(".".join(products), return_atom_number=True)
+            reactants, atom_map2new_index = from_mapped_smiles(".".join(reactants))
+            products, _ = from_mapped_smiles(".".join(products))
+
+            # TODO: update bond changes to reflect new atom indices
+            bond_changes = [(atom_map2new_index[int(u)], atom_map2new_index[int(v)], btype) for u, v, btype in sample["bond_changes"]]
             sample_id = sample["rowid"]
             item = {
                 "reaction": reaction,
@@ -1139,7 +1141,7 @@ class EnzymeMapGraph(EnzymeMap):
                 "all_smiles": list(
                     self.reaction_to_products[f"{ec}{'.'.join(sorted(sample['reactants']))}"]
                 ),
-                "bond_changes": sample["bond_changes"]
+                "bond_changes": bond_changes
             }
 
             if self.args.use_pesto_scores:
@@ -1151,5 +1153,5 @@ class EnzymeMapGraph(EnzymeMap):
 
             return item
 
-        except Exception:
+        except Exception as e:
             print(f"Could not load sample {sample['uniprot_id']} because of exception {e}")
