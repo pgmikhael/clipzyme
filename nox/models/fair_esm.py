@@ -130,16 +130,10 @@ class FairEsm(AbstractModel):
             help="use cls token as representation",
         )
         parser.add_argument(
-            "--esm_return_only_contacts",
+            "--esm_return_contacts",
             action="store_true",
             default=False,
             help="return contacts",
-        )
-        parser.add_argument(
-            "--esm_return_only_attention",
-            action="store_true",
-            default=False,
-            help="return attention",
         )
 
 

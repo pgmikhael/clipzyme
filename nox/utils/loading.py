@@ -91,6 +91,8 @@ def default_collate(batch):
             it = iter(batch)
             if all(all(isinstance(s, string_classes) for s in elem) for elem in it) or all(all(all(isinstance(s, string_classes) for s in t) and isinstance(t, tuple) for t in elem) for elem in it):
                 return batch
+            if all(all(isinstance(t, tuple) for t in elem) for elem in it):
+                return batch 
             raise RuntimeError("each element in list of batch should be of equal size")
         transposed = zip(*batch)
         return [default_collate(samples) for samples in transposed]

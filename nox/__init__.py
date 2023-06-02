@@ -34,6 +34,7 @@ import nox.datasets.ecreact_graph
 import nox.datasets.qm9
 import nox.datasets.chembl
 import nox.datasets.iocb_synthases
+import nox.datasets.protein_graph
 
 # augmentation
 import nox.augmentations.rawinput
@@ -94,8 +95,7 @@ import nox.models.digress
 import nox.models.esm_decoder
 import nox.models.protmol
 import nox.models.noncanonnet
-import nox.models.gpt
-import nox.models.modeling_gpt_neo
+import nox.models.wln
 
 # comet
 import nox.loggers.comet

@@ -28,7 +28,7 @@ class ProteinMoleculeCLIP(AbstractModel):
         self.args = args
         self.substrate_encoder = get_object(args.substrate_encoder, "model")(args)
         self.protein_encoder = get_object(args.protein_encoder, "model")(args)
-        self.ln_final = nn.LayerNorm(480)  # needs to be shape of protein_hidden
+        self.ln_final = nn.LayerNorm(args.chemprop_hidden_dim)  # needs to be shape of protein_hidden, make it chemprop shape since we typically make these match
         self.logit_scale = nn.Parameter(
             torch.ones([]) * torch.log(torch.tensor(1 / 0.07))
         )

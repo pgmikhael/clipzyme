@@ -345,7 +345,7 @@ class SupervisedCLIPLoss(Nox):
             logits.t(), mask_positives.t(), args
         )
 
-        loss = (loss_prots + loss_substrates) / 2
+        loss = ((loss_prots + loss_substrates) / 2) * args.sup_clip_loss_lambda
 
         logging_dict["clip_loss"] = loss.detach()
 
@@ -405,7 +405,7 @@ class SupervisedCLIPLoss(Nox):
     def norm_and_compute_loss(self, logits, mask_positives, args):
         # for numerical stability
         logits_max, _ = torch.max(logits, dim=1, keepdim=True)
-        eps = 1e-6  # to avoid log(0)
+        eps = 1e-8  # to avoid log(0)
         logits = logits - logits_max.detach() + eps
         exp_logits = torch.exp(logits)
 
@@ -420,7 +420,7 @@ class SupervisedCLIPLoss(Nox):
         pos_samples = mask_positives.sum(dim=1)
 
         # loss_per_sample = -(log_prob * mask_combined).sum(dim=1) / pos_samples
-        loss_per_sample = -(log_prob * mask_positives).sum(dim=1) / pos_samples
+        loss_per_sample = -(log_prob * mask_positives).sum(dim=1) / (pos_samples + eps)
         loss = loss_per_sample.mean()
         return loss
 
@@ -436,4 +436,10 @@ class SupervisedCLIPLoss(Nox):
             type=float,
             default=0.07,
             help="temperature for supervised contrastive loss.",
+        )
+        parser.add_argument(
+            "--sup_clip_loss_lambda",
+            type=float,
+            default=1.0,
+            help="",
         )

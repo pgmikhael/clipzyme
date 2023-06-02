@@ -59,7 +59,7 @@ class BaseClassification(Metric, Nox):
                 task=args.task_type,
                 num_classes=args.num_classes,
             )
-        else:
+        elif self.task_type == "multilabel":
             self.accuracy_metric = torchmetrics.Accuracy(
                 task=args.task_type,
                 num_labels=args.num_classes,
@@ -90,6 +90,32 @@ class BaseClassification(Metric, Nox):
                 task=args.task_type,
                 num_labels=args.num_classes,
             )
+        else:
+            self.accuracy_metric = torchmetrics.Accuracy(
+                task=args.task_type,
+            )
+            self.auroc_metric = torchmetrics.AUROC(
+                task=args.task_type, 
+            )
+            self.f1_metric = torchmetrics.F1Score(
+                task=args.task_type,
+            )
+            self.macro_f1_metric = torchmetrics.F1Score(
+                task=args.task_type,
+                average="macro",
+            )
+            self.ap_metric = torchmetrics.AveragePrecision(
+                task=args.task_type, 
+            )
+            self.auprc_metric = torchmetrics.PrecisionRecallCurve(
+                task=args.task_type, 
+            )
+            self.precision_metric = torchmetrics.Precision(
+                task=args.task_type,
+            )
+            self.recall_metric = torchmetrics.Recall(
+                task=args.task_type,
+            )
 
     @property
     def metric_keys(self):
@@ -99,6 +125,12 @@ class BaseClassification(Metric, Nox):
         probs = predictions_dict["probs"]  # B, C (float)
         preds = predictions_dict["preds"]  # B
         golds = predictions_dict["golds"].int()  # B
+
+        if self.task_type == "binary":
+            if len(preds.shape) >= 2:
+                preds = preds[:, 1]
+            if len(probs.shape) >= 2:
+                probs = probs[:, 1]
 
         self.accuracy_metric.update(preds, golds)
         self.auroc_metric.update(probs, golds)

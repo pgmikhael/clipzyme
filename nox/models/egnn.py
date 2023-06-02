@@ -75,7 +75,7 @@ class EGNN_Sparse(MessagePassing):
         self.coor_weights_clamp_value = self.args.coor_weights_clamp_value
 
         self.edge_input_dim = self.edge_attr_dim + 1 + (self.feats_dim * 2)
-        self.dropout = nn.Dropout(dropout) if self.args.dropout > 0 else nn.Identity()
+        self.dropout = nn.Dropout(self.args.dropout) if self.args.dropout > 0 else nn.Identity()
 
         # EDGES
         # \phi_e
@@ -245,12 +245,19 @@ class EGNN_Sparse_Network(nn.Module):
 
     def forward(self, batch):
         """ """
-        coors = batch["graph"]["receptor"].pos
-        feats = batch["graph"]["receptor"].x
-        edge_index = batch["graph"]["receptor", "contact", "receptor"].edge_index
+        if hasattr(batch, "graph"):
+            coors = batch["graph"]["receptor"].pos
+            feats = batch["graph"]["receptor"].x
+            edge_index = batch["graph"]["receptor", "contact", "receptor"].edge_index
+            batch_idx = batch["graph"]["receptor"].batch
+        else:
+            coors = batch["receptor"].pos
+            feats = batch["receptor"].x
+            edge_index = batch["receptor", "contact", "receptor"].edge_index
+            batch_idx = batch["receptor"].batch
+
         edge_attr = None
-        batch_idx = batch["graph"]["receptor"].batch
-        bsize = self.args.batch_size
+        bsize = batch_idx.max() + 1
 
         for i, egcl in enumerate(self.mpnn_layers):
             coors, feats = egcl(feats, coors, edge_index, size=bsize, batch=batch_idx)
@@ -269,7 +276,7 @@ class EGNN_Classifier(AbstractModel):
 
         self.esm_model = get_object(args.esm_model_name, "model")(args)
         classifier_args = copy.deepcopy(args)
-        self.mlp = get_object(args.classifier_name, "model")(args)
+        self.mlp = get_object(args.classifier_name, "model")(classifier_args)
 
     def forward(self, batch=None):
         output = {}
@@ -474,7 +481,7 @@ class EGNN_Active_Site_Classifier(EGNN_Classifier):
             self.mlp({"x": output["graph_features"]})
         )  # batch x nodes x features -> batch x nodes x 1
 
-        output['logit'] = output['logit'].squeeze(-1)
+        output["logit"] = output["logit"].squeeze(-1)
         labels = batch["residue_mask"]
         residue_mask = batch["mask_hiddens"][:, 1:-1]
         # cross entropy will ignore the padded residues (ignore_index=-100)
@@ -501,43 +508,209 @@ class EGNN_Active_Site_Conv_Classifier(EGNN_Active_Site_Classifier):
         feats, coors = self.egnn(batch)
         output["node_features"] = feats
         output["node_coords"] = coors
-        output.update(
-            self.mlp({"x": feats})
-        )  # nodes x 1
-        
+        output.update(self.mlp({"x": feats}))  # nodes x 1
+
         # nodes x 1
-        aggr_logits = self.aggregate_neighborhood(output['logit'].squeeze(-1), batch['graph']["receptor", "contact", "receptor"].edge_index)
-        
+        aggr_logits = self.aggregate_neighborhood(
+            output["logit"].squeeze(-1),
+            batch["graph"]["receptor", "contact", "receptor"].edge_index,
+        )
+
         # reshape to batch x nodes x 1
         logit, mask = to_dense_batch(
             aggr_logits, batch=batch["graph"]["receptor"].batch
         )
-        
+
         output["logit"] = logit
 
-        labels = batch["residue_mask"] # .reshape(1, -1).squeeze(0) # flatten -> num nodes x 1
+        labels = batch[
+            "residue_mask"
+        ]  # .reshape(1, -1).squeeze(0) # flatten -> num nodes x 1
         cropped_labels = []
         for i, seq_label in enumerate(labels):
-            seq_len = len(batch['sequence'][i])
-            label_crop = seq_label[: seq_len]
+            seq_len = len(batch["sequence"][i])
+            label_crop = seq_label[:seq_len]
             cropped_labels.append(label_crop)
-        
+
         cropped_labels = torch.cat(cropped_labels)
-        aggr_labels = self.aggregate_neighborhood(cropped_labels, batch['graph']["receptor", "contact", "receptor"].edge_index) # num nodes x 1
-        labels, labels_mask = to_dense_batch(aggr_labels.unsqueeze(-1), batch=batch["graph"]["receptor"].batch)  # batch x nodes x 1
-        
+        aggr_labels = self.aggregate_neighborhood(
+            cropped_labels, batch["graph"]["receptor", "contact", "receptor"].edge_index
+        )  # num nodes x 1
+        labels, labels_mask = to_dense_batch(
+            aggr_labels.unsqueeze(-1), batch=batch["graph"]["receptor"].batch
+        )  # batch x nodes x 1
+
         residue_mask = batch["mask_hiddens"][:, 1:-1]
         # cross entropy will ignore the padded residues (ignore_index=-100)
         labels[~residue_mask.squeeze(-1).bool()] = -100
         batch["y"] = labels.squeeze(-1)
         return output
 
-    def aggregate_neighborhood(self, logits, edge_index, reduce='max'):
+    def aggregate_neighborhood(self, logits, edge_index, reduce="max"):
         edge_idx_self_loops, edge_attr_self_loops = add_remaining_self_loops(edge_index)
-        aggr_logits = scatter(logits[edge_idx_self_loops[0]], edge_idx_self_loops[1], reduce=reduce)
+        aggr_logits = scatter(
+            logits[edge_idx_self_loops[0]], edge_idx_self_loops[1], reduce=reduce
+        )
         return aggr_logits
 
     @staticmethod
     def set_args(args) -> None:
-        super(EGNN_Active_Site_Conv_Classifier, EGNN_Active_Site_Conv_Classifier).set_args(args)
+        super(
+            EGNN_Active_Site_Conv_Classifier, EGNN_Active_Site_Conv_Classifier
+        ).set_args(args)
         args.num_classes = 1
+
+
+@register_object("egnn_mol_classifier", "model")
+class EGNN_Mol_Classifier(AbstractModel):
+    def __init__(self, args):
+        super(EGNN_Mol_Classifier, self).__init__()
+
+        self.args = args
+        self.egnn = EGNN_Sparse_Network(args)
+        self.chemprop = get_object(args.chemprop_name, "model")(args)
+        classifier_args = copy.deepcopy(args)
+        classifier_args.mlp_input_dim = (
+            classifier_args.protein_dim + args.chemprop_hidden_dim
+        )
+        self.mlp = get_object(args.classifier_name, "model")(classifier_args)
+
+    def forward(self, batch=None):
+        output = {}
+        # get protein features
+        feats, coors = self.egnn(batch)
+        if self.args.pool_type != "none":
+            output["prot_features"] = scatter(
+                feats,
+                batch["receptor"].batch,
+                dim=0,
+                reduce=self.args.pool_type,
+            )
+        else:
+            output["prot_features"] = feats
+
+        # get molecule features
+        if isinstance(batch["mol_data"], list):
+            mol_output = self.chemprop(Batch.from_data_list(batch["mol_data"]))
+        elif isinstance(batch["mol_data"], Batch):
+            mol_output = self.chemprop(batch["mol_data"])
+        else:
+            raise ValueError(
+                "mol_data must be a list of Data/HeteroData objs or Batch object"
+            )
+        output["mol_features"] = mol_output["graph_features"]
+
+        # concatenate and classify
+        output.update(
+            self.mlp(
+                {
+                    "x": torch.cat(
+                        [output["prot_features"], output["mol_features"]], dim=-1
+                    )
+                }
+            )
+        )
+
+        return output
+
+    @staticmethod
+    def add_args(parser) -> None:
+        """Add class specific args
+
+        Args:
+            parser (argparse.ArgumentParser): argument parser
+        """
+        parser.add_argument(
+            "--classifier_name",
+            type=str,
+            action=set_nox_type("model"),
+            default="mlp_classifier",
+            help="Name of encoder to use",
+        )
+        parser.add_argument(
+            "--chemprop_name",
+            type=str,
+            action=set_nox_type("model"),
+            default="chemprop",
+            help="Name of mol encoder to use",
+        )
+        parser.add_argument(
+            "--pool_type",
+            type=str,
+            choices=["none", "sum", "mul", "mean", "min", "max"],
+            default="sum",
+            help="Type of pooling to do to obtain graph features",
+        )
+        parser.add_argument(
+            "--neighbour_aggr",
+            type=str,
+            choices=["add", "sum", "mean", "max"],
+            default="sum",
+            help="Type of pooling to do to obtain graph features",
+        )
+        parser.add_argument(
+            "--edge_attr_dim",
+            type=int,
+            default=0,
+            help="",
+        )
+        parser.add_argument(
+            "--message_dim",
+            type=int,
+            default=16,
+            help="",
+        )
+        parser.add_argument(
+            "--soft_edge",
+            type=int,
+            default=0,
+            help="",
+        )
+        parser.add_argument(
+            "--norm_feats",
+            action="store_true",
+            default=False,
+            help="",
+        )
+        parser.add_argument(
+            "--norm_coors",
+            action="store_true",
+            default=False,
+            help="",
+        )
+        parser.add_argument(
+            "--update_feats",
+            action="store_true",
+            default=False,
+            help="",
+        )
+        parser.add_argument(
+            "--update_coors",
+            action="store_true",
+            default=False,
+            help="",
+        )
+        parser.add_argument(
+            "--norm_coors_scale_init",
+            type=float,
+            default=1e-2,
+            help="",
+        )
+        parser.add_argument(
+            "--coor_weights_clamp_value",
+            type=float,
+            default=None,
+            help="",
+        )
+        parser.add_argument(
+            "--egcl_layers",
+            type=int,
+            default=4,
+            help="",
+        )
+        parser.add_argument(
+            "--protein_dim",
+            type=int,
+            default=64,
+            help="",
+        )
