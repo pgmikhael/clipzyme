@@ -152,8 +152,11 @@ class WLDN(GAT):
     def __init__(self, args):
         super().__init__(args)
         self.reactivity_net = GAT(args) # pretrained reaction center WLN 
-        state_dict = torch.load(args.reactivity_model_path)
-        self.reactivity_net.load_state_dict({k[len("model.gat_global_attention."):]: v for k,v in state_dict.items() if k.startswith("model")})
+        try:
+            state_dict = torch.load(args.reactivity_model_path)
+            self.reactivity_net.load_state_dict({k[len("model.gat_global_attention."):]: v for k,v in state_dict.items() if k.startswith("model")})
+        except:
+            print("Could not load pretrained model")
         self.wln_diff = GAT(args) # WLN for difference graph
         self.final_transform = nn.Linear(args.hidden_size, 1) # for scoring
         
