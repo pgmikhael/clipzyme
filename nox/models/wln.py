@@ -158,7 +158,7 @@ class WLDN(GAT):
         except:
             print("Could not load pretrained model")
         self.wln_diff = GAT(args) # WLN for difference graph
-        self.final_transform = nn.Linear(args.hidden_size, 1) # for scoring
+        self.final_transform = nn.Linear(args.gat_hidden_dim, 1) # for scoring
         
     def forward(self, batch):
         with torch.no_grad():
