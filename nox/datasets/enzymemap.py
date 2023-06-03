@@ -1019,9 +1019,9 @@ class EnzymeMapGraph(EnzymeMap):
         dataset = []
 
         for rowid, reaction in tqdm(
-            enumerate(self.metadata_json[:1000]),
+            enumerate(self.metadata_json[:100]),
             desc="Building dataset",
-            total=len(self.metadata_json[:1000]),
+            total=len(self.metadata_json[:100]),
             ncols=100,
         ):
             self.mol2size = {}
@@ -1125,8 +1125,8 @@ class EnzymeMapGraph(EnzymeMap):
             reactants, atom_map2new_index = from_mapped_smiles(".".join(reactants))
             products, _ = from_mapped_smiles(".".join(products))
 
-            # TODO: update bond changes to reflect new atom indices
             bond_changes = [(atom_map2new_index[int(u)], atom_map2new_index[int(v)], btype) for u, v, btype in sample["bond_changes"]]
+            reactants.bond_changes = bond_changes
             sample_id = sample["rowid"]
             item = {
                 "reaction": reaction,
@@ -1141,7 +1141,7 @@ class EnzymeMapGraph(EnzymeMap):
                 "all_smiles": list(
                     self.reaction_to_products[f"{ec}{'.'.join(sorted(sample['reactants']))}"]
                 ),
-                "bond_changes": bond_changes
+                # "bond_changes": stringify_sets(bond_changes)
             }
 
             if self.args.use_pesto_scores:
@@ -1155,3 +1155,11 @@ class EnzymeMapGraph(EnzymeMap):
 
         except Exception as e:
             print(f"Could not load sample {sample['uniprot_id']} because of exception {e}")
+
+
+def stringify_sets(sets):
+    final = []
+    for i in sets:
+        s = str(i[0]) + '-' + str(i[1]) + '-' + str(i[2])
+        final.append(s)
+    return " ".join(final)

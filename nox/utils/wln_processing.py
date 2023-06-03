@@ -282,7 +282,10 @@ def is_valid_combo(combo_changes, reactant_info):
             free_val_tmp[atom1] -= atom1_type_val
             free_val_tmp[atom2] -= atom2_type_val
 
-    free_val_tmp = np.array(free_val_tmp)
+    
+    free_val_tmp = np.array([l.item() if isinstance(l, torch.Tensor) else l for l in free_val_tmp])
+    
+    
     # False if 1) too many connections 2) sulfur valence not even
     # 3) phosphorous valence not odd
     if any(free_val_tmp < 0) or \
@@ -611,13 +614,11 @@ def tensor_to_tuples(t):
     K = t.shape[2]
     
     # Get indices of the original tensor
-    indices = torch.triu_indices(N, N, offset=1) # upper triangular indices
-    indices = torch.stack(indices).reshape(2, -1).T  # transpose and reshape
-
+    indices = torch.triu_indices(N, N, offset=1).T # upper triangular indices
     maxes, arg_maxes = torch.max(t, dim=2) # (N, N)
 
     # Convert to a list of tuples
-    tuples = [(int(row), int(column), arg_maxes[row, col], maxes[row, col]) for row, column in indices]
+    tuples = [(int(row), int(col), arg_maxes[row, col].item(), maxes[row, col].item()) for row, col in indices]
 
     return tuples
 
@@ -667,19 +668,25 @@ def generate_candidates_from_scores(model_output, batch, args, mode = "train"):
     max_num_bond_changes = args.max_num_bond_changes # combinations 5
     max_num_change_combos_per_reaction = args.max_num_change_combos_per_reaction # cutoff 500
     
+    # returns a list of list of tuples
     candidate_bond_changes = get_batch_candidate_bonds(batch["reaction"], model_output['s_uv'], batch['reactants'].batch)
     
-    real_bond_changes = batch['bond_changes']
-    reactant_mol = batch['reactants']
-    if mode == 'train':
-        product_mol = batch['products']
-    else:
-        product_mol = None
 
     # Get valid candidate products, candidate bond changes considered and reactant info
-    info = (candidate_bond_changes, real_bond_changes, reactant_mol, product_mol)
-    valid_candidate_combos, candidate_bond_changes, reactant_info, candidate_smiles = \
-        pre_process_one_reaction(info, num_candidate_bond_changes, max_num_bond_changes, max_num_change_combos_per_reaction, mode)
+    valid_candidate_combos, candidate_bond_changes_many, reactant_info, candidate_smiles = [], [], [], []
+    for i in range(len(candidate_bond_changes)):
+        real_bond_changes = [tuple(elem) for elem in batch['reactants']['bond_changes'][i]]
+        reactant_mol =  Chem.MolFromSmiles(batch['reactants']['smiles'][i])
+        if mode == 'train':
+            product_mol = Chem.MolFromSmiles(batch['products']['smiles'][i])
+        else:
+            product_mol = None
+        info = (candidate_bond_changes[i], real_bond_changes, reactant_mol, product_mol)
+        valid_candidate_combos_one, candidate_bond_changes_one, reactant_info_one, candidate_smiles_one = pre_process_one_reaction(info, num_candidate_bond_changes, max_num_bond_changes, max_num_change_combos_per_reaction, mode)
+        valid_candidate_combos.append(valid_candidate_combos_one)
+        candidate_bond_changes_many.append(candidate_bond_changes_one)
+        reactant_info.append(reactant_info_one)
+        candidate_smiles.append(candidate_smiles_one)
 
     
     # TODO: from here replace with pyg data (run from_smiles on all mols, will also featurize)
