@@ -145,8 +145,8 @@ def edit_mol(reactant_mols, edits, product_info, mode="train"):
         if mode == "train":
             if len(atom_set & product_info['atoms']) == 0: # no overlap with gold product atoms
                 continue
-        for atom in mol.GetAtoms():
-            atom.SetAtomMapNum(0)
+        # for atom in mol.GetAtoms():
+        #     atom.SetAtomMapNum(0)
         pred_mols.append(mol)
 
     return '.'.join(sorted([Chem.MolToSmiles(mol) for mol in pred_mols]))
@@ -511,7 +511,7 @@ def pre_process_one_reaction(info, num_candidate_bond_changes, max_num_bond_chan
             valid_candidate_combos = new_candidate_combos
     valid_candidate_combos = valid_candidate_combos[:max_num_change_combos]
 
-    candidate_smiles = [get_product_smiles(reactant_mol, combo, None, mode) for combo in valid_candidate_combos]
+    candidate_smiles = [get_product_smiles(reactant_mol, combo, None, "test") for combo in valid_candidate_combos]
 
     return valid_candidate_combos, candidate_bond_changes, reactant_info, candidate_smiles
 
@@ -670,10 +670,13 @@ def generate_candidates_from_scores(model_output, batch, args, mode = "train"):
     
     # returns a list of list of tuples
     candidate_bond_changes = get_batch_candidate_bonds(batch["reaction"], model_output['s_uv'], batch['reactants'].batch)
-    
+    # make bonds that are "4" -> "1.5"
+    for i in range(len(candidate_bond_changes)):
+        candidate_bond_changes[i] = [(elem[0], elem[1], 1.5, elem[3]) if elem[2] == 4 else elem for elem in candidate_bond_changes[i]]
 
     # Get valid candidate products, candidate bond changes considered and reactant info
-    valid_candidate_combos, candidate_bond_changes_many, reactant_info, candidate_smiles = [], [], [], []
+    candidate_smiles = []
+    # valid_candidate_combos, candidate_bond_changes_many, reactant_info,  = [], [], []
     for i in range(len(candidate_bond_changes)):
         real_bond_changes = [tuple(elem) for elem in batch['reactants']['bond_changes'][i]]
         reactant_mol =  Chem.MolFromSmiles(batch['reactants']['smiles'][i])
@@ -683,10 +686,10 @@ def generate_candidates_from_scores(model_output, batch, args, mode = "train"):
             product_mol = None
         info = (candidate_bond_changes[i], real_bond_changes, reactant_mol, product_mol)
         valid_candidate_combos_one, candidate_bond_changes_one, reactant_info_one, candidate_smiles_one = pre_process_one_reaction(info, num_candidate_bond_changes, max_num_bond_changes, max_num_change_combos_per_reaction, mode)
-        valid_candidate_combos.append(valid_candidate_combos_one)
-        candidate_bond_changes_many.append(candidate_bond_changes_one)
-        reactant_info.append(reactant_info_one)
-        candidate_smiles.append(candidate_smiles_one)
+        # valid_candidate_combos.append(valid_candidate_combos_one)
+        # candidate_bond_changes_many.append(candidate_bond_changes_one)
+        # reactant_info.append(reactant_info_one)
+        candidate_smiles.append([Chem.MolToSmiles(product_mol)] + candidate_smiles_one)
 
     
     # TODO: from here replace with pyg data (run from_smiles on all mols, will also featurize)
@@ -697,3 +700,5 @@ def generate_candidates_from_scores(model_output, batch, args, mode = "train"):
             data, _ = from_mapped_smiles(candidate)
             data_batch.append(data)
         list_of_data_batches.append(Batch.from_data_list(data_batch))
+
+    return list_of_data_batches

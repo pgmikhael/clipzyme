@@ -173,8 +173,8 @@ class WLDN(GATWithGlobalAttn):
         
         product_candidates_list = generate_candidates_from_scores(reactivity_output, batch, self.args, mode)
         
-        # TODO: CHECK append true product to product_candidates_list
-        # TODO: atom-mapping: node i in reactants = node i in products
+        # TODO: CHECK append true product to product_candidates_list -> Done
+        # TODO: atom-mapping: node i in reactants = node i in products -> Done through atom-mapped from_mapped_smiles
         candidate_scores = []
         for idx, product_candidates in enumerate(product_candidates_list):
             # get node features for candidate products
