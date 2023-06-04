@@ -167,7 +167,8 @@ class WLDN(GATWithGlobalAttn):
     def forward(self, batch):
         with torch.no_grad():
             reactivity_output = self.reactivity_net(batch)
-        reactant_node_feats = self.wln(batch["reactants"])["node_features"]
+        reactant_node_feats = self.wln(batch["reactants"])["node_features"] # N x D, where N is all the nodes in the batch
+        dense_reactant_node_feats, mask = to_dense_batch(reactant_node_feats, batch=batch["reactants"].batch) # B x max_batch_N x D
 
         # get candidate products as graph structures
         # each element in this list is a batch of candidate products (where each batch represents one sample)
@@ -186,9 +187,12 @@ class WLDN(GATWithGlobalAttn):
             # get node features for candidate products
             product_candidates = product_candidates.to(reactant_node_feats.device)
             candidate_node_feats = self.wln(product_candidates)["node_features"]
+            dense_candidate_node_feats, mask = to_dense_batch(candidate_node_feats, batch=product_candidates.batch) # B x num_nodes x D
+            
+            num_nodes = dense_candidate_node_feats.shape[0]
 
             # compute difference vectors and replace the node features of the product graph with them
-            difference_vectors = candidate_node_feats - reactant_node_feats[idx] # TODO: check this idx is ok
+            difference_vectors = dense_candidate_node_feats - dense_reactant_node_feats[idx][:num_nodes].unsqueeze(0)
             product_candidates.x = difference_vectors
 
             # apply a separate WLN to the difference graph

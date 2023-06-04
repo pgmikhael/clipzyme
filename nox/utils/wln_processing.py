@@ -689,8 +689,8 @@ def generate_candidates_from_scores(model_output, batch, args, mode = "train"):
         # valid_candidate_combos.append(valid_candidate_combos_one)
         # candidate_bond_changes_many.append(candidate_bond_changes_one)
         # reactant_info.append(reactant_info_one)
-        candidate_smiles.append([Chem.MolToSmiles(product_mol)] + candidate_smiles_one)
-
+        real_bond_changes_fake_scores = [(elem[0], elem[1], elem[2], 1000) for elem in real_bond_changes]
+        candidate_smiles.append([get_product_smiles(reactant_mol, real_bond_changes_fake_scores, None, "test")] + candidate_smiles_one)
     
     # TODO: from here replace with pyg data (run from_smiles on all mols, will also featurize)
     list_of_data_batches = []
