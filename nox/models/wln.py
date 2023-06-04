@@ -160,7 +160,7 @@ class WLDN(GATWithGlobalAttn):
         self.wln = GAT(args) # WLN for mol representation
         wln_diff_args = copy.deepcopy(args)
         wln_diff_args.gat_node_dim = args.gat_hidden_dim
-        wln_diff_args.gat_edge_dim = args.gat_hidden_dim
+        # wln_diff_args.gat_edge_dim = args.gat_hidden_dim
         self.wln_diff = GAT(wln_diff_args) # WLN for difference graph
         self.final_transform = nn.Linear(args.gat_hidden_dim, 1) # for scoring
         
@@ -189,12 +189,16 @@ class WLDN(GATWithGlobalAttn):
             candidate_node_feats = self.wln(product_candidates)["node_features"]
             dense_candidate_node_feats, mask = to_dense_batch(candidate_node_feats, batch=product_candidates.batch) # B x num_nodes x D
             
-            num_nodes = dense_candidate_node_feats.shape[0]
+            num_nodes = dense_candidate_node_feats.shape[1]
 
             # compute difference vectors and replace the node features of the product graph with them
             difference_vectors = dense_candidate_node_feats - dense_reactant_node_feats[idx][:num_nodes].unsqueeze(0)
-            product_candidates.x = difference_vectors
 
+            # undensify
+            total_nodes = dense_candidate_node_feats.shape[0] * num_nodes
+            difference_vectors = difference_vectors.view(total_nodes, -1)
+            product_candidates.x = difference_vectors
+            
             # apply a separate WLN to the difference graph
             wln_diff_output = self.wln_diff(product_candidates)
             diff_node_feats = wln_diff_output["node_features"]
