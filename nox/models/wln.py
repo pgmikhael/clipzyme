@@ -205,12 +205,13 @@ class WLDN(GATWithGlobalAttn):
 
             # compute the score for each candidate product
             # to dense
-            diff_node_feats = to_dense_batch(diff_node_feats, product_candidates['reactants']['batch'])[idx]
+            diff_node_feats, _ = to_dense_batch(diff_node_feats, product_candidates.batch)
             score = self.final_transform(torch.sum(diff_node_feats, dim=-2))
             candidate_scores.append(score) # K x 1
 
         candidates_scores = torch.cat(candidate_scores, dim=0) # B x K x 1
-        return candidate_scores
+        output = {"logit": candidate_scores}
+        return output
 
     @staticmethod
     def add_args(parser) -> None:
