@@ -9,6 +9,7 @@ from nox.models.abstract import AbstractModel
 from torch_scatter import scatter, scatter_add
 from torch_geometric.utils import to_dense_batch, to_dense_adj
 from nox.models.gat import GAT
+import copy 
 
 
 @register_object("cheap_global_attn", "model")
@@ -156,13 +157,17 @@ class WLDN(GATWithGlobalAttn):
             self.reactivity_net.load_state_dict({k[len("model.gat_global_attention."):]: v for k,v in state_dict.items() if k.startswith("model")})
         except:
             print("Could not load pretrained model")
-        self.wln_diff = GAT(args) # WLN for difference graph
+        self.wln = GAT(args) # WLN for mol representation
+        wln_diff_args = copy.deepcopy(args)
+        wln_diff_args.gat_node_dim = args.gat_hidden_dim
+        wln_diff_args.gat_edge_dim = args.gat_hidden_dim
+        self.wln_diff = GAT(wln_diff_args) # WLN for difference graph
         self.final_transform = nn.Linear(args.gat_hidden_dim, 1) # for scoring
         
     def forward(self, batch):
         with torch.no_grad():
             reactivity_output = self.reactivity_net(batch)
-            reactant_node_feats = reactivity_output["cs"]
+        reactant_node_feats = self.wln(batch["reactants"])["node_features"]
 
         # get candidate products as graph structures
         # each element in this list is a batch of candidate products (where each batch represents one sample)
@@ -175,12 +180,12 @@ class WLDN(GATWithGlobalAttn):
         
         # TODO: CHECK append true product to product_candidates_list -> Done
         # TODO: atom-mapping: node i in reactants = node i in products -> Done through atom-mapped from_mapped_smiles
+        # TODO: fix product_candidates and reactant_node_feats shapes / batching; check torch.bincount(product_candidates.batch)
         candidate_scores = []
         for idx, product_candidates in enumerate(product_candidates_list):
             # get node features for candidate products
-            with torch.no_grad():
-                candidate_output = self.reactivity_net(product_candidates)
-                candidate_node_feats = candidate_output["cs"]
+            product_candidates = product_candidates.to(reactant_node_feats.device)
+            candidate_node_feats = self.wln(product_candidates)["node_features"]
 
             # compute difference vectors and replace the node features of the product graph with them
             difference_vectors = candidate_node_feats - reactant_node_feats[idx] # TODO: check this idx is ok
