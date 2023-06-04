@@ -698,6 +698,9 @@ def generate_candidates_from_scores(model_output, batch, args, mode = "train"):
         data_batch = []
         for candidate in list_of_candidates:
             data, _ = from_mapped_smiles(candidate)
+            # fail to convert to rdkit mol
+            if len(data.x) == 0:
+                continue 
             data_batch.append(data)
         list_of_data_batches.append(Batch.from_data_list(data_batch))
 
