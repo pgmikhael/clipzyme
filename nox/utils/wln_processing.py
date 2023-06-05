@@ -137,6 +137,10 @@ def edit_mol(reactant_mols, edits, product_info, mode="train", return_full_mol =
 
     pred_mol = new_mol.GetMol()
     pred_smiles = Chem.MolToSmiles(pred_mol)
+    
+    if return_full_mol:
+        return pred_smiles
+
     pred_list = pred_smiles.split('.')
     pred_mols = []
     for pred_smiles in pred_list:
@@ -145,12 +149,11 @@ def edit_mol(reactant_mols, edits, product_info, mode="train", return_full_mol =
             continue
         atom_set = set([atom.GetAtomMapNum() - 1 for atom in mol.GetAtoms()])
 
-        if not return_full_mol:
-            if mode == "train":
-                if len(atom_set & product_info['atoms']) == 0: # no overlap with gold product atoms
-                    continue
-            for atom in mol.GetAtoms():
-                atom.SetAtomMapNum(0)
+        if mode == "train":
+            if len(atom_set & product_info['atoms']) == 0: # no overlap with gold product atoms
+                continue
+        for atom in mol.GetAtoms():
+            atom.SetAtomMapNum(0)
         pred_mols.append(mol)
 
     return '.'.join(sorted([Chem.MolToSmiles(mol) for mol in pred_mols]))
