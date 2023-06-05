@@ -63,6 +63,7 @@ import nox.learning.losses.link_prediction
 import nox.learning.losses.contrastive
 import nox.learning.losses.digress
 import nox.learning.losses.attention
+import nox.learning.losses.wln
 
 # metrics
 import nox.learning.metrics.basic

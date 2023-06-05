@@ -129,6 +129,9 @@ class ReactivityCenterNet(AbstractModel):
         s = self.U(dense_edge_attr + pairwise_node_feats).squeeze(-1) # N x N
         # removed this line since the sizes become inconsistent later
         # s, mask = to_dense_batch(s, batch_indices) # B x max_batch_N x N x num_predicted_bond_types
+        
+        # make symmetric
+        s = (s + s.transpose(0,1))/2
         return s
 
     @staticmethod
@@ -182,6 +185,7 @@ class WLDN(GATWithGlobalAttn):
         # TODO: CHECK append true product to product_candidates_list -> Done
         # TODO: atom-mapping: node i in reactants = node i in products -> Done through atom-mapped from_mapped_smiles
         # TODO: fix product_candidates and reactant_node_feats shapes / batching; check torch.bincount(product_candidates.batch)
+        # TODO: pre_process is not actually used to construct graph; edit_mol (called in get_product_smiles) may break reactant and get fragment only
         candidate_scores = []
         for idx, product_candidates in enumerate(product_candidates_list):
             # get node features for candidate products
