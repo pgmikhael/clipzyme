@@ -41,7 +41,6 @@ def get_pair_label(graph_edits, num_atoms):
 class ReactivityLoss(Nox):
     def __init__(self) -> None:
         super().__init__()
-        self.eps = 1e-9
 
     def __call__(self, model_output, batch, model, args):
         logging_dict, predictions = OrderedDict(), OrderedDict()
@@ -73,3 +72,29 @@ class ReactivityLoss(Nox):
 
         return loss, logging_dict, predictions
 
+
+@register_object("candidate_loss", "loss")
+class CandidateLoss(Nox):
+    def __init__(self) -> None:
+        super().__init__()
+
+    def __call__(self, model_output, batch, model, args):
+        logging_dict, predictions = OrderedDict(), OrderedDict()
+        logit = model_output["logit"] # list for each reaction of [score per candidate]
+        labels = [torch.zeros_like(l) for l in logit]
+        for l in labels:
+            l[0] = 1
+        
+        loss = 0
+        probs = []
+        for pred, label in zip(preds, labels):
+            loss = loss + torch.nn.functional.cross_entropy(preds, labels, reduction="sum") # may need to unsqueeze
+            probs.append(torch.softmax(pred))
+        loss = loss / len(preds)
+
+        logging_dict["candidate_loss"] = loss.detach()
+        predictions["golds"] = torch.concat(labels)
+        predictions["probs"] = torch.concat(probs).detach()
+        predictions["preds"] = torch.concat([torch.argmax(p) for p in probs])
+
+        return loss, logging_dict, predictions
