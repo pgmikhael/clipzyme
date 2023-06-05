@@ -99,7 +99,7 @@ def get_bond_changes(reaction):
     return bond_changes
     
 
-def edit_mol(reactant_mols, edits, product_info, mode="train"):
+def edit_mol(reactant_mols, edits, product_info, mode="train", return_full_mol = False):
     """Simulate reaction via graph editing
 
     Parameters
@@ -114,6 +114,8 @@ def edit_mol(reactant_mols, edits, product_info, mode="train"):
         by a model.
     product_info : dict
         product_info['atoms'] gives a set of atom ids in the ground truth product molecule.
+    return_full_mol : bool
+        keep atom-mapping and do not remove fragments not in product (use for generating products to rank)
 
     Returns
     -------
@@ -142,17 +144,19 @@ def edit_mol(reactant_mols, edits, product_info, mode="train"):
         if mol is None:
             continue
         atom_set = set([atom.GetAtomMapNum() - 1 for atom in mol.GetAtoms()])
-        if mode == "train":
-            if len(atom_set & product_info['atoms']) == 0: # no overlap with gold product atoms
-                continue
-        # for atom in mol.GetAtoms():
-        #     atom.SetAtomMapNum(0)
+
+        if not return_full_mol:
+            if mode == "train":
+                if len(atom_set & product_info['atoms']) == 0: # no overlap with gold product atoms
+                    continue
+            for atom in mol.GetAtoms():
+                atom.SetAtomMapNum(0)
         pred_mols.append(mol)
 
     return '.'.join(sorted([Chem.MolToSmiles(mol) for mol in pred_mols]))
 
 
-def get_product_smiles(reactant_mols, edits, product_info, mode="train"):
+def get_product_smiles(reactant_mols, edits, product_info, mode="train", return_full_mol=False):
     """Get the product smiles of the reaction
 
     Parameters
@@ -173,14 +177,14 @@ def get_product_smiles(reactant_mols, edits, product_info, mode="train"):
     str
         SMILES for the main products
     """
-    smiles = edit_mol(reactant_mols, edits, product_info, mode)
+    smiles = edit_mol(reactant_mols, edits, product_info, mode, return_full_mol)
     if len(smiles) != 0:
         return smiles
     try:
         Chem.Kekulize(reactant_mols)
     except Exception as e:
         return smiles
-    return edit_mol(reactant_mols, edits, product_info, mode)
+    return edit_mol(reactant_mols, edits, product_info, mode, return_full_mol)
 
 
 def is_connected_change_combo(combo_ids, cand_change_adj):
@@ -511,7 +515,7 @@ def pre_process_one_reaction(info, num_candidate_bond_changes, max_num_bond_chan
             valid_candidate_combos = new_candidate_combos
     valid_candidate_combos = valid_candidate_combos[:max_num_change_combos]
 
-    candidate_smiles = [get_product_smiles(reactant_mol, combo, None, "test") for combo in valid_candidate_combos]
+    candidate_smiles = [get_product_smiles(reactant_mol, combo, None, mode="test", return_full_mol=True) for combo in valid_candidate_combos]
 
     return valid_candidate_combos, candidate_bond_changes, reactant_info, candidate_smiles
 
@@ -689,8 +693,8 @@ def generate_candidates_from_scores(model_output, batch, args, mode = "train"):
         # valid_candidate_combos.append(valid_candidate_combos_one)
         # candidate_bond_changes_many.append(candidate_bond_changes_one)
         # reactant_info.append(reactant_info_one)
-        real_bond_changes_fake_scores = [(elem[0], elem[1], elem[2], 1000) for elem in real_bond_changes]
-        candidate_smiles.append([get_product_smiles(reactant_mol, real_bond_changes_fake_scores, None, "test")] + candidate_smiles_one)
+        # real_bond_changes_fake_scores = [(elem[0], elem[1], elem[2], 1000) for elem in real_bond_changes]
+        candidate_smiles.append(candidate_smiles_one)
     
     # TODO: from here replace with pyg data (run from_smiles on all mols, will also featurize)
     list_of_data_batches = []

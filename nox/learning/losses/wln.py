@@ -82,13 +82,11 @@ class CandidateLoss(Nox):
     def __call__(self, model_output, batch, model, args):
         logging_dict, predictions = OrderedDict(), OrderedDict()
         logit = model_output["logit"] # list for each reaction of [score per candidate]
-        labels = [torch.zeros_like(l) for l in logit]
-        for l in labels:
-            l[0] = 1
+        label = torch.zeros([1,1], device = logit.device)
         
         loss = 0
         probs = []
-        for pred, label in zip(preds, labels):
+        for pred in preds:
             loss = loss + torch.nn.functional.cross_entropy(preds, labels, reduction="sum") # may need to unsqueeze
             probs.append(torch.softmax(pred))
         loss = loss / len(preds)

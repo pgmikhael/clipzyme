@@ -213,7 +213,10 @@ class WLDN(GATWithGlobalAttn):
             score = self.final_transform(torch.sum(diff_node_feats, dim=-2))
             candidate_scores.append(score) # K x 1
 
-        candidates_scores = torch.cat(candidate_scores, dim=0) # B x K x 1
+        # ? can k may be different per sample?
+        # candidates_scores = torch.cat(candidate_scores, dim=0) # B x K x 1
+
+        # note: dgl implementation adds reactivity score
         output = {"logit": candidate_scores}
         return output
 
