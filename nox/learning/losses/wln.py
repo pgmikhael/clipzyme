@@ -3,6 +3,7 @@ import torch
 import torch.nn.functional as F
 from collections import OrderedDict
 from nox.utils.classes import Nox
+from collections import defaultdict 
 
 def get_pair_label(graph_edits, num_atoms):
     """Construct labels for each pair of atoms in reaction center prediction
