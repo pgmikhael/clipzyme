@@ -27,8 +27,6 @@
     "lr": [1e-4],
     "weight_decay": [0],
     "loss_names": ["reactivity_loss candidate_loss"],
-    "precomputed_loss": [true],
-    "keep_preds_dim": [true],
     "task_type": ["multiclass"],
     "metric_names": ["seq2seq_classification mol_topk"],
     "mol_topk_gold_key": ["all_smiles"],
