@@ -76,7 +76,7 @@ class PairwiseAttention(AbstractModel):
 
 
 @register_object("gatv2_globalattn", "model")
-class GATWithGlobalAttn(GAT):d
+class GATWithGlobalAttn(GAT):
     def __init__(self, args):
         super().__init__(args)
         self.global_attention = get_object(args.attn_type, "model")(args)
