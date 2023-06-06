@@ -217,7 +217,11 @@ class WLDN(GATWithGlobalAttn):
         # candidates_scores = torch.cat(candidate_scores, dim=0) # B x K x 1
 
         # note: dgl implementation adds reactivity score
-        output = {"logit": candidate_scores}
+        output = {
+            "logit": candidate_scores,
+            "s_uv": reactivity_output["s_uv"], # for debugging purposes
+            "s_uv_tildes": reactivity_output["s_uv_tildes"], # for debugging purposes
+            }
         return output
 
     @staticmethod

@@ -60,12 +60,27 @@ class ReactivityLoss(Nox):
                 torch.ones_like(labels[-1])
             )
 
-        labels = torch.block_diag(*labels).to(s_uv.device)
-        mask = torch.block_diag(*mask).to(s_uv.device)
+        # block diagonal only works for 2D tensors
+        # labels_block = torch.block_diag(*labels).to(s_uv.device)
+        # mask_block = torch.block_diag(*mask).to(s_uv.device)
+        dim1 = sum([label.size(0) for label in labels])
+        dim2 = sum([label.size(1) for label in labels])
+        dim3 = labels[0].size(2)  # could just set to 5?
+
+        labels_block = torch.zeros(dim1, dim2, dim3).to(s_uv.device)
+        mask_block = torch.zeros(dim1, dim2, dim3).to(s_uv.device)
+
+        # Populate diagonal blocks
+        cur_i = 0
+        for label, mask_val in zip(labels, mask):
+            n_i, n_j, _ = label.size()
+            labels_block[cur_i:(cur_i + n_i), cur_i:(cur_i + n_j), :] = label
+            mask_block[cur_i:(cur_i + n_i), cur_i:(cur_i + n_j), :] = mask_val
+            cur_i += n_i
     
         # compute loss
-        local_loss = torch.nn.functional.binary_cross_entropy_with_logits(s_uv, labels, weight=mask, reduction="sum") / mask.sum()
-        global_loss = torch.nn.functional.binary_cross_entropy_with_logits(s_uv_tildes, labels, weight=mask, reduction="sum") / mask.sum()
+        local_loss = torch.nn.functional.binary_cross_entropy_with_logits(s_uv, labels_block, weight=mask_block, reduction="sum") / mask_block.sum()
+        global_loss = torch.nn.functional.binary_cross_entropy_with_logits(s_uv_tildes, labels_block, weight=mask_block, reduction="sum") / mask_block.sum()
         logging_dict["reactivity_local_loss"] = local_loss.detach()
         logging_dict["reactivity_global_loss"] = global_loss.detach()
 
@@ -81,19 +96,19 @@ class CandidateLoss(Nox):
 
     def __call__(self, model_output, batch, model, args):
         logging_dict, predictions = OrderedDict(), OrderedDict()
-        logit = model_output["logit"] # list for each reaction of [score per candidate]
-        label = torch.zeros([1,1], device = logit.device)
+        logits = model_output["logit"] # list for each reaction of [score per candidate]
+        label = torch.zeros([1,1], dtype=torch.long, device = logit[0].device)
         
-        loss = 0
+        loss = torch.tensor(0.0, device=logit[0].device)
         probs = []
-        for pred in preds:
-            loss = loss + torch.nn.functional.cross_entropy(preds, labels, reduction="sum") # may need to unsqueeze
-            probs.append(torch.softmax(pred))
-        loss = loss / len(preds)
+        for i, logit in enumerate(logits):
+            loss = loss + torch.nn.functional.cross_entropy(logit.unsqueeze(0), label, reduction="sum")  # may need to unsqueeze
+            probs.append(torch.softmax(logit, dim=0))
+        loss = loss / len(logits)
 
         logging_dict["candidate_loss"] = loss.detach()
-        predictions["golds"] = torch.concat(labels)
+        predictions["golds"] = torch.concat([l[0] for l in logits]).detach()
         predictions["probs"] = torch.concat(probs).detach()
-        predictions["preds"] = torch.concat([torch.argmax(p) for p in probs])
+        predictions["preds"] = torch.concat([torch.argmax(p).unsqueeze(-1) for p in probs])
 
         return loss, logging_dict, predictions
