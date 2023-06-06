@@ -91,9 +91,10 @@ class ReactivityCenterNet(AbstractModel):
     def __init__(self, args):
         super().__init__()
         self.args = args
-        self.gat_global_attention = GATWithGlobalAttn(args)
+        self.gat_global_attention = get_object(args.gat_type, "model")(args) # GATWithGlobalAttn(args)
         self.M_a = nn.Linear(args.gat_hidden_dim, args.gat_hidden_dim)
         self.M_b = nn.Linear(args.gat_edge_dim, args.gat_hidden_dim)
+        self.lin = nn.Linear(2*args.gat_hidden_dim, args.gat_hidden_dim)
         self.U = nn.Sequential(
             nn.Linear(args.gat_hidden_dim, args.gat_hidden_dim),
             nn.ReLU(),
@@ -104,15 +105,14 @@ class ReactivityCenterNet(AbstractModel):
         gat_output = self.gat_global_attention(batch['reactants']) # GAT + Global Attention over node features
         cs = gat_output["node_features"]
         c_tildes = gat_output["node_features_attn"]
+        c_final = self.lin(torch.cat([cs, c_tildes], dim=-1)) # N x 2*hidden_dim -> N x hidden_dim
 
-        s_uv = self.forward_helper(cs, batch['reactants']['edge_index'], batch['reactants']['edge_attr'], batch['reactants']['batch'])
-        s_uv_tildes = self.forward_helper(c_tildes, batch['reactants']['edge_index'], batch['reactants']['edge_attr'], batch['reactants']['batch'])
+        s_uv = self.forward_helper(c_final, batch['reactants']['edge_index'], batch['reactants']['edge_attr'], batch['reactants']['batch'])
+        # s_uv = self.forward_helper(cs, batch['reactants']['edge_index'], batch['reactants']['edge_attr'], batch['reactants']['batch'])
+        # s_uv_tildes = self.forward_helper(c_tildes, batch['reactants']['edge_index'], batch['reactants']['edge_attr'], batch['reactants']['batch'])
 
         return {
-            "cs": cs,
-            "c_tildes": c_tildes,
             "s_uv": s_uv,
-            "s_uv_tildes": s_uv_tildes
         }
 
     def forward_helper(self, node_features, edge_indices, edge_attr, batch_indices):
@@ -147,6 +147,13 @@ class ReactivityCenterNet(AbstractModel):
             type=int,
             default=5,
             help="number of bond types to predict, this is t in the paper"
+        )
+        parser.add_argument(
+            "--gat_type",
+            type=str,
+            action=set_nox_type("model"),
+            default="gatv2_globalattn",
+            help="Type of gat to use, mainly to init args"
         )
 
 @register_object("wldn", "model")
