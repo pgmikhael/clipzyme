@@ -18,7 +18,7 @@
     "gat_num_heads": [2],
     "gat_concat": [true],
     "gat_node_dim": [9],
-    "gat_edge_dim": [3],
+    "gat_edge_dim": [5],
     "gat_pool": ["none"],
     "attn_type": ["pairwise_global_attn"],
     "callback_names": ["lr_monitor checkpointer"],

@@ -146,7 +146,7 @@ def from_smiles(smiles: str, with_hydrogen: bool = False, kekulize: bool = False
     return data
 
 
-def from_mapped_smiles(smiles: str, with_hydrogen: bool = False, kekulize: bool = False):
+def from_mapped_smiles(smiles: str, with_hydrogen: bool = False, kekulize: bool = False, encode_no_edge=False):
     r"""Converts a SMILES string to a :class:`torch_geometric.data.Data`
     instance.
     Args:
@@ -155,6 +155,7 @@ def from_mapped_smiles(smiles: str, with_hydrogen: bool = False, kekulize: bool 
             hydrogens in the molecule graph. (default: :obj:`False`)
         kekulize (bool, optional): If set to :obj:`True`, converts aromatic
             bonds to single/double bonds. (default: :obj:`False`)
+        encode_no_edge (bool, optional): adds edges between all molecules
     """
 
     RDLogger.DisableLog("rdApp.*")
@@ -188,20 +189,9 @@ def from_mapped_smiles(smiles: str, with_hydrogen: bool = False, kekulize: bool 
         
         assert atom.HasProp("molAtomMapNumber"), "SMILES must contain atom map numbers"
         
-        # if atom.HasProp("molAtomMapNumber"):
         atom_map_number = int(atom.GetProp("molAtomMapNumber"))
         x_numbers.append(atom_map_number)
         atom_index_map[atom.GetIdx()] = atom_map_number  # Update mapping dictionary
-    #     else:
-    #         # if no atom map number is present, we will put it at the end. For now just keep track of these indices
-    #         x_numbers.append(-1)
-    #         atom_index_map[atom.GetIdx()] = None
-
-    # num_nones = x_numbers.count(-1)
-    # for atom_idx, atom_map_number in atom_index_map.items():
-    #     if atom_map_number is None:
-    #         atom_index_map[atom_idx] = max(x_numbers) + 1
-    #         x_numbers[atom_idx] = max(x_numbers) + 1
 
     new_xs = [None for _ in range(len(xs))]
     order = sorted(atom_index_map.items(), key=lambda x: x[1]) # sort by atom number because k,v = atom_idx, atom_map_number
@@ -222,13 +212,36 @@ def from_mapped_smiles(smiles: str, with_hydrogen: bool = False, kekulize: bool 
         i = old_index2new_index[i]
         j = old_index2new_index[j]
 
-        e = []
-        e.append(e_map["bond_type"].index(str(bond.GetBondType())))
-        e.append(e_map["stereo"].index(str(bond.GetStereo())))
-        e.append(e_map["is_conjugated"].index(bond.GetIsConjugated()))
+        e = [0, 1] if encode_no_edge else [] # [different components, same component, bond features]
+        e.append(e_map["bond_type"].index(str(bond.GetBondType()))  + 1  )  # ! add 1 in case we use encode_no_edge 
+        e.append(e_map["stereo"].index(str(bond.GetStereo())) + 1 )         # ! add 1 in case we use encode_no_edge 
+        e.append(e_map["is_conjugated"].index(bond.GetIsConjugated()) + 1)  # ! add 1 in case we use encode_no_edge 
 
         edge_indices += [[i, j], [j, i]]
         edge_attrs += [e, e]
+    
+    if encode_no_edge:
+        # atom id to molecule id (if multiple in smiles)
+        atom2molecule = {}
+        for mol_id, s in enumerate(smiles.split('.')):
+            mol = Chem.MolFromSmiles(s)
+            for atom in mol.GetAtoms():
+                idx = old_index2new_index[ atom.GetIdx() ]
+                atom2molecule[idx] = mol_id
+
+        edge_attr_dim = len(e)
+        set_edge_indices = set(edge_indices)
+        from itertools import combinations
+        total_num_atoms = mol.GetNumAtoms()
+        for (i,j) in combinations(range(total_num_atoms), 2):
+            if (i,j) not in set_edge_indices:
+                if atom2molecule[i] == atom2molecule[j]: # same molecule (component)
+                    e = [0, 1] + [0 for _ in range(edge_attr_dim-2)] 
+                else:
+                    e = [1, 0] + [0 for _ in range(edge_attr_dim-2)]
+                edge_indices += [[i, j], [j, i]]
+                edge_attrs += [e, e]
+                set_edge_indices.update([[i, j], [j, i]]) # prob not necessary but just to be safe
 
     edge_index = torch.tensor(edge_indices)
     edge_index = edge_index.t().to(torch.long).view(2, -1)

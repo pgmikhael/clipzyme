@@ -39,6 +39,181 @@ except ImportError:
     pass
 
 
+def robust_edit_mol(rmol, edits):
+    """Simulate reaction via graph editing
+
+    Parameters
+    ----------
+    rmol : rdkit.Chem.rdchem.Mol
+        RDKit molecule instance for the reactants
+    bond_changes : list of 3-tuples
+        Each tuple is of form (atom1, atom2, change_type)
+    keep_atom_map : bool
+        Whether to keep atom mapping number. Default to False.
+
+    Returns
+    -------
+    pred_smiles : list of str
+        SMILES for the edited molecule
+    """
+
+    new_mol = Chem.RWMol(rmol)
+
+    # Keep track of aromatic nitrogens, might cause explicit hydrogen issues
+    aromatic_nitrogen_idx = set()
+    aromatic_carbonyl_adj_to_aromatic_nH = {}
+    aromatic_carbondeg3_adj_to_aromatic_nH0 = {}
+    for a in new_mol.GetAtoms():
+        if a.GetIsAromatic() and a.GetSymbol() == 'N':
+            aromatic_nitrogen_idx.add(a.GetIdx())
+            for nbr in a.GetNeighbors():
+                if a.GetNumExplicitHs() == 1 and nbr.GetSymbol() == 'C' and nbr.GetIsAromatic() and any(b.GetBondTypeAsDouble() == 2 for b in nbr.GetBonds()):
+                    aromatic_carbonyl_adj_to_aromatic_nH[nbr.GetIdx()] = a.GetIdx()
+                elif a.GetNumExplicitHs() == 0 and nbr.GetSymbol() == 'C' and nbr.GetIsAromatic() and len(nbr.GetBonds()) == 3:
+                    aromatic_carbondeg3_adj_to_aromatic_nH0[nbr.GetIdx()] = a.GetIdx()
+        else:
+            a.SetNumExplicitHs(0)
+    new_mol.UpdatePropertyCache()
+
+    amap = {}
+    for atom in rmol.GetAtoms():
+        amap[atom.GetIntProp('molAtomMapNumber')] = atom.GetIdx()
+
+    # Apply the edits as predicted
+    for x,y,t in edits:
+        bond = new_mol.GetBondBetweenAtoms(amap[x],amap[y])
+        a1 = new_mol.GetAtomWithIdx(amap[x])
+        a2 = new_mol.GetAtomWithIdx(amap[y])
+        if bond is not None:
+            new_mol.RemoveBond(amap[x],amap[y])
+
+            # Are we losing a bond on an aromatic nitrogen?
+            if bond.GetBondTypeAsDouble() == 1.0:
+                if amap[x] in aromatic_nitrogen_idx:
+                    if a1.GetTotalNumHs() == 0:
+                        a1.SetNumExplicitHs(1)
+                    elif a1.GetFormalCharge() == 1:
+                        a1.SetFormalCharge(0)
+                elif amap[y] in aromatic_nitrogen_idx:
+                    if a2.GetTotalNumHs() == 0:
+                        a2.SetNumExplicitHs(1)
+                    elif a2.GetFormalCharge() == 1:
+                        a2.SetFormalCharge(0)
+
+            # Are we losing a c=O bond on an aromatic ring? If so, remove H from adjacent nH if appropriate
+            if bond.GetBondTypeAsDouble() == 2.0:
+                if amap[x] in aromatic_carbonyl_adj_to_aromatic_nH:
+                    new_mol.GetAtomWithIdx(aromatic_carbonyl_adj_to_aromatic_nH[amap[x]]).SetNumExplicitHs(0)
+                elif amap[y] in aromatic_carbonyl_adj_to_aromatic_nH:
+                    new_mol.GetAtomWithIdx(aromatic_carbonyl_adj_to_aromatic_nH[amap[y]]).SetNumExplicitHs(0)
+
+        if t > 0:
+            new_mol.AddBond(amap[x],amap[y],BOND_TYPE[t])
+
+            # Special alkylation case?
+            if t == 1:
+                if amap[x] in aromatic_nitrogen_idx:
+                    if a1.GetTotalNumHs() == 1:
+                        a1.SetNumExplicitHs(0)
+                    else:
+                        a1.SetFormalCharge(1)
+                elif amap[y] in aromatic_nitrogen_idx:
+                    if a2.GetTotalNumHs() == 1:
+                        a2.SetNumExplicitHs(0)
+                    else:
+                        a2.SetFormalCharge(1)
+
+            # Are we getting a c=O bond on an aromatic ring? If so, add H to adjacent nH0 if appropriate
+            if t == 2:
+                if amap[x] in aromatic_carbondeg3_adj_to_aromatic_nH0:
+                    new_mol.GetAtomWithIdx(aromatic_carbondeg3_adj_to_aromatic_nH0[amap[x]]).SetNumExplicitHs(1)
+                elif amap[y] in aromatic_carbondeg3_adj_to_aromatic_nH0:
+                    new_mol.GetAtomWithIdx(aromatic_carbondeg3_adj_to_aromatic_nH0[amap[y]]).SetNumExplicitHs(1)
+
+    pred_mol = new_mol.GetMol()
+
+    # Clear formal charges to make molecules valid
+    # Note: because S and P (among others) can change valence, be more flexible
+    for atom in pred_mol.GetAtoms():
+        atom.ClearProp('molAtomMapNumber')
+        if atom.GetSymbol() == 'N' and atom.GetFormalCharge() == 1: # exclude negatively-charged azide
+            bond_vals = sum([bond.GetBondTypeAsDouble() for bond in atom.GetBonds()])
+            if bond_vals <= 3:
+                atom.SetFormalCharge(0)
+        elif atom.GetSymbol() == 'N' and atom.GetFormalCharge() == -1: # handle negatively-charged azide addition
+            bond_vals = sum([bond.GetBondTypeAsDouble() for bond in atom.GetBonds()])
+            if bond_vals == 3 and any([nbr.GetSymbol() == 'N' for nbr in atom.GetNeighbors()]):
+                atom.SetFormalCharge(0)
+        elif atom.GetSymbol() == 'N':
+            bond_vals = sum([bond.GetBondTypeAsDouble() for bond in atom.GetBonds()])
+            if bond_vals == 4 and not atom.GetIsAromatic(): # and atom.IsInRingSize(5)):
+                atom.SetFormalCharge(1)
+        elif atom.GetSymbol() == 'C' and atom.GetFormalCharge() != 0:
+            atom.SetFormalCharge(0)
+        elif atom.GetSymbol() == 'O' and atom.GetFormalCharge() != 0:
+            bond_vals = sum([bond.GetBondTypeAsDouble() for bond in atom.GetBonds()]) + atom.GetNumExplicitHs()
+            if bond_vals == 2:
+                atom.SetFormalCharge(0)
+        elif atom.GetSymbol() in ['Cl', 'Br', 'I', 'F'] and atom.GetFormalCharge() != 0:
+            bond_vals = sum([bond.GetBondTypeAsDouble() for bond in atom.GetBonds()])
+            if bond_vals == 1:
+                atom.SetFormalCharge(0)
+        elif atom.GetSymbol() == 'S' and atom.GetFormalCharge() != 0:
+            bond_vals = sum([bond.GetBondTypeAsDouble() for bond in atom.GetBonds()])
+            if bond_vals in [2, 4, 6]:
+                atom.SetFormalCharge(0)
+        elif atom.GetSymbol() == 'P': # quartenary phosphorous should be pos. charge with 0 H
+            bond_vals = [bond.GetBondTypeAsDouble() for bond in atom.GetBonds()]
+            if sum(bond_vals) == 4 and len(bond_vals) == 4:
+                atom.SetFormalCharge(1)
+                atom.SetNumExplicitHs(0)
+            elif sum(bond_vals) == 3 and len(bond_vals) == 3: # make sure neutral
+                atom.SetFormalCharge(0)
+        elif atom.GetSymbol() == 'B': # quartenary boron should be neg. charge with 0 H
+            bond_vals = [bond.GetBondTypeAsDouble() for bond in atom.GetBonds()]
+            if sum(bond_vals) == 4 and len(bond_vals) == 4:
+                atom.SetFormalCharge(-1)
+                atom.SetNumExplicitHs(0)
+        elif atom.GetSymbol() in ['Mg', 'Zn']:
+            bond_vals = [bond.GetBondTypeAsDouble() for bond in atom.GetBonds()]
+            if sum(bond_vals) == 1 and len(bond_vals) == 1:
+                atom.SetFormalCharge(1)
+        elif atom.GetSymbol() == 'Si':
+            bond_vals = [bond.GetBondTypeAsDouble() for bond in atom.GetBonds()]
+            if sum(bond_vals) == len(bond_vals):
+                atom.SetNumExplicitHs(max(0, 4 - len(bond_vals)))
+
+    # Bounce to/from SMILES to try to sanitize
+    pred_smiles = Chem.MolToSmiles(pred_mol)
+    pred_list = pred_smiles.split('.')
+    pred_mols = [Chem.MolFromSmiles(pred_smiles) for pred_smiles in pred_list]
+
+    for i, mol in enumerate(pred_mols):
+
+        # Check if we failed/succeeded in previous step
+        if mol is None:
+            print('##### Unparseable mol: {}'.format(pred_list[i]))
+            continue
+
+        # Else, try post-sanitiztion fixes in structure
+        mol = Chem.MolFromSmiles(Chem.MolToSmiles(mol))
+        if mol is None:
+            continue
+        for rxn in clean_rxns_postsani:
+            out = rxn.RunReactants((mol,))
+            if out:
+                try:
+                    Chem.SanitizeMol(out[0][0])
+                    pred_mols[i] = Chem.MolFromSmiles(Chem.MolToSmiles(out[0][0]))
+                except Exception as e:
+                    print(e)
+                    print('Could not sanitize postsani reaction product: {}'.format(Chem.MolToSmiles(out[0][0])))
+                    print('Original molecule was: {}'.format(Chem.MolToSmiles(mol)))
+    pred_smiles = [Chem.MolToSmiles(pred_mol) for pred_mol in pred_mols if pred_mol is not None]
+
+    return pred_smiles
+
+
 
 
 def get_bond_changes(reaction):
