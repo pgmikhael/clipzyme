@@ -821,30 +821,10 @@ def generate_candidates_from_scores(model_output, batch, args, mode = "train"):
 
     Returns
     -------
-    list of B + 1 DGLGraph
-        The first entry in the list is the DGLGraph for the reactants and the rest are
-        DGLGraphs for candidate products. Each DGLGraph has edge features in edata['he'] and
-        node features in ndata['hv'].
-    candidate_scores : float32 tensor of shape (B, 1)
-        The sum of scores for bond changes in each combo, where B is the number of combos.
-    labels : int64 tensor of shape (1, 1), optional
-        Index for the true candidate product, which is always 0 with pre-processing. This is
-        returned only when we are not in the training mode.
-    valid_candidate_combos : list, optional
-        valid_candidate_combos[i] gives a list of tuples, which is the i-th valid combo
-        of candidate bond changes for the reaction. Each tuple is of form (atom1, atom2,
-        change_type, score). atom1, atom2 are the atom mapping numbers - 1 of the two
-        end atoms. change_type can be 0, 1, 2, 3, 1.5, separately for losing a bond, forming
-        a single, double, triple, and aromatic bond.
-    reactant_mol : rdkit.Chem.rdchem.Mol
-        RDKit molecule instance for the reactants
-    real_bond_changes : list of tuples
-        Ground truth bond changes in a reaction. Each tuple is of form (atom1, atom2,
-        change_type). atom1, atom2 are the atom mapping numbers - 1 of the two
-        end atoms. change_type can be 0, 1, 2, 3, 1.5, separately for losing a bond, forming
-        a single, double, triple, and aromatic bond.
-    product_mol : rdkit.Chem.rdchem.Mol
-        RDKit molecule instance for the product
+    list_of_data_batches:
+        list of DataBatch of candidate products for each reaction in the batch
+    valid_candidate_combos:
+        list of valid candidate combinations for each reaction in the batch
     """    
     num_candidate_bond_changes = args.num_candidate_bond_changes # core size 20
     max_num_bond_changes = args.max_num_bond_changes # combinations 5
@@ -868,21 +848,21 @@ def generate_candidates_from_scores(model_output, batch, args, mode = "train"):
             product_mol = None
         info = (candidate_bond_changes[i], real_bond_changes, reactant_mol, product_mol)
         valid_candidate_combos_one, candidate_bond_changes_one, reactant_info_one, candidate_smiles_one = pre_process_one_reaction(info, num_candidate_bond_changes, max_num_bond_changes, max_num_change_combos_per_reaction, mode)
-        # valid_candidate_combos.append(valid_candidate_combos_one)
+        valid_candidate_combos.append(valid_candidate_combos_one)
         # candidate_bond_changes_many.append(candidate_bond_changes_one)
         # reactant_info.append(reactant_info_one)
         # real_bond_changes_fake_scores = [(elem[0], elem[1], elem[2], 1000) for elem in real_bond_changes]
         candidate_smiles.append(candidate_smiles_one)
     
-    # TODO: from here replace with pyg data (run from_smiles on all mols, will also featurize)
     list_of_data_batches = []
-    for list_of_candidates in candidate_smiles:
+    for i, list_of_candidates in enumerate(candidate_smiles):
         data_batch = []
-        for candidate in list_of_candidates:
+        for j, candidate in enumerate(list_of_candidates):
             data, _ = from_mapped_smiles(candidate, encode_no_edge=True)
             # fail to convert to rdkit mol
             if len(data.x) == 0:
                 continue 
+            data.candidate_bond_change = valid_candidate_combos[i][j] # add the bond change tuple to the Data object
             data_batch.append(data)
         list_of_data_batches.append(Batch.from_data_list(data_batch))
 

@@ -4,10 +4,11 @@ import torch.nn.functional as F
 from nox.utils.registry import get_object, register_object
 from nox.utils.classes import set_nox_type
 from nox.utils.pyg import unbatch
-from nox.utils.wln_processing import generate_candidates_from_scores
+from nox.utils.wln_processing import generate_candidates_from_scores, get_batch_candidate_bonds
 from nox.models.abstract import AbstractModel
 from torch_scatter import scatter, scatter_add
 from torch_geometric.utils import to_dense_batch, to_dense_adj
+from collections import defaultdict
 from nox.models.gat import GAT
 import copy 
 import os 
@@ -128,11 +129,39 @@ class ReactivityCenterNet(AbstractModel):
         c_final = self.lin(torch.cat([cs, c_tildes], dim=-1)) # N x 2*hidden_dim -> N x hidden_dim
 
         s_uv = self.forward_helper(c_final, batch['reactants']['edge_index'], batch['reactants']['edge_attr'], batch['reactants']['batch'])
-        # s_uv = self.forward_helper(cs, batch['reactants']['edge_index'], batch['reactants']['edge_attr'], batch['reactants']['batch'])
-        # s_uv_tildes = self.forward_helper(c_tildes, batch['reactants']['edge_index'], batch['reactants']['edge_attr'], batch['reactants']['batch'])
+
+        # precompute top k metrics
+        candidate_bond_changes = get_batch_candidate_bonds(batch["reaction"], s_uv.detach(), batch['reactants'].batch)
+        # make bonds that are "4" -> "1.5"
+        for i in range(len(candidate_bond_changes)):
+            candidate_bond_changes[i] = [(elem[0], elem[1], 1.5, elem[3]) if elem[2] == 4 else elem for elem in candidate_bond_changes[i]]
+
+        batch_real_bond_changes = []
+        for i in range(len(batch['reactants']['bond_changes'])):
+            reaction_real_bond_changes = []
+            for elem in batch['reactants']['bond_changes'][i]:
+                reaction_real_bond_changes.append(tuple(elem))
+            batch_real_bond_changes.append(reaction_real_bond_changes)
+
+        assert len(candidate_bond_changes) == len(batch_real_bond_changes)
+        num_correct = defaultdict(int) # for topk metric
+        num_total = 0
+        
+        # compute for each reaction
+        for idx in range(len(candidate_bond_changes)):
+            # sort bonds
+            cand_changes = [(min(atom1, atom2), max(atom1, atom2), float(change_type)) for (atom1, atom2, change_type, score) in candidate_bond_changes[idx]]
+            gold_bonds = [(min(atom1, atom2), max(atom1, atom2), float(change_type)) for (atom1, atom2, change_type) in batch_real_bond_changes[idx]]
+
+            num_total += 1
+            for k in self.args.topk_bonds:
+                if set(gold_bonds) <= set(cand_changes[:k]):
+                    num_correct[k] += 1
 
         return {
             "s_uv": s_uv,
+            "num_correct": num_correct, # for topk metric
+            "num_total": num_total, # for topk metric
         }
 
     def forward_helper(self, node_features, edge_indices, edge_attr, batch_indices):
@@ -174,6 +203,13 @@ class ReactivityCenterNet(AbstractModel):
             action=set_nox_type("model"),
             default="gatv2_globalattn",
             help="Type of gat to use, mainly to init args"
+        )
+        parser.add_argument(
+            "--topk_bonds",
+            nargs='+',
+            type=int,
+            default=[1, 3, 5],
+            help="topk bonds to consider for accuracy metric"
         )
 
 
@@ -226,7 +262,6 @@ class WLDN(GATWithGlobalAttn):
         else:
             product_candidates_list = self.get_reactivity_scores_and_candidates(batch)
 
-        
         candidate_scores = []
         for idx, product_candidates in enumerate(product_candidates_list):
             # get node features for candidate products

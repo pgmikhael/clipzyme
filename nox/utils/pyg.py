@@ -230,7 +230,7 @@ def from_mapped_smiles(smiles: str, with_hydrogen: bool = False, kekulize: bool 
                 atom2molecule[idx] = mol_id
 
         edge_attr_dim = len(e)
-        set_edge_indices = set(edge_indices)
+        set_edge_indices = set([tuple(idxs) for idxs in edge_indices])
         from itertools import combinations
         total_num_atoms = mol.GetNumAtoms()
         for (i,j) in combinations(range(total_num_atoms), 2):
@@ -241,11 +241,11 @@ def from_mapped_smiles(smiles: str, with_hydrogen: bool = False, kekulize: bool 
                     e = [1, 0] + [0 for _ in range(edge_attr_dim-2)]
                 edge_indices += [[i, j], [j, i]]
                 edge_attrs += [e, e]
-                set_edge_indices.update([[i, j], [j, i]]) # prob not necessary but just to be safe
+                set_edge_indices.update([(i, j), (j, i)]) # prob not necessary but just to be safe
 
     edge_index = torch.tensor(edge_indices)
     edge_index = edge_index.t().to(torch.long).view(2, -1)
-    edge_attr = torch.tensor(edge_attrs, dtype=torch.long).view(-1, 3)
+    edge_attr = torch.tensor(edge_attrs, dtype=torch.long).view(-1, 5 if encode_no_edge else 3)
 
     if edge_index.numel() > 0:  # Sort indices.
         perm = (edge_index[0] * x.size(0) + edge_index[1]).argsort()

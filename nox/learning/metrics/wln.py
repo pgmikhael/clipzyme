@@ -53,5 +53,45 @@ class ReactivityClassification(Metric, Nox):
 
     def reset(self):
         super().reset()
-        self.correct = torch.tensor(0)
-        self.total = torch.tensor(0)
+        self.correct = torch.tensor(0).to(self.device)
+        self.total = torch.tensor(0).to(self.device)
+
+
+@register_object("candidate_topk", "metric")
+class CandidateTopK(Metric, Nox):
+    def __init__(self, args) -> None:
+        super().__init__()
+        higher_is_better: Optional[bool] = True
+        is_differentiable = False
+        full_state_update: bool = False
+
+        for k in args.topk_bonds:
+            self.add_state(f"num_correct_{k}", default=torch.tensor(0), dist_reduce_fx="sum")
+        self.add_state("num_total", default=torch.tensor(0), dist_reduce_fx="sum")
+
+    @property
+    def metric_keys(self):
+        return ["probs", "preds", "golds"]
+
+    def update(self, predictions_dict, args):
+        num_correct_dict = predictions_dict["num_correct"]
+        num_total = predictions_dict["num_total"]
+
+        for k in args.topk_bonds:
+            current = getattr(self, f"num_correct_{k}")
+            num_correct_k = setattr(self, f"num_correct_{k}", current + torch.tensor(num_correct_dict[k]).to(self.device))
+
+        self.num_total += torch.tensor(num_total).to(self.device)
+
+    def compute(self):
+        stats_dict = {
+            "reactivity_accuracy": self.correct.float() / self.total,
+        }
+        return stats_dict
+
+    def reset(self):
+        super().reset()
+        for k in args.topk_bonds:
+            current = getattr(self, f"num_correct_{k}")
+            num_correct_k = setattr(self, f"num_correct_{k}", torch.tensor(0).to(self.device))
+        self.total = torch.tensor(0).to(self.device)
