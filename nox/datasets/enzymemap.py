@@ -1122,8 +1122,8 @@ class EnzymeMapGraph(EnzymeMap):
                     pass
             
 
-            reactants, atom_map2new_index = from_mapped_smiles(".".join(reactants))
-            products, _ = from_mapped_smiles(".".join(products))
+            reactants, atom_map2new_index = from_mapped_smiles(".".join(reactants),  encode_no_edge=True)
+            products, _ = from_mapped_smiles(".".join(products),  encode_no_edge=True)
 
             bond_changes = [(atom_map2new_index[int(u)], atom_map2new_index[int(v)], btype) for u, v, btype in sample["bond_changes"]]
             reactants.bond_changes = bond_changes
