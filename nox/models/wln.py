@@ -10,6 +10,26 @@ from torch_scatter import scatter, scatter_add
 from torch_geometric.utils import to_dense_batch, to_dense_adj
 from nox.models.gat import GAT
 import copy 
+import os 
+
+class WLDN_Cache:
+    def __init__(self, path, extension="pt"):
+        if not os.path.exists(path):
+            os.makedirs(path)
+        self.cache_dir = path
+        self.files_extension = extension
+
+    def _file_path(self, sample_id):
+        return os.path.join(self.cache_dir, f"{sample_id}_candidates.pt")
+
+    def exists(self, sample_id):
+        return os.path.isfile(self._file_path(sample_id))
+
+    def get(self, sample_id):
+        return torch.load(self._file_path(sample_id))
+
+    def add(self, sample_id, graph):
+        torch.save(graph, self._file_path(sample_id))
 
 
 @register_object("cheap_global_attn", "model")
@@ -56,7 +76,7 @@ class PairwiseAttention(AbstractModel):
 
 
 @register_object("gatv2_globalattn", "model")
-class GATWithGlobalAttn(GAT):
+class GATWithGlobalAttn(GAT):d
     def __init__(self, args):
         super().__init__(args)
         self.global_attention = get_object(args.attn_type, "model")(args)
@@ -149,6 +169,7 @@ class ReactivityCenterNet(AbstractModel):
             help="number of bond types to predict, this is t in the paper"
         )
 
+
 @register_object("wldn", "model")
 class WLDN(GATWithGlobalAttn):
     def __init__(self, args):
@@ -166,8 +187,13 @@ class WLDN(GATWithGlobalAttn):
         # wln_diff_args.gat_edge_dim = args.gat_hidden_dim
         self.wln_diff = GAT(wln_diff_args) # WLN for difference graph
         self.final_transform = nn.Linear(args.gat_hidden_dim, 1) # for scoring
-        
-    def forward(self, batch):
+        self.use_cache = args.cache_path is not None 
+        if self.use_cache:
+            self.cache = WLDN_Cache(os.path.join(args.cache_path, args.experiment_name), "pt")
+
+    def get_reactivity_scores_and_candidates(self, batch):
+        """Runs through GNN to obtain reactivity scores then uses them to generate product"""
+
         with torch.no_grad():
             reactivity_output = self.reactivity_net(batch)
         reactant_node_feats = self.wln(batch["reactants"])["node_features"] # N x D, where N is all the nodes in the batch
@@ -181,11 +207,19 @@ class WLDN(GATWithGlobalAttn):
             mode = "test"
         
         product_candidates_list = generate_candidates_from_scores(reactivity_output, batch, self.args, mode)
+        return product_candidates_list
+
+    def forward(self, batch):
+        if self.use_cache:
+            if not all( self.cache.exists(sid) for sid in batch["sample_id"] ):
+                product_candidates_list = self.get_reactivity_scores_and_candidates(batch)
+                [self.cache.add(sid, product_candidates) for sid, product_candidates in zip(batch["sample_id"], product_candidates_list)]
+            else:
+                product_candidates_list =  [self.cache.get(sid) for sid in batch["sample_id"]]
+        else:
+            product_candidates_list = self.get_reactivity_scores_and_candidates(batch)
+
         
-        # TODO: CHECK append true product to product_candidates_list -> Done
-        # TODO: atom-mapping: node i in reactants = node i in products -> Done through atom-mapped from_mapped_smiles
-        # TODO: fix product_candidates and reactant_node_feats shapes / batching; check torch.bincount(product_candidates.batch)
-        # TODO: pre_process is not actually used to construct graph; edit_mol (called in get_product_smiles) may break reactant and get fragment only
         candidate_scores = []
         for idx, product_candidates in enumerate(product_candidates_list):
             # get node features for candidate products
