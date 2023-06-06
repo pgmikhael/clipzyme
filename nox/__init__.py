@@ -71,6 +71,7 @@ import nox.learning.metrics.link_prediction
 import nox.learning.metrics.representation
 import nox.learning.metrics.reactions
 import nox.learning.metrics.digress
+import nox.learning.metrics.wln
 
 # callbacks
 import nox.callbacks.basic
