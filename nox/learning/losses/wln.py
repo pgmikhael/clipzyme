@@ -45,7 +45,7 @@ class ReactivityLoss(Nox):
 
     def __call__(self, model_output, batch, model, args):
         logging_dict, predictions = OrderedDict(), OrderedDict()
-        s_uv, s_uv_tildes = model_output["s_uv"], model_output["s_uv_tildes"] # N x N x num_classes
+        s_uv = model_output["s_uv"] # N x N x num_classes
 
         mol_sizes = torch.bincount(batch["reactants"].batch)
         labels = []
@@ -77,14 +77,20 @@ class ReactivityLoss(Nox):
             labels_block[cur_i:(cur_i + n_i), cur_i:(cur_i + n_j), :] = label
             mask_block[cur_i:(cur_i + n_i), cur_i:(cur_i + n_j), :] = mask_val
             cur_i += n_i
-    
-        # compute loss
-        local_loss = torch.nn.functional.binary_cross_entropy_with_logits(s_uv, labels_block, weight=mask_block, reduction="sum") / mask_block.sum()
-        global_loss = torch.nn.functional.binary_cross_entropy_with_logits(s_uv_tildes, labels_block, weight=mask_block, reduction="sum") / mask_block.sum()
-        logging_dict["reactivity_local_loss"] = local_loss.detach()
-        logging_dict["reactivity_global_loss"] = global_loss.detach()
 
-        loss = local_loss + global_loss
+        # compute loss
+        loss = torch.nn.functional.binary_cross_entropy_with_logits(s_uv, labels_block, weight=mask_block, reduction="sum") / mask_block.sum()
+        logging_dict["reactivity_loss"] = loss.detach()
+
+        predictions["golds"] = labels_block.detach()
+        predictions["probs"] = torch.sigmoid(s_uv).detach()
+
+        # compute preds
+        # max_indices = torch.argmax(s_uv, dim=2)
+        # output_tensor = torch.zeros_like(s_uv)
+        # output_tensor.scatter_(2, max_indices.unsqueeze(2), 1)
+        # predictions["preds"] = output_tensor.detach()
+        predictions["preds"] = predictions['probs'] > 0.5
 
         return loss, logging_dict, predictions
 
