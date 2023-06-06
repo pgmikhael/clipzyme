@@ -97,18 +97,19 @@ class CandidateLoss(Nox):
     def __call__(self, model_output, batch, model, args):
         logging_dict, predictions = OrderedDict(), OrderedDict()
         logits = model_output["logit"] # list for each reaction of [score per candidate]
-        label = torch.zeros([1,1], dtype=torch.long, device = logit[0].device)
+        label = torch.zeros(1, dtype=torch.long, device = logits[0].device)
         
-        loss = torch.tensor(0.0, device=logit[0].device)
+        loss = 0 # torch.tensor(0.0, device=logit[0].device)
         probs = []
         for i, logit in enumerate(logits):
-            loss = loss + torch.nn.functional.cross_entropy(logit.unsqueeze(0), label, reduction="sum")  # may need to unsqueeze
-            probs.append(torch.softmax(logit, dim=0))
+            logit = logit.view(1,-1)
+            loss = loss + torch.nn.functional.cross_entropy(logit, label, reduction="sum")  # may need to unsqueeze
+            probs.append(torch.softmax(logit, dim=-1))
         loss = loss / len(logits)
 
         logging_dict["candidate_loss"] = loss.detach()
-        predictions["golds"] = torch.concat([l[0] for l in logits]).detach()
-        predictions["probs"] = torch.concat(probs).detach()
+        predictions["golds"] = label.repeat(len(logits))
+        predictions["probs"] = [p.detach() for p in probs]
         predictions["preds"] = torch.concat([torch.argmax(p).unsqueeze(-1) for p in probs])
 
         return loss, logging_dict, predictions
