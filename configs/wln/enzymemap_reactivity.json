@@ -32,7 +32,7 @@
     "log_predictions_to_table": [true],
     "log_predictions_to_table_every": [1000],
     "checkpoint_save_last": [false],
-    "monitor": ["val_top_1"],
+    "monitor": ["val_reactivity_accuracy"],
     "num_workers": [24],
     "optimizer_name": ["adam"],
     "patience": [5],
