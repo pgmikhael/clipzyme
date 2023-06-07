@@ -91,8 +91,8 @@ class ReactivityLoss(Nox):
         # output_tensor.scatter_(2, max_indices.unsqueeze(2), 1)
         # predictions["preds"] = output_tensor.detach()
         predictions["preds"] = predictions['probs'] > 0.5
-        predictions['num_correct'] = model_output['num_correct'] # for topk metric
-        predictions['num_total'] = model_output['num_total'] # for topk metric
+        predictions["candidate_bond_changes"] = model_output["candidate_bond_changes"] # for topk metric
+        predictions["real_bond_changes"] = model_output["real_bond_changes"]  # for topk metric
 
         return loss, logging_dict, predictions
 

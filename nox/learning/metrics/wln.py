@@ -74,14 +74,21 @@ class CandidateTopK(Metric, Nox):
         return ["probs", "preds", "golds"]
 
     def update(self, predictions_dict, args):
-        num_correct_dict = predictions_dict["num_correct"]
-        num_total = predictions_dict["num_total"]
+        candidate_bond_changes = predictions["candidate_bond_changes"]
+        batch_real_bond_changes = predictions["real_bond_changes"]
+                
+        # compute for each reaction
+        for idx in range(len(candidate_bond_changes)):
+            # sort bonds
+            cand_changes = [(min(atom1, atom2), max(atom1, atom2), float(change_type)) for (atom1, atom2, change_type, score) in candidate_bond_changes[idx]]
+            gold_bonds = [(min(atom1, atom2), max(atom1, atom2), float(change_type)) for (atom1, atom2, change_type) in batch_real_bond_changes[idx]]
 
-        for k in args.topk_bonds:
-            current = getattr(self, f"num_correct_{k}")
-            num_correct_k = setattr(self, f"num_correct_{k}", current + torch.tensor(num_correct_dict[k]).to(self.device))
+            self.num_total += torch.tensor(num_total).to(self.device)
+            for k in self.args.topk_bonds:
+                if set(gold_bonds) <= set(cand_changes[:k]):
+                    current = getattr(self, f"num_correct_{k}")
+                    setattr(self, f"num_correct_{k}", current + torch.tensor(1).to(self.device))            
 
-        self.num_total += torch.tensor(num_total).to(self.device)
 
     def compute(self):
         stats_dict = {

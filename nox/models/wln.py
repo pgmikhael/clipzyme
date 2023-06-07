@@ -130,7 +130,7 @@ class ReactivityCenterNet(AbstractModel):
 
         s_uv = self.forward_helper(c_final, batch['reactants']['edge_index'], batch['reactants']['edge_attr'], batch['reactants']['batch'])
 
-        # precompute top k metrics
+        # precompute for top k metric
         candidate_bond_changes = get_batch_candidate_bonds(batch["reaction"], s_uv.detach(), batch['reactants'].batch)
         # make bonds that are "4" -> "1.5"
         for i in range(len(candidate_bond_changes)):
@@ -144,24 +144,13 @@ class ReactivityCenterNet(AbstractModel):
             batch_real_bond_changes.append(reaction_real_bond_changes)
 
         assert len(candidate_bond_changes) == len(batch_real_bond_changes)
-        num_correct = defaultdict(int) # for topk metric
-        num_total = 0
-        
-        # compute for each reaction
-        for idx in range(len(candidate_bond_changes)):
-            # sort bonds
-            cand_changes = [(min(atom1, atom2), max(atom1, atom2), float(change_type)) for (atom1, atom2, change_type, score) in candidate_bond_changes[idx]]
-            gold_bonds = [(min(atom1, atom2), max(atom1, atom2), float(change_type)) for (atom1, atom2, change_type) in batch_real_bond_changes[idx]]
-
-            num_total += 1
-            for k in self.args.topk_bonds:
-                if set(gold_bonds) <= set(cand_changes[:k]):
-                    num_correct[k] += 1
 
         return {
             "s_uv": s_uv,
             "num_correct": num_correct, # for topk metric
             "num_total": num_total, # for topk metric
+            "candidate_bond_changes": candidate_bond_changes,
+            "real_bond_changes": batch_real_bond_changes
         }
 
     def forward_helper(self, node_features, edge_indices, edge_attr, batch_indices):
