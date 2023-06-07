@@ -867,3 +867,137 @@ def generate_candidates_from_scores(model_output, batch, args, mode = "train"):
         list_of_data_batches.append(Batch.from_data_list(data_batch))
 
     return list_of_data_batches
+
+
+
+def examine_topk_candidate_product(topks, topk_combos, reactant_mol, real_bond_changes, product_mol):
+    """Perform topk evaluation for predicting the product of a reaction
+
+    Parameters
+    ----------
+    topks : list of int
+        Options for top-k evaluation, e.g. [1, 3, ...].
+    topk_combos : list of list
+        topk_combos[i] gives the combo of valid bond changes ranked i-th,
+        which is a list of 3-tuples. Each tuple is of form
+        (atom1, atom2, change_type). atom1, atom2 are the atom mapping numbers - 1 of the two
+        end atoms. The change_type can be 0, 1, 2, 3, 1.5, separately for losing a bond or
+        forming a single, double, triple, aromatic bond.
+    reactant_mol : rdkit.Chem.rdchem.Mol
+        RDKit molecule instance for the reactants.
+    real_bond_changes : list of tuples
+        Ground truth bond changes in a reaction. Each tuple is of form (atom1, atom2,
+        change_type). atom1, atom2 are the atom mapping numbers - 1 of the two
+        end atoms. change_type can be 0, 1, 2, 3, 1.5, separately for losing a bond, forming
+        a single, double, triple, and aromatic bond.
+    product_mol : rdkit.Chem.rdchem.Mol
+        RDKit molecule instance for the product.
+    get_smiles : bool
+        Whether to get the SMILES of candidate products.
+
+    Returns
+    -------
+    found_info : dict
+        Binary values indicating whether we can recover the product from the ground truth
+        graph edits or top-k predicted edits
+    """
+    found_info = defaultdict(bool)
+
+    # Avoid corrupting the RDKit molecule instances in the dataset
+    reactant_mol = deepcopy(reactant_mol)
+    product_mol = deepcopy(product_mol)
+
+    for atom in product_mol.GetAtoms():
+        atom.ClearProp('molAtomMapNumber')
+    product_smiles = Chem.MolToSmiles(product_mol)
+    product_smiles_sanitized = set(sanitize_smiles_molvs(product_smiles, True).split('.'))
+    product_smiles = set(product_smiles.split('.'))
+
+    ########### Use *true* edits to try to recover product
+    # Generate product by modifying reactants with graph edits
+    pred_smiles = edit_mol(reactant_mol, real_bond_changes)
+    pred_smiles_sanitized = set(sanitize_smiles_molvs(smiles) for smiles in pred_smiles)
+    pred_smiles = set(pred_smiles)
+
+    if not product_smiles <= pred_smiles:
+        # Try again with kekulized form
+        Chem.Kekulize(reactant_mol)
+        pred_smiles_kek = edit_mol(reactant_mol, real_bond_changes)
+        pred_smiles_kek = set(pred_smiles_kek)
+        if not product_smiles <= pred_smiles_kek:
+            if product_smiles_sanitized <= pred_smiles_sanitized:
+                print('\nwarn: mismatch, but only due to standardization')
+                found_info['ground_sanitized'] = True
+            else:
+                print('\nwarn: could not regenerate product {}'.format(product_smiles))
+                print('sani product: {}'.format(product_smiles_sanitized))
+                print(Chem.MolToSmiles(reactant_mol))
+                print(Chem.MolToSmiles(product_mol))
+                print(real_bond_changes)
+                print('pred_smiles: {}'.format(pred_smiles))
+                print('pred_smiles_kek: {}'.format(pred_smiles_kek))
+                print('pred_smiles_sani: {}'.format(pred_smiles_sanitized))
+        else:
+            found_info['ground'] = True
+            found_info['ground_sanitized'] = True
+    else:
+        found_info['ground'] = True
+        found_info['ground_sanitized'] = True
+
+    ########### Now use candidate edits to try to recover product
+    max_topk = max(topks)
+    current_rank = 0
+    correct_rank = max_topk + 1
+    sanitized_correct_rank = max_topk + 1
+    candidate_smiles_list = []
+    candidate_smiles_sanitized_list = []
+
+    for i, combo in enumerate(topk_combos):
+        prev_len_candidate_smiles = len(set(candidate_smiles_list))
+
+        # Generate products by modifying reactants with predicted edits.
+        candidate_smiles = edit_mol(reactant_mol, combo)
+        candidate_smiles = set(candidate_smiles)
+        candidate_smiles_sanitized = set(sanitize_smiles_molvs(smiles)
+                                         for smiles in candidate_smiles)
+
+        if product_smiles_sanitized <= candidate_smiles_sanitized:
+            sanitized_correct_rank = min(sanitized_correct_rank, current_rank + 1)
+        if product_smiles <= candidate_smiles:
+            correct_rank = min(correct_rank, current_rank + 1)
+
+        # Record unkekulized form
+        candidate_smiles_list.append('.'.join(candidate_smiles))
+        candidate_smiles_sanitized_list.append('.'.join(candidate_smiles_sanitized))
+
+        # Edit molecules with reactants kekulized. Sometimes previous editing fails due to
+        # RDKit sanitization error (edited molecule cannot be kekulized)
+        try:
+            Chem.Kekulize(reactant_mol)
+        except Exception as e:
+            pass
+
+        candidate_smiles = edit_mol(reactant_mol, combo)
+        candidate_smiles = set(candidate_smiles)
+        candidate_smiles_sanitized = set(sanitize_smiles_molvs(smiles)
+                                         for smiles in candidate_smiles)
+        if product_smiles_sanitized <= candidate_smiles_sanitized:
+            sanitized_correct_rank = min(sanitized_correct_rank, current_rank + 1)
+        if product_smiles <= candidate_smiles:
+            correct_rank = min(correct_rank, current_rank + 1)
+
+        # If we failed to come up with a new candidate, don't increment the counter!
+        if len(set(candidate_smiles_list)) > prev_len_candidate_smiles:
+            current_rank += 1
+
+        if correct_rank < max_topk + 1 and sanitized_correct_rank < max_topk + 1:
+            break
+
+    for k in topks:
+        if correct_rank <= k:
+            found_info['top_{:d}'.format(k)] = True
+        if sanitized_correct_rank <= k:
+            found_info['top_{:d}_sanitized'.format(k)] = True
+
+    return found_info
+

@@ -119,5 +119,8 @@ class CandidateLoss(Nox):
         predictions["golds"] = label.repeat(len(logits))
         predictions["probs"] = [p.detach() for p in probs]
         predictions["preds"] = torch.concat([torch.argmax(p).unsqueeze(-1) for p in probs])
+        predictions["product_candidates_list"] = model_output["product_candidates_list"]
+        predictions["reactant_smiles"] = batch["reactant"].smiles
+        predictions["product_smiles"] = batch["products"].smiles
 
         return loss, logging_dict, predictions

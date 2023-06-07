@@ -284,8 +284,8 @@ class WLDN(GATWithGlobalAttn):
         # note: dgl implementation adds reactivity score
         output = {
             "logit": candidate_scores,
+            "product_candidates_list": product_candidates_list,
             "s_uv": reactivity_output["s_uv"], # for debugging purposes
-            "s_uv_tildes": reactivity_output["s_uv_tildes"], # for debugging purposes
             }
         return output
 
