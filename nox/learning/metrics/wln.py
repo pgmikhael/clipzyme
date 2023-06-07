@@ -51,11 +51,6 @@ class ReactivityClassification(Metric, Nox):
         }
         return stats_dict
 
-    def reset(self):
-        super().reset()
-        self.correct = torch.tensor(0).to(self.device)
-        self.total = torch.tensor(0).to(self.device)
-
 
 @register_object("candidate_topk", "metric")
 class CandidateTopK(Metric, Nox):
@@ -95,10 +90,3 @@ class CandidateTopK(Metric, Nox):
             "reactivity_accuracy": self.correct.float() / self.total,
         }
         return stats_dict
-
-    def reset(self):
-        super().reset()
-        for k in args.topk_bonds:
-            current = getattr(self, f"num_correct_{k}")
-            num_correct_k = setattr(self, f"num_correct_{k}", torch.tensor(0).to(self.device))
-        self.total = torch.tensor(0).to(self.device)
