@@ -15,20 +15,18 @@ class ReactivityClassification(Metric, Nox):
         is_differentiable = False
         full_state_update: bool = False
 
-        # self.num_classes = kwargs["num_classes"]
-
         self.add_state("correct", default=torch.tensor(0), dist_reduce_fx="sum")
         self.add_state("total", default=torch.tensor(0), dist_reduce_fx="sum")
 
     @property
     def metric_keys(self):
-        return ["probs", "preds", "golds"]
+        return ["probs", "preds", "golds", "mask"]
 
     def update(self, predictions_dict, args):
         preds = predictions_dict["preds"]
         target = predictions_dict["golds"]
         assert preds.shape == target.shape
-
+        mask = predictions_dict["mask"]
         N = preds.shape[1]
         triu_indices = torch.triu_indices(N, N, offset=1, device=preds.device)
 
@@ -39,8 +37,8 @@ class ReactivityClassification(Metric, Nox):
         correct = 0
         total = 0
         for i, j in zip(triu_indices[0], triu_indices[1]):
-            total += 1
-            correct += int(correct_tensor[i, j])
+            total += 1 * mask[i, j]
+            correct += int(correct_tensor[i, j]) * mask[i, j]
 
         self.correct += torch.tensor(correct).to(self.device)
         self.total += torch.tensor(total).to(self.device)
@@ -166,3 +164,35 @@ class CandidateTopK(Metric, Nox):
             default=[1],
             help="Values of k for which to obtain top-k accuracies",
         )
+
+
+@register_object("candidate_accuracy", "metric")
+class WLNAccuracy(Metric, Nox):
+    def __init__(self, args) -> None:
+        super().__init__()
+        higher_is_better: Optional[bool] = True
+        is_differentiable = False
+        full_state_update: bool = False
+
+        self.add_state("correct", default=torch.tensor(0), dist_reduce_fx="sum")
+        self.add_state("total", default=torch.tensor(0), dist_reduce_fx="sum")
+ 
+    @property
+    def metric_keys(self):
+        return ["probs", "preds", "golds"]
+
+    def update(self, predictions_dict, args) -> Dict:
+        preds = predictions_dict["preds"]
+        target = predictions_dict["golds"]
+        
+        correct = (preds == target).all(dim=-1).sum()
+        total = preds.shape[-1]
+
+        self.correct += torch.tensor(correct).to(self.device)
+        self.total += torch.tensor(total).to(self.device)
+
+    def compute(self) -> Dict:
+        stats_dict = {
+            "per_reaction_accuracy": self.correct.float() / self.total,
+        }
+        return stats_dict
