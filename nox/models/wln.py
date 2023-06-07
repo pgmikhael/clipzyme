@@ -147,8 +147,6 @@ class ReactivityCenterNet(AbstractModel):
 
         return {
             "s_uv": s_uv,
-            "num_correct": num_correct, # for topk metric
-            "num_total": num_total, # for topk metric
             "candidate_bond_changes": candidate_bond_changes,
             "real_bond_changes": batch_real_bond_changes
         }
