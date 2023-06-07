@@ -805,6 +805,29 @@ def tensor_to_tuples(t):
     return tuples
 
 
+def get_atom_pair_to_bond(mol):
+    """Bookkeep bonds in the reactant.
+
+    Parameters
+    ----------
+    mol : rdkit.Chem.rdchem.Mol
+        RDKit molecule instance for reactants.
+
+    Returns
+    -------
+    pair_to_bond_type : dict
+        Mapping 2-tuples of atoms to bond type. 1, 2, 3, 1.5 are
+        separately for single, double, triple and aromatic bond.
+    """
+    pair_to_bond_type = dict()
+    for bond in mol.GetBonds():
+        atom1, atom2 = bond.GetBeginAtomIdx(), bond.GetEndAtomIdx()
+        atom1, atom2 = min(atom1, atom2), max(atom1, atom2)
+        type_val = bond.GetBondTypeAsDouble()
+        pair_to_bond_type[(atom1, atom2)] = type_val
+
+    return pair_to_bond_type
+
 def generate_candidates_from_scores(model_output, batch, args, mode = "train"):
     """Generate candidate products from predicted changes
 
@@ -846,7 +869,18 @@ def generate_candidates_from_scores(model_output, batch, args, mode = "train"):
             product_mol = Chem.MolFromSmiles(batch['products']['smiles'][i])
         else:
             product_mol = None
-        info = (candidate_bond_changes[i], real_bond_changes, reactant_mol, product_mol)
+
+        # keep bond changes that are actual changes
+        reactant_pair_to_bond = get_atom_pair_to_bond(reactant_mol)
+        actual_candidate_bond_changes = []
+
+        for atom1, atom2, change_type, score in candidate_bond_changes[i]:
+            bond_in_reactant = reactant_pair_to_bond.get((atom1, atom2), None)
+            if (bond_in_reactant is None and change_type > 0) or \
+                    (bond_in_reactant is not None and bond_in_reactant != change_type):
+                actual_candidate_bond_changes.append((atom1, atom2, change_type))
+
+        info = (actual_candidate_bond_changes, real_bond_changes, reactant_mol, product_mol)
         valid_candidate_combos_one, candidate_bond_changes_one, reactant_info_one, candidate_smiles_one = pre_process_one_reaction(info, num_candidate_bond_changes, max_num_bond_changes, max_num_change_combos_per_reaction, mode)
         valid_candidate_combos.append(valid_candidate_combos_one)
         # candidate_bond_changes_many.append(candidate_bond_changes_one)
@@ -915,14 +949,14 @@ def examine_topk_candidate_product(topks, topk_combos, reactant_mol, real_bond_c
 
     ########### Use *true* edits to try to recover product
     # Generate product by modifying reactants with graph edits
-    pred_smiles = edit_mol(reactant_mol, real_bond_changes)
+    pred_smiles = robust_edit_mol(reactant_mol, real_bond_changes)
     pred_smiles_sanitized = set(sanitize_smiles_molvs(smiles) for smiles in pred_smiles)
     pred_smiles = set(pred_smiles)
 
     if not product_smiles <= pred_smiles:
         # Try again with kekulized form
         Chem.Kekulize(reactant_mol)
-        pred_smiles_kek = edit_mol(reactant_mol, real_bond_changes)
+        pred_smiles_kek = robust_edit_mol(reactant_mol, real_bond_changes)
         pred_smiles_kek = set(pred_smiles_kek)
         if not product_smiles <= pred_smiles_kek:
             if product_smiles_sanitized <= pred_smiles_sanitized:
@@ -956,7 +990,7 @@ def examine_topk_candidate_product(topks, topk_combos, reactant_mol, real_bond_c
         prev_len_candidate_smiles = len(set(candidate_smiles_list))
 
         # Generate products by modifying reactants with predicted edits.
-        candidate_smiles = edit_mol(reactant_mol, combo)
+        candidate_smiles = robust_edit_mol(reactant_mol, combo)
         candidate_smiles = set(candidate_smiles)
         candidate_smiles_sanitized = set(sanitize_smiles_molvs(smiles)
                                          for smiles in candidate_smiles)
@@ -977,7 +1011,7 @@ def examine_topk_candidate_product(topks, topk_combos, reactant_mol, real_bond_c
         except Exception as e:
             pass
 
-        candidate_smiles = edit_mol(reactant_mol, combo)
+        candidate_smiles = robust_edit_mol(reactant_mol, combo)
         candidate_smiles = set(candidate_smiles)
         candidate_smiles_sanitized = set(sanitize_smiles_molvs(smiles)
                                          for smiles in candidate_smiles)

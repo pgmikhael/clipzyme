@@ -4,7 +4,7 @@ from nox.utils.classes import Nox
 import torchmetrics
 from torchmetrics import Metric
 import torch
-from nox.utils.wln_processing import examine_topk_candidate_product, bookkeep_reactant
+from nox.utils.wln_processing import examine_topk_candidate_product
 from rdkit import Chem 
 
 @register_object("reactivity_classification", "metric")
@@ -129,19 +129,7 @@ class CandidateTopK(Metric, Nox):
             product_mol = Chem.MolFromSmiles(product_smiles[reaction_idx]) 
 
             topk_values, topk_indices = torch.topk(reaction_pred, top_k, dim=0)
-            
-            # Filter out invalid candidate bond changes
-            reactant_pair_to_bond = bookkeep_reactant(reactant_mol)
-            topk_combos = []
-            for i in topk_indices:
-                i = i.detach().cpu().item()
-                combo = []
-                for atom1, atom2, change_type, score in valid_candidate_combos:
-                    bond_in_reactant = reactant_pair_to_bond.get((atom1, atom2), None)
-                    if (bond_in_reactant is None and change_type > 0) or \
-                            (bond_in_reactant is not None and bond_in_reactant != change_type):
-                        combo.append((atom1, atom2, change_type))
-                topk_combos.append(combo)
+            topk_combos = [(atom1, atom2, change_type) for atom1, atom2, change_type, score in valid_candidate_combos]
 
             batch_found_info = examine_topk_candidate_product(
                 args.candidate_topk_values, topk_combos, reactant_mol, real_bond_changes, product_mol)
