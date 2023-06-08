@@ -240,6 +240,7 @@ class WLDN(GATWithGlobalAttn):
         return product_candidates_list
 
     def forward(self, batch):
+        # TODO: add predict function
         if self.use_cache:
             if not all( self.cache.exists(sid) for sid in batch["sample_id"] ):
                 product_candidates_list = self.get_reactivity_scores_and_candidates(batch)
