@@ -651,3 +651,10 @@ def standardize_reaction(reaction: str):
     # )
     # parsed_input = {k: v.to(self.device) for k, v in encoded_ids.items()}
     # return encoded_ids
+
+def remove_atom_maps(smiles: str):
+    """Remove atom maps from smiles string"""
+    mol = Chem.MolFromSmiles(smiles)
+    for atom in mol.GetAtoms():
+        atom.SetAtomMapNum(0)
+    return Chem.MolToSmiles(mol)
