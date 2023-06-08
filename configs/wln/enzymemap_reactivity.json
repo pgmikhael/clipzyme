@@ -1,7 +1,7 @@
 {
   "script": "main",
   "cartesian_hyperparams": {
-    "batch_size": [8],
+    "batch_size": [32],
     "precision": ["bf16"],
     "accumulate_grad_batches": [1],
     "dataset_name": ["enzymemap_reaction_graph"],
@@ -12,10 +12,10 @@
     "dataset_file_path": ["/Mounts/rbg-storage1/datasets/Enzymes/EnzymeMap/rbt_processed/enzymemap_brenda2023_mapped_for_wln.json"],
     "num_classes": [5],
     "lightning_name": ["base"],
-    "compute_metrics_every_step": [true],
+    "compute_metrics_every_step": [false],
     "model_name": ["reaction_center_net"],
-    "gat_num_layers": [3],
-    "gat_hidden_dim": [480],
+    "gat_num_layers": [1],
+    "gat_hidden_dim": [100],
     "gat_num_heads": [2],
     "gat_concat": [true],
     "gat_node_dim": [9],
@@ -25,12 +25,13 @@
     "callback_names": ["lr_monitor checkpointer"],
     "max_epochs": [50],
     "lr_decay": [0.1],
-    "lr": [1e-4],
+    "lr": [1e-3],
     "weight_decay": [0],
     "loss_names": ["reactivity_loss"],
-    "metric_names": ["reactivity_classification reactivity_topk"],
+    "metric_names": ["reactivity_exact_accuracy reactivity_topk"],
+    "topk_bonds": ["10 20"],
     "checkpoint_save_last": [false],
-    "monitor": ["val_reactivity_accuracy"],
+    "monitor": ["val_acc_top10"],
     "num_workers": [24],
     "optimizer_name": ["adam"],
     "patience": [5],
@@ -39,7 +40,7 @@
     "test": [true],
     "num_sanity_val_steps": [0],
     "val_check_interval": [1.0],
-    "gpus": [4],
+    "gpus": [1],
     "ignore_warnings": [false],
     "dropout": [0],
     "checkpoint_dir": ["/Mounts/rbg-storage1/snapshots/metabolomics"],
@@ -48,5 +49,5 @@
     "project_name": ["enzymes"],
     "logger_tags": ["wln"]
   },
-  "available_gpus": ["4,5,6,7"]
+  "available_gpus": ["1"]
 }

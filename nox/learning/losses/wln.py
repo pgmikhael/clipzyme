@@ -81,7 +81,7 @@ class ReactivityLoss(Nox):
         mask_block = mask_block.unsqueeze(-1)
 
         # compute loss
-        loss = torch.nn.functional.binary_cross_entropy_with_logits(s_uv, labels_block, weight=mask_block, reduction="sum") / mask_block.sum()
+        loss = torch.nn.functional.binary_cross_entropy_with_logits(s_uv, labels_block, weight=mask_block, reduction="sum") / len(labels)
         logging_dict["reactivity_loss"] = loss.detach()
 
         predictions["golds"] = labels_block.detach()
