@@ -5,7 +5,7 @@ from tqdm import tqdm
 import argparse
 import pickle
 from rxn.chemutils.smiles_randomization import randomize_smiles_rotated
-from nox.utils.smiles import get_rdkit_feature
+from nox.utils.smiles import get_rdkit_feature, remove_atom_maps
 from nox.utils.pyg import from_smiles, from_mapped_smiles
 import warnings
 import copy, os
@@ -197,11 +197,24 @@ class EnzymeMap(AbstractDataset):
                 except:
                     pass
 
+            # remove atom-mapping if applicable 
+            reactants = remove_atom_maps(".".join(reactants))
+            products = remove_atom_maps(".".join(products))
+
+            # remove stereochemistry
+            if self.args.remove_stereochemistry:
+                reactants_mol = Chem.MolFromSmiles(reactants)
+                products_mol = Chem.MolFromSmiles(products)
+                Chem.RemoveStereochemistry(reactants_mol)
+                Chem.RemoveStereochemistry(products_mol)
+                reactants =  Chem.MolToSmiles(reactants)
+                products = MolToSmiles(products)
+
             sample_id = sample["rowid"]
             item = {
                 "reaction": reaction,
-                "reactants": ".".join(reactants),
-                "products": ".".join(products),
+                "reactants": reactants,
+                "products": products,
                 "sequence": sequence,
                 "ec": ec,
                 "organism": sample.get("organism", "none"),
@@ -424,6 +437,12 @@ class EnzymeMap(AbstractDataset):
             action="store_true",
             default=False,
             help="create a sample for each protein sequence annotated for given EC"
+        )
+        parser.add_argument(
+            "--remove_stereochemistry",
+            action="store_true",
+            default=False,
+            help="remove stereochemistry from smiles"
         )
 
     @property
