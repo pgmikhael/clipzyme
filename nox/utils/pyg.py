@@ -224,17 +224,17 @@ def from_mapped_smiles(smiles: str, with_hydrogen: bool = False, kekulize: bool 
         # atom id to molecule id (if multiple in smiles)
         atom2molecule = {}
         for mol_id, s in enumerate(smiles.split('.')):
-            mol = Chem.MolFromSmiles(s)
-            for atom in mol.GetAtoms():
-                idx = old_index2new_index[ atom.GetIdx() ]
+            single_mol = Chem.MolFromSmiles(s)
+            for atom in single_mol.GetAtoms():
+                # idx = old_index2new_index[ atom.GetIdx() ] # ! problem: atom.GetIdx() gets reset for each smiles in list; use atom number
+                idx = atom_map_number2new_index[int(atom.GetProp("molAtomMapNumber"))] 
                 atom2molecule[idx] = mol_id # new index to molecule id
 
         edge_attr_dim = len(e)
         set_edge_indices = set([tuple(idxs) for idxs in edge_indices])
         from itertools import combinations
-        # total_num_atoms = mol.GetNumAtoms()
-        # for (i,j) in combinations(range(total_num_atoms), 2):
-        for (i,j) in combinations(atom2molecule.keys(), 2): # get all combs of new indices
+        total_num_atoms = mol.GetNumAtoms()
+        for (i,j) in combinations(range(total_num_atoms), 2): # get all combs of new indices
             if (i,j) not in set_edge_indices:
                 if atom2molecule[i] == atom2molecule[j]: # same molecule (component)
                     e = [0, 1] + [0 for _ in range(edge_attr_dim-2)] 
