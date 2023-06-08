@@ -9,7 +9,7 @@
     "max_num_products": [4],
     "max_reactant_size": [100],
     "max_product_size": [100],
-    "dataset_file_path": ["/Mounts/rbg-storage1/datasets/Enzymes/EnzymeMap/rbt_processed/enzymemap_brenda2023_mapped.json"],
+    "dataset_file_path": ["/Mounts/rbg-storage1/datasets/Enzymes/EnzymeMap/rbt_processed/enzymemap_brenda2023_mapped_for_wln.json"],
     "num_classes": [5],
     "lightning_name": ["base"],
     "compute_metrics_every_step": [true],
