@@ -84,7 +84,7 @@ class ReactivityLoss(Nox):
 
         predictions["golds"] = labels_block.detach()
         predictions["probs"] = torch.sigmoid(s_uv).detach()
-
+        predictions["mask"] = mask_block.detach()
         # compute preds
         # max_indices = torch.argmax(s_uv, dim=2)
         # output_tensor = torch.zeros_like(s_uv)
