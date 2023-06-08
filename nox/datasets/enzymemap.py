@@ -222,7 +222,7 @@ class EnzymeMap(AbstractDataset):
 
             return item
 
-        except Exception:
+        except Exception as e:
             print(f"Could not load sample {sample['uniprot_id']} because of exception {e}")
 
     def get_pesto_scores(self, uniprot):
@@ -783,7 +783,7 @@ class EnzymeMapSubstrate(EnzymeMap):
             return data
 
         except Exception as e:
-            print(f"Could not load sample {sample['uniprot_id']} because of exception {e}")
+            print(f"Could not load sample {sample['uniprot_id']} because of the exception {e}")
             return None
 
     def post_process(self, args):
@@ -1019,9 +1019,9 @@ class EnzymeMapGraph(EnzymeMap):
         dataset = []
 
         for rowid, reaction in tqdm(
-            enumerate(self.metadata_json[:100]),
+            enumerate(self.metadata_json),
             desc="Building dataset",
-            total=len(self.metadata_json[:100]),
+            total=len(self.metadata_json),
             ncols=100,
         ):
             self.mol2size = {}
@@ -1154,7 +1154,7 @@ class EnzymeMapGraph(EnzymeMap):
             return item
 
         except Exception as e:
-            print(f"Could not load sample {sample['uniprot_id']} because of exception {e}")
+            print(f"Could not load sample {sample['uniprot_id']} because of an exception {e}")
 
 
 def stringify_sets(sets):
