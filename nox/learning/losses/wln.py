@@ -57,26 +57,28 @@ class ReactivityLoss(Nox):
             # mask: do not apply loss to nodes in different sample
             # consider also masking out self-nodes
             mask.append(
-                torch.ones_like(labels[-1])
-            )
-
-        # block diagonal only works for 2D tensors
-        # labels_block = torch.block_diag(*labels).to(s_uv.device)
-        # mask_block = torch.block_diag(*mask).to(s_uv.device)
+                torch.ones(*labels[-1].shape[:2]) 
+            ) # torch.ones_like(labels[-1])
+        
+        # labels_block = torch.stack([torch.block_diag(*[l[...,i] for l in labels]).to(s_uv.device) for i in range(labels[-1].shape[-1])], -1)
+        # mask_block = torch.block_diag(*mask).unsqueeze(-1).to(s_uv.device)
+        
         dim1 = sum([label.size(0) for label in labels])
         dim2 = sum([label.size(1) for label in labels])
         dim3 = labels[0].size(2)  # could just set to 5?
 
         labels_block = torch.zeros(dim1, dim2, dim3).to(s_uv.device)
-        mask_block = torch.zeros(dim1, dim2, dim3).to(s_uv.device)
+        mask_block = torch.zeros(dim1, dim2).to(s_uv.device)
 
         # Populate diagonal blocks
         cur_i = 0
         for label, mask_val in zip(labels, mask):
             n_i, n_j, _ = label.size()
             labels_block[cur_i:(cur_i + n_i), cur_i:(cur_i + n_j), :] = label
-            mask_block[cur_i:(cur_i + n_i), cur_i:(cur_i + n_j), :] = mask_val
+            mask_block[cur_i:(cur_i + n_i), cur_i:(cur_i + n_j)] = mask_val
             cur_i += n_i
+        
+        mask_block = mask_block.unsqueeze(-1)
 
         # compute loss
         loss = torch.nn.functional.binary_cross_entropy_with_logits(s_uv, labels_block, weight=mask_block, reduction="sum") / mask_block.sum()
@@ -85,11 +87,6 @@ class ReactivityLoss(Nox):
         predictions["golds"] = labels_block.detach()
         predictions["probs"] = torch.sigmoid(s_uv).detach()
         predictions["mask"] = mask_block.detach()
-        # compute preds
-        # max_indices = torch.argmax(s_uv, dim=2)
-        # output_tensor = torch.zeros_like(s_uv)
-        # output_tensor.scatter_(2, max_indices.unsqueeze(2), 1)
-        # predictions["preds"] = output_tensor.detach()
         predictions["preds"] = predictions['probs'] > 0.5
         predictions["candidate_bond_changes"] = model_output["candidate_bond_changes"] # for topk metric
         predictions["real_bond_changes"] = model_output["real_bond_changes"]  # for topk metric

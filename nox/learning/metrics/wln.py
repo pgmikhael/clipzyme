@@ -6,6 +6,7 @@ from torchmetrics import Metric
 import torch
 from nox.utils.wln_processing import examine_topk_candidate_product
 from rdkit import Chem 
+from torch_scatter import scatter_add
 
 @register_object("reactivity_exact_accuracy", "metric")
 class ReactivityExactAccuracy(Metric, Nox):
@@ -15,30 +16,30 @@ class ReactivityExactAccuracy(Metric, Nox):
         is_differentiable = False
         full_state_update: bool = False
 
-        self.add_state("correct", default=torch.tensor(0), dist_reduce_fx="sum")
-        self.add_state("total", default=torch.tensor(0), dist_reduce_fx="sum")
+        self.add_state("correct", default=torch.tensor(0.0), dist_reduce_fx="sum")
+        self.add_state("total", default=torch.tensor(0.0), dist_reduce_fx="sum")
 
     @property
     def metric_keys(self):
-        return ["probs", "preds", "golds", "mask"]
+        return ["probs", "preds", "golds", "mask", "reactants"]
 
     def update(self, predictions_dict, args):
         preds = predictions_dict["preds"]
         target = predictions_dict["golds"]
         assert preds.shape == target.shape
-        mask = predictions_dict["mask"]
-        N = preds.shape[1]
-        triu_indices = torch.triu_indices(N, N, offset=1, device=preds.device)
+        mask = predictions_dict["mask"].squeeze(-1)
 
         correct_tensor = (preds == target).all(dim=-1)
-        correct = 0
-        total = 0
-        for i, j in zip(triu_indices[0], triu_indices[1]):
-            total += (1 * mask[i, j][0]).long()
-            correct += (int(correct_tensor[i, j]) * mask[i, j][0]).long()
 
-        self.correct += correct.to(self.device)
-        self.total += total.to(self.device)
+        correct_tensor = correct_tensor * mask # mask out off-diagnoal predictions 
+        correct_tensor = torch.triu(correct_tensor, diagonal=1).sum(dim=0) # sum number of correct bond predictions
+        batch_index = predictions_dict["reactants"].batch 
+        correct = scatter_add(correct_tensor, batch_index, dim=0) # sum of correct per sample 
+        num_pairs = scatter_add(torch.triu(mask, diagonal=1).sum(dim=0), batch_index, dim=0)  # number of predictions per sample
+        accuracy = correct / num_pairs
+
+        self.correct += accuracy.sum()
+        self.total += len(correct)
 
     def compute(self):
         stats_dict = {
