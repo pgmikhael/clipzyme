@@ -227,13 +227,14 @@ def from_mapped_smiles(smiles: str, with_hydrogen: bool = False, kekulize: bool 
             mol = Chem.MolFromSmiles(s)
             for atom in mol.GetAtoms():
                 idx = old_index2new_index[ atom.GetIdx() ]
-                atom2molecule[idx] = mol_id
+                atom2molecule[idx] = mol_id # new index to molecule id
 
         edge_attr_dim = len(e)
         set_edge_indices = set([tuple(idxs) for idxs in edge_indices])
         from itertools import combinations
-        total_num_atoms = mol.GetNumAtoms()
-        for (i,j) in combinations(range(total_num_atoms), 2):
+        # total_num_atoms = mol.GetNumAtoms()
+        # for (i,j) in combinations(range(total_num_atoms), 2):
+        for (i,j) in combinations(atom2molecule.keys(), 2): # get all combs of new indices
             if (i,j) not in set_edge_indices:
                 if atom2molecule[i] == atom2molecule[j]: # same molecule (component)
                     e = [0, 1] + [0 for _ in range(edge_attr_dim-2)] 
