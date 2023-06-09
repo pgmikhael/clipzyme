@@ -2,7 +2,7 @@
   "script": "main",
   "cartesian_hyperparams": {
     "batch_size": [32],
-    "precision": ["bf16"],
+    "precision": ["16"],
     "accumulate_grad_batches": [1],
     "dataset_name": ["enzymemap_reaction_graph"],
     "assign_splits": [false],
@@ -12,14 +12,15 @@
     "dataset_file_path": ["/Mounts/rbg-storage1/datasets/Enzymes/EnzymeMap/rbt_processed/enzymemap_brenda2023_mapped_for_wln.json"],
     "num_classes": [5],
     "lightning_name": ["base"],
-    "compute_metrics_every_step": [false],
+    "compute_metrics_every_step": [true],
     "model_name": ["reaction_center_net"],
-    "gat_num_layers": [1],
-    "gat_hidden_dim": [100],
-    "gat_num_heads": [2],
+    "gat_num_layers": [3],
+    "gat_hidden_dim": [240],
+    "gat_num_heads": [8],
     "gat_concat": [true],
     "gat_node_dim": [9],
-    "gat_edge_dim": [5],
+    "gat_edge_dim": [3],
+    "gat_complete_edge_dim": [5],
     "gat_pool": ["none"],
     "attn_type": ["pairwise_global_attn"],
     "callback_names": ["lr_monitor checkpointer"],
@@ -49,5 +50,5 @@
     "project_name": ["enzymes"],
     "logger_tags": ["wln"]
   },
-  "available_gpus": ["1"]
+  "available_gpus": ["7"]
 }
