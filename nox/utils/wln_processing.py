@@ -801,7 +801,7 @@ def tensor_to_tuples(t):
 
     # Convert to a list of tuples
     tuples = [(int(row), int(col), arg_maxes[row, col].item(), maxes[row, col].item()) for row, col in indices]
-
+    tuples =  sorted(tuples, key = lambda x: x[-1], reverse=True)
     return tuples
 
 
