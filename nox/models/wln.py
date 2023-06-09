@@ -181,10 +181,6 @@ class ReactivityCenterNet(AbstractModel):
         
         # make symmetric
         s = (s + s.transpose(0,1))/2
-
-        mask = (batch_indices[:, None] != batch_indices[None, :]).unsqueeze(-1)  # N x N x 1
-        s = s.masked_fill(mask, float('-inf'))
-
         return s
 
     @staticmethod
