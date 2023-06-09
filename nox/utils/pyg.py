@@ -5,7 +5,7 @@ import torch
 from torch import Tensor
 from torch_geometric.data import Data
 from torch_geometric.utils import degree
-
+from itertools import combinations
 
 x_map = {
     "atomic_num": list(range(0, 119)),
@@ -204,6 +204,7 @@ def from_mapped_smiles(smiles: str, with_hydrogen: bool = False, kekulize: bool 
     x = torch.tensor(new_xs, dtype=torch.long).view(-1, 9)
 
     edge_indices, edge_attrs = [], []
+    edge_indices_complete, edge_attrs_complete = [], []
     for bond in mol.GetBonds():
         i = bond.GetBeginAtomIdx()
         j = bond.GetEndAtomIdx()
@@ -212,13 +213,21 @@ def from_mapped_smiles(smiles: str, with_hydrogen: bool = False, kekulize: bool 
         i = old_index2new_index[i]
         j = old_index2new_index[j]
 
-        e = [0, 1] if encode_no_edge else [] # [different components, same component, bond features]
-        e.append(e_map["bond_type"].index(str(bond.GetBondType()))  + 1  )  # ! add 1 in case we use encode_no_edge 
-        e.append(e_map["stereo"].index(str(bond.GetStereo())) + 1 )         # ! add 1 in case we use encode_no_edge 
-        e.append(e_map["is_conjugated"].index(bond.GetIsConjugated()) + 1)  # ! add 1 in case we use encode_no_edge 
+        e = [] 
+        e_complete = [0, 1] # [different components, same component, bond features]
+        
+        e.append(e_map["bond_type"].index(str(bond.GetBondType())))  
+        e.append(e_map["stereo"].index(str(bond.GetStereo())))         
+        e.append(e_map["is_conjugated"].index(bond.GetIsConjugated()))  
+        
+        e_complete.append(e_map["bond_type"].index(str(bond.GetBondType()))  + 1  )  # ! add 1 in case we use encode_no_edge 
+        e_complete.append(e_map["stereo"].index(str(bond.GetStereo())) + 1 )         # ! add 1 in case we use encode_no_edge 
+        e_complete.append(e_map["is_conjugated"].index(bond.GetIsConjugated()) + 1)  # ! add 1 in case we use encode_no_edge 
 
         edge_indices += [[i, j], [j, i]]
         edge_attrs += [e, e]
+        edge_indices_complete += [[i, j], [j, i]]
+        edge_attrs_complete += [e_complete, e_complete]
     
     if encode_no_edge:
         # atom id to molecule id (if multiple in smiles)
@@ -230,28 +239,37 @@ def from_mapped_smiles(smiles: str, with_hydrogen: bool = False, kekulize: bool 
                 idx = atom_map_number2new_index[int(atom.GetProp("molAtomMapNumber"))] 
                 atom2molecule[idx] = mol_id # new index to molecule id
 
-        edge_attr_dim = len(e)
+        edge_attr_dim = len(e_map)
         set_edge_indices = set([tuple(idxs) for idxs in edge_indices])
-        from itertools import combinations
         total_num_atoms = mol.GetNumAtoms()
         for (i,j) in combinations(range(total_num_atoms), 2): # get all combs of new indices
             if (i,j) not in set_edge_indices:
                 if atom2molecule[i] == atom2molecule[j]: # same molecule (component)
-                    e = [0, 1] + [0 for _ in range(edge_attr_dim-2)] 
+                    e = [0, 1] + [0 for _ in range(edge_attr_dim)] 
                 else:
-                    e = [1, 0] + [0 for _ in range(edge_attr_dim-2)]
-                edge_indices += [[i, j], [j, i]]
-                edge_attrs += [e, e]
+                    e = [1, 0] + [0 for _ in range(edge_attr_dim)]
+                edge_indices_complete += [[i, j], [j, i]]
+                edge_attrs_complete += [e, e]
                 set_edge_indices.update([(i, j), (j, i)]) # prob not necessary but just to be safe
 
     edge_index = torch.tensor(edge_indices)
     edge_index = edge_index.t().to(torch.long).view(2, -1)
-    edge_attr = torch.tensor(edge_attrs, dtype=torch.long).view(-1, 5 if encode_no_edge else 3)
+    edge_attr = torch.tensor(edge_attrs, dtype=torch.long).view(-1, 3)
+
+    edge_index_complete = torch.tensor(edge_indices_complete)
+    edge_index_complete = edge_index_complete.t().to(torch.long).view(2, -1)
+    edge_attr_complete = torch.tensor(edge_attrs_complete, dtype=torch.long).view(-1, 5)
 
     if edge_index.numel() > 0:  # Sort indices.
         perm = (edge_index[0] * x.size(0) + edge_index[1]).argsort()
         edge_index, edge_attr = edge_index[:, perm], edge_attr[perm]
 
-    data = Data(x=x, edge_index=edge_index, edge_attr=edge_attr, smiles=smiles, x_ids=x_ids)
+        perm = (edge_index_complete[0] * x.size(0) + edge_index_complete[1]).argsort()
+        edge_index_complete, edge_attr_complete = edge_index_complete[:, perm], edge_attr_complete[perm]
+
+    if encode_no_edge:
+        data = Data(x=x, edge_index=edge_index, edge_attr=edge_attr, smiles=smiles, x_ids=x_ids,edge_index_complete=edge_index_complete,edge_attr_complete=edge_attr_complete) 
+    else:
+        data = Data(x=x, edge_index=edge_index, edge_attr=edge_attr, smiles=smiles, x_ids=x_ids)
     data.atom_map_number = x_numbers # torch.tensor(x_numbers).view(-1)
     return data, atom_map_number2new_index

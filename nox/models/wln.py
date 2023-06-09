@@ -51,29 +51,43 @@ class CheapGlobalAttention(AbstractModel):
 class PairwiseAttention(AbstractModel):
     def __init__(self, args):
         super(PairwiseAttention, self).__init__()
-        self.query_transform = nn.Linear(args.gat_hidden_dim, args.gat_hidden_dim)
-        self.key_transform = nn.Linear(args.gat_hidden_dim, args.gat_hidden_dim)
+        self.P_a = nn.Linear(args.gat_hidden_dim, args.gat_hidden_dim)
+        self.P_b = nn.Linear(args.gat_complete_edge_dim, args.gat_hidden_dim)
+        self.U = nn.Linear(args.gat_hidden_dim, 1)
+        
 
-    def forward(self, node_feats, batch_index):
-        # Node features: N x F, where N is number of nodes, F is feature dimension
+    def forward(self, node_feats, graph):
+        """Compute node contexts with global attention
+        
+        node_feats: N x F, where N is number of nodes, F is feature dimension
+        graph: batched graph with edges of complete graph
+        """
         # Batch index: N, mapping each node to corresponding graph index
+        edge_index_complete = graph.edge_index_complete
+        edge_attr_complete = graph.edge_attr_complete
+        batch_index = graph.batch
 
+        # Project features
+        node_feats_transformed = self.P_a(node_feats)  # N x F
+        edge_feats_complete = self.P_b(edge_attr_complete.float()) # E x F
+
+         # convert to dense adj: E x F -> N x N x F
+        dense_edge_attr = to_dense_adj(edge_index = edge_index_complete, edge_attr = edge_feats_complete).squeeze(0)
+
+        # node_features: sparse batch: N x D
+        pairwise_node_feats = node_feats_transformed.unsqueeze(1) + node_feats_transformed # N x N x F
+        
         # Compute attention scores
-        queries = self.query_transform(node_feats)  # N x F
-        keys = self.key_transform(node_feats)  # N x F
-        scores = torch.matmul(queries, keys.transpose(-2, -1))  # N x N
+        scores = torch.sigmoid(self.U(F.relu(pairwise_node_feats + dense_edge_attr))).squeeze(-1)
 
         # Mask attention scores to prevent attention to nodes in different graphs
         mask = batch_index[:, None] != batch_index[None, :]  # N x N
-        scores = scores.masked_fill(mask, float('-inf'))
-
-        # Compute attention weights
-        weights = torch.sigmoid(scores)  # N x N
+        weights = scores.masked_fill(mask, 0)
 
         # Apply attention weights
         weighted_feats = torch.matmul(weights, node_feats)  # N x F
 
-        return weighted_feats
+        return weighted_feats # node_contexts
 
 
 @register_object("gatv2_globalattn", "model")
@@ -83,9 +97,9 @@ class GATWithGlobalAttn(GAT):
         self.global_attention = get_object(args.attn_type, "model")(args)
 
     def forward(self, graph):
-        output = super().forward(graph) # Graph NN (GAT)
+        output = super().forward(graph) # Graph NN (GAT) Local Network
 
-        weighted_node_feats = self.global_attention(output["node_features"], graph.batch)  # EQN 6
+        weighted_node_feats = self.global_attention(output["node_features"], graph)  # EQN 6
 
         output["node_features_attn"] = weighted_node_feats
         return output
@@ -114,21 +128,20 @@ class ReactivityCenterNet(AbstractModel):
         self.args = args
         self.gat_global_attention = get_object(args.gat_type, "model")(args) # GATWithGlobalAttn(args)
         self.M_a = nn.Linear(args.gat_hidden_dim, args.gat_hidden_dim)
-        self.M_b = nn.Linear(args.gat_edge_dim, args.gat_hidden_dim)
+        self.M_b = nn.Linear(args.gat_complete_edge_dim, args.gat_hidden_dim)
         self.lin = nn.Linear(2*args.gat_hidden_dim, args.gat_hidden_dim)
         self.U = nn.Sequential(
-            nn.Linear(args.gat_hidden_dim, args.gat_hidden_dim),
             nn.ReLU(),
-            nn.Linear(args.gat_hidden_dim, args.num_predicted_bond_types) # TODO: Change to predict bond type 
+            nn.Linear(args.gat_hidden_dim, args.num_predicted_bond_types) 
         )
 
     def forward(self, batch):
         gat_output = self.gat_global_attention(batch['reactants']) # GAT + Global Attention over node features
         cs = gat_output["node_features"]
-        c_tildes = gat_output["node_features_attn"]
+        c_tildes = gat_output["node_features_attn"] # node contexts
         c_final = self.lin(torch.cat([cs, c_tildes], dim=-1)) # N x 2*hidden_dim -> N x hidden_dim
 
-        s_uv = self.forward_helper(c_final, batch['reactants']['edge_index'], batch['reactants']['edge_attr'], batch['reactants']['batch'])
+        s_uv = self.forward_helper(c_final, batch['reactants']['edge_index_complete'], batch['reactants']['edge_attr_complete'], batch['reactants']['batch'])
 
         # precompute for top k metric
         candidate_bond_changes = get_batch_candidate_bonds(batch["reaction"], s_uv.detach(), batch['reactants'].batch)
@@ -154,7 +167,7 @@ class ReactivityCenterNet(AbstractModel):
     def forward_helper(self, node_features, edge_indices, edge_attr, batch_indices):
         # GAT with global attention
         node_features = self.M_a(node_features) # N x hidden_dim -> N x hidden_dim 
-        edge_attr = self.M_b(edge_attr.float()) # E x 3 -> E x hidden_dim 
+        edge_attr = self.M_b(edge_attr.float()) # E x 5 -> E x hidden_dim 
 
         # convert to dense adj: E x hidden_dim -> N x N x hidden_dim
         dense_edge_attr = to_dense_adj(edge_index = edge_indices, edge_attr = edge_attr).squeeze(0)
@@ -168,6 +181,10 @@ class ReactivityCenterNet(AbstractModel):
         
         # make symmetric
         s = (s + s.transpose(0,1))/2
+
+        mask = (batch_indices[:, None] != batch_indices[None, :]).unsqueeze(-1)  # N x N x 1
+        s = s.masked_fill(mask, float('-inf'))
+
         return s
 
     @staticmethod
@@ -197,6 +214,12 @@ class ReactivityCenterNet(AbstractModel):
             type=int,
             default=[1, 3, 5],
             help="topk bonds to consider for accuracy metric"
+        )
+        parser.add_argument(
+            "--gat_complete_edge_dim",
+            type=int,
+            default=5,
+            help="dimension of edges in complete graph"
         )
 
 
