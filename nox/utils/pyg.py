@@ -146,7 +146,7 @@ def from_smiles(smiles: str, with_hydrogen: bool = False, kekulize: bool = False
     return data
 
 
-def from_mapped_smiles(smiles: str, with_hydrogen: bool = False, kekulize: bool = False, encode_no_edge=False):
+def from_mapped_smiles(smiles: str, with_hydrogen: bool = False, kekulize: bool = False, encode_no_edge=False, sanitize=True):
     r"""Converts a SMILES string to a :class:`torch_geometric.data.Data`
     instance.
     Args:
@@ -156,14 +156,15 @@ def from_mapped_smiles(smiles: str, with_hydrogen: bool = False, kekulize: bool 
         kekulize (bool, optional): If set to :obj:`True`, converts aromatic
             bonds to single/double bonds. (default: :obj:`False`)
         encode_no_edge (bool, optional): adds edges between all molecules
+        sanitize (bool, optional): sanitize molecules when using rdkit. typically should be set to `True`
     """
 
     RDLogger.DisableLog("rdApp.*")
 
-    mol = Chem.MolFromSmiles(smiles)
+    mol = Chem.MolFromSmiles(smiles, sanitize=sanitize)
 
     if mol is None:
-        mol = Chem.MolFromSmiles("")
+        return # mol = Chem.MolFromSmiles("")
     if with_hydrogen:
         mol = Chem.AddHs(mol)
     if kekulize:
@@ -233,7 +234,7 @@ def from_mapped_smiles(smiles: str, with_hydrogen: bool = False, kekulize: bool 
         # atom id to molecule id (if multiple in smiles)
         atom2molecule = {}
         for mol_id, s in enumerate(smiles.split('.')):
-            single_mol = Chem.MolFromSmiles(s)
+            single_mol = Chem.MolFromSmiles(s, sanitize=sanitize)
             for atom in single_mol.GetAtoms():
                 # idx = old_index2new_index[ atom.GetIdx() ] # ! problem: atom.GetIdx() gets reset for each smiles in list; use atom number
                 idx = atom_map_number2new_index[int(atom.GetProp("molAtomMapNumber"))] 

@@ -861,6 +861,7 @@ def generate_candidates_from_scores(model_output, batch, args, mode = "train"):
 
     # Get valid candidate products, candidate bond changes considered and reactant info
     candidate_smiles = []
+    valid_candidate_combos = []
     # valid_candidate_combos, candidate_bond_changes_many, reactant_info,  = [], [], []
     for i in range(len(candidate_bond_changes)):
         real_bond_changes = [tuple(elem) for elem in batch['reactants']['bond_changes'][i]]
@@ -878,7 +879,7 @@ def generate_candidates_from_scores(model_output, batch, args, mode = "train"):
             bond_in_reactant = reactant_pair_to_bond.get((atom1, atom2), None)
             if (bond_in_reactant is None and change_type > 0) or \
                     (bond_in_reactant is not None and bond_in_reactant != change_type):
-                actual_candidate_bond_changes.append((atom1, atom2, change_type))
+                actual_candidate_bond_changes.append((atom1, atom2, change_type, score))
 
         info = (actual_candidate_bond_changes, real_bond_changes, reactant_mol, product_mol)
         valid_candidate_combos_one, candidate_bond_changes_one, reactant_info_one, candidate_smiles_one = pre_process_one_reaction(info, num_candidate_bond_changes, max_num_bond_changes, max_num_change_combos_per_reaction, mode)
@@ -892,9 +893,9 @@ def generate_candidates_from_scores(model_output, batch, args, mode = "train"):
     for i, list_of_candidates in enumerate(candidate_smiles):
         data_batch = []
         for j, candidate in enumerate(list_of_candidates):
-            data, _ = from_mapped_smiles(candidate, encode_no_edge=True)
+            data, _ = from_mapped_smiles(candidate, encode_no_edge=True, sanitize= mode!="train" )
             # fail to convert to rdkit mol
-            if len(data.x) == 0:
+            if (data is None) or (len(data.x) == 0):
                 continue 
             data.candidate_bond_change = valid_candidate_combos[i][j] # add the bond change tuple to the Data object
             data_batch.append(data)
