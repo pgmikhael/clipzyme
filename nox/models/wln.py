@@ -220,16 +220,18 @@ class ReactivityCenterNet(AbstractModel):
 
 
 @register_object("wldn", "model")
-class WLDN(GATWithGlobalAttn):
+class WLDN(AbstractModel):
     def __init__(self, args):
-        super().__init__(args)
+        super().__init__()
         self.args = args
-        self.reactivity_net = get_object(args.reactivity_net_type, "model")(args)
         try:
             state_dict = torch.load(args.reactivity_model_path)
-            self.reactivity_net.load_state_dict({k[len("model.gat_global_attention."):]: v for k,v in state_dict.items() if k.startswith("model")})
+            self.reactivity_net = get_object(args.reactivity_net_type, "model")(state_dict['hyper_parameters']['args'])
+            self.reactivity_net.load_state_dict({k[len("model."):]: v for k,v in state_dict["state_dict"].items() if k.startswith("model")})
         except:
+            self.reactivity_net = get_object(args.reactivity_net_type, "model")(args)
             print("Could not load pretrained model")
+        self.reactivity_net.eval()
         self.wln = GAT(args) # WLN for mol representation
         wln_diff_args = copy.deepcopy(args)
         wln_diff_args.gat_node_dim = args.gat_hidden_dim
@@ -240,9 +242,8 @@ class WLDN(GATWithGlobalAttn):
         if self.use_cache:
             self.cache = WLDN_Cache(os.path.join(args.cache_path, args.experiment_name), "pt")
 
-    def get_reactivity_scores_and_candidates(self, batch):
-        """Runs through GNN to obtain reactivity scores then uses them to generate product"""
-
+    def forward(self, batch):
+        # TODO: add predict function
         with torch.no_grad():
             reactivity_output = self.reactivity_net(batch)
         reactant_node_feats = self.wln(batch["reactants"])["node_features"] # N x D, where N is all the nodes in the batch
@@ -254,20 +255,15 @@ class WLDN(GATWithGlobalAttn):
             mode = "train"
         else:
             mode = "test"
-        
-        product_candidates_list = generate_candidates_from_scores(reactivity_output, batch, self.args, mode)
-        return product_candidates_list
 
-    def forward(self, batch):
-        # TODO: add predict function
         if self.use_cache:
             if not all( self.cache.exists(sid) for sid in batch["sample_id"] ):
-                product_candidates_list = self.get_reactivity_scores_and_candidates(batch)
+                product_candidates_list = generate_candidates_from_scores(reactivity_output, batch, self.args, mode)
                 [self.cache.add(sid, product_candidates) for sid, product_candidates in zip(batch["sample_id"], product_candidates_list)]
             else:
                 product_candidates_list =  [self.cache.get(sid) for sid in batch["sample_id"]]
         else:
-            product_candidates_list = self.get_reactivity_scores_and_candidates(batch)
+            product_candidates_list = generate_candidates_from_scores(reactivity_output, batch, self.args, mode)
 
         candidate_scores = []
         for idx, product_candidates in enumerate(product_candidates_list):
@@ -339,4 +335,9 @@ class WLDN(GATWithGlobalAttn):
             action=set_nox_type("model"),
             default="reaction_center_net",
             help="Type of reactivity net to use, mainly to init args"
+        )
+        parser.add_argument(
+            "--reactivity_model_path",
+            type=str,
+            help="path to pretrained reaction center prediction model"
         )
