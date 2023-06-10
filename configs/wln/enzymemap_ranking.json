@@ -22,7 +22,7 @@
     "gat_complete_edge_dim": [5],
     "gat_pool": ["none"],
     "attn_type": ["pairwise_global_attn"],
-    "reactivity_model_path": ["/Mounts/rbg-storage1/snapshots/metabolomics/e3984f2f54a0c1fb8ef023651215b40f/e3984f2f54a0c1fb8ef023651215b40fepoch=24.ckpt"],
+    "reactivity_model_path": ["/Mounts/rbg-storage1/snapshots/metabolomics/e3984f2f54a0c1fb8ef023651215b40f/checkpoint27.ckpt"],
     "callback_names": ["lr_monitor checkpointer"],
     "max_epochs": [50],
     "lr_decay": [0.1],
@@ -47,7 +47,8 @@
     "logger_name": ["wandb"],
     "workspace": ["peteranditamar"],
     "project_name": ["enzymes"],
-    "logger_tags": ["wldn"]
+    "logger_tags": ["wldn"],
+    "cache_path": ["/Mounts/rbg-storage1/results/metabolomics"]
   },
   "available_gpus": ["4,5,6,7"]
 }
