@@ -22,7 +22,7 @@ from functools import partial
 from itertools import combinations
 from multiprocessing import Pool
 from rdkit import Chem
-from rdkit.Chem import rdmolops
+from rdkit.Chem import rdmolops, rdmolfiles
 from tqdm import tqdm
 from torch_geometric.data import Batch
 from nox.utils.pyg import from_smiles, from_mapped_smiles
@@ -31,12 +31,27 @@ from functools import partial
 import torch
 
 from sklearn.neighbors import NearestNeighbors
-
 try:
-    from rdkit import Chem
-    from rdkit.Chem import rdmolfiles, rdmolops
-except ImportError:
-    pass
+    from molvs import Standardizer
+except ImportError as e:
+    print('MolVS is not installed, which is required for candidate ranking')
+
+
+BOND_TYPE = {1: Chem.rdchem.BondType.SINGLE, 2: Chem.rdchem.BondType.DOUBLE, 3: Chem.rdchem.BondType.TRIPLE, 1.5: Chem.rdchem.BondType.AROMATIC}
+
+clean_rxns_postsani = [
+    # two adjacent aromatic nitrogens should allow for H shift
+    Chem.AllChem.ReactionFromSmarts('[n;H1;+0:1]:[n;H0;+1:2]>>[n;H0;+0:1]:[n;H0;+0:2]'),
+    # two aromatic nitrogens separated by one should allow for H shift
+    Chem.AllChem.ReactionFromSmarts('[n;H1;+0:1]:[c:3]:[n;H0;+1:2]>>[n;H0;+0:1]:[*:3]:[n;H0;+0:2]'),
+    Chem.AllChem.ReactionFromSmarts('[#7;H0;+:1]-[O;H1;+0:2]>>[#7;H0;+:1]-[O;H0;-:2]'),
+    # neutralize C(=O)[O-]
+    Chem.AllChem.ReactionFromSmarts('[C;H0;+0:1](=[O;H0;+0:2])[O;H0;-1:3]>>[C;H0;+0:1](=[O;H0;+0:2])[O;H1;+0:3]'),
+    # turn neutral halogens into anions EXCEPT HCl
+    Chem.AllChem.ReactionFromSmarts('[I,Br,F;H1;D0;+0:1]>>[*;H0;-1:1]'),
+    # inexplicable nitrogen anion in reactants gets fixed in prods
+    Chem.AllChem.ReactionFromSmarts('[N;H0;-1:1]([C:2])[C:3]>>[N;H1;+0:1]([*:2])[*:3]'),
+]
 
 
 def robust_edit_mol(rmol, edits):
@@ -75,9 +90,18 @@ def robust_edit_mol(rmol, edits):
             a.SetNumExplicitHs(0)
     new_mol.UpdatePropertyCache()
 
+    # edits are indices, so we need to replace the atom map number with the index
+    old_index2atom_number = {}
+    for atom in rmol.GetAtoms():
+        old_index2atom_number[atom.GetIdx()] = int(atom.GetProp("molAtomMapNumber"))  # Update mapping dictionary
+
+    order = sorted(old_index2atom_number.items(), key=lambda x: x[1]) # sort by atom number because k,v = atom_idx, atom_map_number
+    # old_index2new_index = {old_idx: new_idx for new_idx, (old_idx, _) in enumerate(order)}
+    atom_map_number2new_index = {atom_map_number: new_idx for new_idx, (_, atom_map_number) in enumerate(order)}
+
     amap = {}
     for atom in rmol.GetAtoms():
-        amap[atom.GetIntProp('molAtomMapNumber')] = atom.GetIdx()
+        amap[atom_map_number2new_index[atom.GetIntProp('molAtomMapNumber')]] = atom.GetIdx()
 
     # Apply the edits as predicted
     for x,y,t in edits:
@@ -903,6 +927,36 @@ def generate_candidates_from_scores(model_output, batch, args, mode = "train"):
 
     return list_of_data_batches
 
+def sanitize_smiles_molvs(smiles, largest_fragment=False):
+    """Sanitize a SMILES with MolVS
+
+    Parameters
+    ----------
+    smiles : str
+        SMILES string for a molecule.
+    largest_fragment : bool
+        Whether to select only the largest covalent unit in a molecule with
+        multiple fragments. Default to False.
+
+    Returns
+    -------
+    str
+        SMILES string for the sanitized molecule.
+    """
+    standardizer = Standardizer()
+    standardizer.prefer_organic = True
+
+    mol = Chem.MolFromSmiles(smiles)
+    if mol is None:
+        return smiles
+    try:
+        mol = standardizer.standardize(mol)  # standardize functional group reps
+        if largest_fragment:
+            mol = standardizer.largest_fragment(mol) # remove product counterions/salts/etc.
+        mol = standardizer.uncharge(mol)  # neutralize, e.g., carboxylic acids
+    except Exception:
+        pass
+    return Chem.MolToSmiles(mol)
 
 
 def examine_topk_candidate_product(topks, topk_combos, reactant_mol, real_bond_changes, product_mol):

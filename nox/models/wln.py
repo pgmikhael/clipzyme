@@ -244,7 +244,6 @@ class WLDN(AbstractModel):
             self.cache = WLDN_Cache(os.path.join(args.cache_path, args.experiment_name), "pt")
 
     def predict(self, batch, product_candidates_list, candidate_scores):
-        # TODO: sort by score
         smiles_predictions = []
         for idx, (candidates, scores) in enumerate(zip(product_candidates_list, candidate_scores)):
             # sort according to ranker score
@@ -264,27 +263,10 @@ class WLDN(AbstractModel):
         return {"preds": smiles_predictions}
 
     def forward(self, batch):
-        with torch.no_grad():
-            reactivity_output = self.reactivity_net(batch)
+        product_candidates_list = self.get_product_candidate_list(batch)
+
         reactant_node_feats = self.wln(batch["reactants"])["node_features"] # N x D, where N is all the nodes in the batch
         dense_reactant_node_feats, mask = to_dense_batch(reactant_node_feats, batch=batch["reactants"].batch) # B x max_batch_N x D
-
-        # get candidate products as graph structures
-        # each element in this list is a batch of candidate products (where each batch represents one sample)
-        if self.training:
-            mode = "train"
-        else:
-            mode = "test"
-
-        if self.use_cache:
-            if not all( self.cache.exists(sid) for sid in batch["sample_id"] ):
-                product_candidates_list = generate_candidates_from_scores(reactivity_output, batch, self.args, mode)
-                [self.cache.add(sid, product_candidates) for sid, product_candidates in zip(batch["sample_id"], product_candidates_list)]
-            else:
-                product_candidates_list =  [self.cache.get(sid) for sid in batch["sample_id"]]
-        else:
-            product_candidates_list = generate_candidates_from_scores(reactivity_output, batch, self.args, mode)
-
         candidate_scores = []
         for idx, product_candidates in enumerate(product_candidates_list):
             # get node features for candidate products
@@ -320,9 +302,34 @@ class WLDN(AbstractModel):
         output = {
             "logit": candidate_scores,
             "product_candidates_list": product_candidates_list,
-            "s_uv": reactivity_output["s_uv"], # for debugging purposes
+            # "s_uv": reactivity_output["s_uv"], # for debugging purposes
             }
         return output
+
+    # seperate function because stays the same for different forward methods
+    def get_product_candidate_list(self, batch):
+        with torch.no_grad():
+            reactivity_output = self.reactivity_net(batch) # s_uv: N x N x 5, 'candidate_bond_changes', 'real_bond_changes'
+
+        if self.training:
+            mode = "train"
+        else:
+            mode = "test"
+
+        if self.use_cache:
+            if not all( self.cache.exists(sid) for sid in batch["sample_id"] ):
+                # get candidate products as graph structures
+                # each element in this list is a batch of candidate products (where each batch represents one reaction)
+                product_candidates_list = generate_candidates_from_scores(reactivity_output, batch, self.args, mode)
+                [self.cache.add(sid, product_candidates) for sid, product_candidates in zip(batch["sample_id"], product_candidates_list)]
+            else:
+                product_candidates_list =  [self.cache.get(sid) for sid in batch["sample_id"]]
+        else:
+            # each element in this list is a batch of candidate products (where each batch represents one reaction)
+            product_candidates_list = generate_candidates_from_scores(reactivity_output, batch, self.args, mode)
+
+        return product_candidates_list
+        
 
     @staticmethod
     def add_args(parser) -> None:
@@ -362,3 +369,76 @@ class WLDN(AbstractModel):
             type=str,
             help="path to pretrained reaction center prediction model"
         )
+
+
+# class EnzymeMoleculeAttn(nn.Module):
+#     def __init__(self, hidden_dim_prot, hidden_dim_candidate):
+#         super(PairwiseAttention, self).__init__()
+#         self.W_q = nn.Linear(hidden_dim_candidate, hidden_dim_prot)
+#         self.W_k = nn.Linear(hidden_dim_prot, hidden_dim_prot)
+#         self.W_v = nn.Linear(hidden_dim_prot, hidden_dim_prot)
+
+#     def forward(self, dense_candidate_node_feats, prot_feats):
+#         # dense_candidate_node_feats: B x num_nodes x D
+#         # prot_feats: 1 x len_seq x hidden_dim_prot
+#         Q = self.W_q(dense_candidate_node_feats) # B x num_nodes x hidden_dim_prot
+#         K = self.W_k(prot_feats) # 1 x len_seq x hidden_dim_prot
+#         V = self.W_v(prot_feats) # 1 x len_seq x hidden_dim_prot
+
+#         attn_weights = torch.softmax(Q @ K.transpose(-1, -2), dim=-1) # B x num_nodes x len_seq
+#         output = attn_weights @ V # B x num_nodes x hidden_dim_prot
+
+#         return output, attn_weights # B x num_nodes x hidden_dim_prot, B x num_nodes x len_seq
+    
+
+
+# @register_object("wldn2", "model")
+# class WLDN2(WLDN):
+#     def __init__(self, args):
+#         super().__init__(self, args) # gives self.wln (GAT)
+#         self.esm_model = get_object(args.esm_version, "model")(args)
+#         self.pairwise_attention = EnzymeMoleculeAttn(args.hidden_dim_enzyme, args.gat_hidden_dim)
+#         self.final_transform = nn.Linear(args.gat_hidden_dim, 1)  # need to overwrite because output is different size
+
+#     def forward(self, batch):
+#         prot_feats = self.esm_model([batch["sequence"]]).unsqueeze(0)  # 1 x len_seq x hidden_dim
+
+#         product_candidates_list = self.get_product_candidate_list(batch)
+#         candidate_scores = []
+#         for product_molecule in product_candidates_list:
+#             candidate_node_feats = self.wln(product_candidates)["node_features"]
+#             dense_candidate_node_feats, mask = to_dense_batch(candidate_node_feats, batch=product_candidates.batch) # B x num_nodes x D
+#             attn_mol_embedding, attn_weights = self.pairwise_attention(dense_candidate_node_feats, prot_feats)
+
+#             logits = self.scoring_layer(attn_mol_embedding)  # B x N x 1
+#             logits = logits.mean(dim=1)  # B x 1, taking mean over the sequence length
+
+#             candidate_scores.append(logits)
+        
+#         output = {
+#             "logit": candidate_scores,
+#             "product_candidates_list": product_candidates_list,
+#             }
+#         return output
+
+#     @staticmethod
+#     def add_args(parser) -> None:
+#         """Add class specific args
+
+#         Args:
+#             parser (argparse.ArgumentParser): argument parser
+#         """
+#         super(WLDN2, WLDN2).add_args(parser)
+#         parser.add_argument(
+#             "--esm_version",
+#             type=str,
+#             action=set_nox_type("model"),
+#             default="fair_esm2",
+#             help="Name of esm encoder to use",
+#         )
+#         parser.add_argument(
+#             "--hidden_dim_enzyme",
+#             type=int,
+#             default=480,
+#             help="Hidden dimension of enzyme embedding",
+#         )

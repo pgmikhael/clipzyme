@@ -894,7 +894,7 @@ class EnzymeMapSubstrate(EnzymeMap):
                     new_negatives = list(negatives)
                 else:
                     new_negatives = random.sample(
-                        negatives, self.args.sample_k_negatives
+                        list(negatives), self.args.sample_k_negatives
                     )
             else:
                 new_negatives = list(negatives)

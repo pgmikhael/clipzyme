@@ -4,7 +4,7 @@ from nox.utils.classes import Nox
 import torchmetrics
 from torchmetrics import Metric
 import torch
-from nox.utils.wln_processing import examine_topk_candidate_product
+from nox.utils.wln_processing import examine_topk_candidate_product, get_atom_pair_to_bond
 from rdkit import Chem 
 from torch_scatter import scatter_add
 
@@ -108,28 +108,43 @@ class CandidateTopK(Metric, Nox):
 
     @property
     def metric_keys(self):
-        return ["candidate_bond_changes", "real_bond_changes", "product_candidates_list", "reactant_smiles", "product_smiles", "probs"]
+        return ["real_bond_changes", "probs", "product_candidates_list", "reactant_smiles", "product_smiles"]
 
     def update(self, predictions_dict, args):
         # candidate_bond_changes = predictions["candidate_bond_changes"]
-        batch_real_bond_changes = predictions["real_bond_changes"]
-        candidate_probs = predictions["probs"]
-        product_candidates_list = predictions["product_candidates_list"]
-        reactant_smiles = predictions["reactant_smiles"]
-        product_smiles = predictions["product_smiles"]
+        batch_real_bond_changes = predictions_dict["real_bond_changes"]
+        candidate_probs = predictions_dict["probs"]
+        product_candidates_list = predictions_dict["product_candidates_list"]
+        reactant_smiles = predictions_dict["reactant_smiles"]
+        product_smiles = predictions_dict["product_smiles"]
 
         for reaction_idx, reaction_pred in enumerate(candidate_probs):
-            valid_candidate_combos = product_candidates_list[reaction_idx].candidate_bond_change
-            real_bond_changes = batch_real_bond_changes[reaction_idx]
+            valid_candidate_combos = product_candidates_list[reaction_idx].candidate_bond_change # B x list of combos
+            num_candidate_products = len(valid_candidate_combos)
             reactant_mol = Chem.MolFromSmiles(reactant_smiles[reaction_idx]) 
             product_mol = Chem.MolFromSmiles(product_smiles[reaction_idx]) 
+            real_bond_changes = batch_real_bond_changes[reaction_idx]
 
-            topk_values, topk_indices = torch.topk(reaction_pred, top_k, dim=0)
-            topk_combos = [(atom1, atom2, change_type) for atom1, atom2, change_type, score in valid_candidate_combos]
+            # assuming that reaction pred in loop above gives the preds for this reaction
+            # reaction_pred = pred[product_graph_start:product_graph_end, :]
+            top_k = min(max(args.candidate_topk_values), num_candidate_products)
+            topk_values, topk_indices = torch.topk(reaction_pred, top_k, dim=1) # reaction pred is 1 x num_candidate_products
 
-            batch_found_info = examine_topk_candidate_product(
-                args.candidate_topk_values, topk_combos, reactant_mol, real_bond_changes, product_mol)
+            # Filter out invalid candidate bond changes
+            reactant_pair_to_bond = get_atom_pair_to_bond(reactant_mol)
+            topk_combos = []
+            for i in topk_indices[0]:
+                i = i.detach().cpu().item()
+                combo = []
+                for atom1, atom2, change_type, score in valid_candidate_combos[i]:
+                    bond_in_reactant = reactant_pair_to_bond.get((atom1, atom2), None)
+                    if (bond_in_reactant is None and change_type > 0) or \
+                            (bond_in_reactant is not None and bond_in_reactant != change_type):
+                        combo.append((atom1, atom2, change_type))
+                topk_combos.append(combo)
             
+            batch_found_info = examine_topk_candidate_product(args.candidate_topk_values, topk_combos, reactant_mol, real_bond_changes, product_mol)
+
             for k, v in batch_found_info.items():
                 current = getattr(self, k)
                 setattr(self, k, current + float(v))      
