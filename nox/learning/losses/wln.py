@@ -117,7 +117,14 @@ class CandidateLoss(Nox):
         predictions["probs"] = [p.detach() for p in probs]
         predictions["preds"] = torch.concat([torch.argmax(p).unsqueeze(-1) for p in probs])
         predictions["product_candidates_list"] = model_output["product_candidates_list"]
-        predictions["reactant_smiles"] = batch["reactant"].smiles
+        predictions["reactant_smiles"] = batch["reactants"].smiles
         predictions["product_smiles"] = batch["products"].smiles
+        batch_real_bond_changes = []
+        for i in range(len(batch['reactants']['bond_changes'])):
+            reaction_real_bond_changes = []
+            for elem in batch['reactants']['bond_changes'][i]:
+                reaction_real_bond_changes.append(tuple(elem))
+            batch_real_bond_changes.append(reaction_real_bond_changes)
+        predictions['real_bond_changes'] = batch_real_bond_changes # for topk metric
 
         return loss, logging_dict, predictions
