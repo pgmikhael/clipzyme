@@ -222,7 +222,7 @@ class EnzymeMap(AbstractDataset):
                 "sample_id": sample_id,
                 "smiles": ".".join(products),
                 "all_smiles": list(
-                    self.reaction_to_products[f"{ec}{'.'.join(sorted(reactants))}"]
+                    self.reaction_to_products[f"{ec}{'.'.join(sorted(sample['reactants']))}"]
                 ),
             }
 
