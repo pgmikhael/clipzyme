@@ -4,12 +4,13 @@ import torch.nn.functional as F
 from nox.utils.registry import get_object, register_object
 from nox.utils.classes import set_nox_type
 from nox.utils.pyg import unbatch
-from nox.utils.wln_processing import generate_candidates_from_scores, get_batch_candidate_bonds
+from nox.utils.wln_processing import generate_candidates_from_scores, get_batch_candidate_bonds, robust_edit_mol
 from nox.models.abstract import AbstractModel
 from torch_scatter import scatter, scatter_add
 from torch_geometric.utils import to_dense_batch, to_dense_adj
 from collections import defaultdict
 from nox.models.gat import GAT
+from rdkit import Chem 
 import copy 
 import os 
 
@@ -243,8 +244,26 @@ class WLDN(AbstractModel):
         if self.use_cache:
             self.cache = WLDN_Cache(os.path.join(args.cache_path), "pt")
 
+    def predict(self, batch, product_candidates_list, candidate_scores):
+        smiles_predictions = []
+        for idx, (candidates, scores) in enumerate(zip(product_candidates_list, candidate_scores)):
+            # sort according to ranker score
+            scores_indices = torch.argsort(scores.view(-1),descending=True)
+            valid_candidate_combos = [candidates.candidate_bond_change[i] for i in scores_indices]
+            reactant_mol = Chem.MolFromSmiles(batch["smiles"][idx])
+            smiles = robust_edit_mol(reactant_mol, edits)
+            if len(smiles) != 0:
+                smiles_predictions.append(smiles)
+            try:
+                Chem.Kekulize(reactant_mol)
+                smiles = robust_edit_mol(reactant_mol, edits)
+                smiles_predictions.append(smiles)
+            except Exception as e:
+                smiles_predictions.append(smiles)
+            
+        return {"preds": smiles_predictions}
+
     def forward(self, batch):
-        # TODO: add predict function
         product_candidates_list = self.get_product_candidate_list(batch)
 
         reactant_node_feats = self.wln(batch["reactants"])["node_features"] # N x D, where N is all the nodes in the batch
@@ -276,8 +295,9 @@ class WLDN(AbstractModel):
             score = self.final_transform(torch.sum(diff_node_feats, dim=-2))
             candidate_scores.append(score) # K x 1
 
-        # ? can k may be different per sample?
-        # candidates_scores = torch.cat(candidate_scores, dim=0) # B x K x 1
+        # ! PREDICT SMILES
+        if self.args.predict:
+            return self.predict(batch, product_candidates_list, candidate_scores)
 
         # note: dgl implementation adds reactivity score
         output = {
@@ -289,7 +309,6 @@ class WLDN(AbstractModel):
 
     # seperate function because stays the same for different forward methods
     def get_product_candidate_list(self, batch):
-        # TODO: add predict function
         with torch.no_grad():
             reactivity_output = self.reactivity_net(batch) # s_uv: N x N x 5, 'candidate_bond_changes', 'real_bond_changes'
 
