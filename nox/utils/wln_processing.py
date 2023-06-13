@@ -216,7 +216,7 @@ def robust_edit_mol(rmol, edits):
 
         # Check if we failed/succeeded in previous step
         if mol is None:
-            print('##### Unparseable mol: {}'.format(pred_list[i]))
+            # print('##### Unparseable mol: {}'.format(pred_list[i]))
             continue
 
         # Else, try post-sanitiztion fixes in structure
@@ -230,9 +230,10 @@ def robust_edit_mol(rmol, edits):
                     Chem.SanitizeMol(out[0][0])
                     pred_mols[i] = Chem.MolFromSmiles(Chem.MolToSmiles(out[0][0]))
                 except Exception as e:
-                    print(e)
-                    print('Could not sanitize postsani reaction product: {}'.format(Chem.MolToSmiles(out[0][0])))
-                    print('Original molecule was: {}'.format(Chem.MolToSmiles(mol)))
+                    pass 
+                    # print(e)
+                    # print('Could not sanitize postsani reaction product: {}'.format(Chem.MolToSmiles(out[0][0])))
+                    # print('Original molecule was: {}'.format(Chem.MolToSmiles(mol)))
     pred_smiles = [Chem.MolToSmiles(pred_mol) for pred_mol in pred_mols if pred_mol is not None]
 
     return pred_smiles
@@ -1015,17 +1016,18 @@ def examine_topk_candidate_product(topks, topk_combos, reactant_mol, real_bond_c
         pred_smiles_kek = set(pred_smiles_kek)
         if not product_smiles <= pred_smiles_kek:
             if product_smiles_sanitized <= pred_smiles_sanitized:
-                print('\nwarn: mismatch, but only due to standardization')
+                #print('\nwarn: mismatch, but only due to standardization')
                 found_info['ground_sanitized'] = True
             else:
-                print('\nwarn: could not regenerate product {}'.format(product_smiles))
-                print('sani product: {}'.format(product_smiles_sanitized))
-                print(Chem.MolToSmiles(reactant_mol))
-                print(Chem.MolToSmiles(product_mol))
-                print(real_bond_changes)
-                print('pred_smiles: {}'.format(pred_smiles))
-                print('pred_smiles_kek: {}'.format(pred_smiles_kek))
-                print('pred_smiles_sani: {}'.format(pred_smiles_sanitized))
+                pass 
+                #print('\nwarn: could not regenerate product {}'.format(product_smiles))
+                #print('sani product: {}'.format(product_smiles_sanitized))
+                # print(Chem.MolToSmiles(reactant_mol))
+                # print(Chem.MolToSmiles(product_mol))
+                # print(real_bond_changes)
+                # print('pred_smiles: {}'.format(pred_smiles))
+                # print('pred_smiles_kek: {}'.format(pred_smiles_kek))
+                # print('pred_smiles_sani: {}'.format(pred_smiles_sanitized))
         else:
             found_info['ground'] = True
             found_info['ground_sanitized'] = True
