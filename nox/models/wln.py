@@ -229,8 +229,9 @@ class WLDN(AbstractModel):
             state_dict = torch.load(args.reactivity_model_path)
             self.reactivity_net = get_object(args.reactivity_net_type, "model")(state_dict['hyper_parameters']['args'])
             self.reactivity_net.load_state_dict({k[len("model."):]: v for k,v in state_dict["state_dict"].items() if k.startswith("model")})
+            self.reactivity_net.requires_grad_(False)
         except:
-            self.reactivity_net = get_object(args.reactivity_net_type, "model")(args)
+            self.reactivity_net = get_object(args.reactivity_net_type, "model")(args).requires_grad_(False)
             print("Could not load pretrained model")
         self.reactivity_net.eval()
         self.wln = GAT(args) # WLN for mol representation
@@ -241,7 +242,7 @@ class WLDN(AbstractModel):
         self.final_transform = nn.Linear(args.gat_hidden_dim, 1) # for scoring
         self.use_cache = args.cache_path is not None 
         if self.use_cache:
-            self.cache = WLDN_Cache(os.path.join(args.cache_path, args.experiment_name), "pt")
+            self.cache = WLDN_Cache(os.path.join(args.cache_path), "pt")
 
     def predict(self, batch, product_candidates_list, candidate_scores):
         smiles_predictions = []
