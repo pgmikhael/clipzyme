@@ -71,7 +71,16 @@ def robust_edit_mol(rmol, edits):
     pred_smiles : list of str
         SMILES for the edited molecule
     """
+    ################ for switching IDXes ###########################
+    # edits are indices, so we need to replace the atom map number with the index
+    old_index2atom_number = {}
+    for atom in rmol.GetAtoms():
+        old_index2atom_number[atom.GetIdx()] = int(atom.GetProp("molAtomMapNumber"))  # Update mapping dictionary
 
+    order = sorted(old_index2atom_number.items(), key=lambda x: x[1]) # sort by atom number because k,v = atom_idx, atom_map_number
+    # old_index2new_index = {old_idx: new_idx for new_idx, (old_idx, _) in enumerate(order)}
+    atom_map_number2new_index = {atom_map_number: new_idx for new_idx, (_, atom_map_number) in enumerate(order)}
+    ######################################################################
     new_mol = Chem.RWMol(rmol)
 
     # Keep track of aromatic nitrogens, might cause explicit hydrogen issues
@@ -90,14 +99,6 @@ def robust_edit_mol(rmol, edits):
             a.SetNumExplicitHs(0)
     new_mol.UpdatePropertyCache()
 
-    # edits are indices, so we need to replace the atom map number with the index
-    old_index2atom_number = {}
-    for atom in rmol.GetAtoms():
-        old_index2atom_number[atom.GetIdx()] = int(atom.GetProp("molAtomMapNumber"))  # Update mapping dictionary
-
-    order = sorted(old_index2atom_number.items(), key=lambda x: x[1]) # sort by atom number because k,v = atom_idx, atom_map_number
-    # old_index2new_index = {old_idx: new_idx for new_idx, (old_idx, _) in enumerate(order)}
-    atom_map_number2new_index = {atom_map_number: new_idx for new_idx, (_, atom_map_number) in enumerate(order)}
 
     amap = {}
     for atom in rmol.GetAtoms():
@@ -561,11 +562,25 @@ def bookkeep_reactant(mol, candidate_pairs):
             info['is_o'][j] = True
         elif atom.GetSymbol() == 'S':
             info['is_s'][j] = True
+    
+
+    ################ for switching IDXes ###########################
+    # edits are indices, so we need to replace the atom map number with the index
+    old_index2atom_number = {}
+    for atom in mol.GetAtoms():
+        old_index2atom_number[atom.GetIdx()] = int(atom.GetProp("molAtomMapNumber"))  # Update mapping dictionary
+
+    order = sorted(old_index2atom_number.items(), key=lambda x: x[1]) # sort by atom number because k,v = atom_idx, atom_map_number
+    old_index2new_index = {old_idx: new_idx for new_idx, (old_idx, _) in enumerate(order)}
+    # atom_map_number2new_index = {atom_map_number: new_idx for new_idx, (_, atom_map_number) in enumerate(order)}
+    ######################################################################
 
     # bookkeep bonds
     for bond in mol.GetBonds():
         atom1, atom2 = bond.GetBeginAtomIdx(), bond.GetEndAtomIdx()
         atom1, atom2 = min(atom1, atom2), max(atom1, atom2)
+        
+        atom1, atom2 = old_index2new_index[atom1], old_index2new_index[atom2]
         type_val = bond.GetBondTypeAsDouble()
         info['pair_to_bond_val'][(atom1, atom2)] = type_val
         if (atom1, atom2) in candidate_pairs:
@@ -645,7 +660,7 @@ def pre_process_one_reaction(info, num_candidate_bond_changes, max_num_bond_chan
     candidate_bond_changes = []
     count = 0
     for (atom1, atom2, change_type, score) in candidate_bond_changes_:
-        if ((atom1, atom2) not in reactant_info['pair_to_bond_val']) or (reactant_info['pair_to_bond_val'][(atom1, atom2)] != change_type):
+        if ((atom1, atom2) not in reactant_info['pair_to_bond_val'] and change_type > 0) or (reactant_info['pair_to_bond_val'][(atom1, atom2)] != change_type):
             candidate_bond_changes.append((atom1, atom2, change_type, score))
             count += 1
             if count == num_candidate_bond_changes:
@@ -843,9 +858,21 @@ def get_atom_pair_to_bond(mol):
         Mapping 2-tuples of atoms to bond type. 1, 2, 3, 1.5 are
         separately for single, double, triple and aromatic bond.
     """
+
+    ################ for switching IDXes ###########################
+    old_index2atom_number = {}
+    for atom in mol.GetAtoms():
+        old_index2atom_number[atom.GetIdx()] = int(atom.GetProp("molAtomMapNumber"))  # Update mapping dictionary
+
+    order = sorted(old_index2atom_number.items(), key=lambda x: x[1]) # sort by atom number because k,v = atom_idx, atom_map_number
+    old_index2new_index = {old_idx: new_idx for new_idx, (old_idx, _) in enumerate(order)}
+    atom_map_number2new_index = {atom_map_number: new_idx for new_idx, (_, atom_map_number) in enumerate(order)}
+    ######################################################################
+
     pair_to_bond_type = dict()
     for bond in mol.GetBonds():
         atom1, atom2 = bond.GetBeginAtomIdx(), bond.GetEndAtomIdx()
+        atom1, atom2 = old_index2new_index[atom1], old_index2new_index[atom2]
         atom1, atom2 = min(atom1, atom2), max(atom1, atom2)
         type_val = bond.GetBondTypeAsDouble()
         pair_to_bond_type[(atom1, atom2)] = type_val
@@ -895,17 +922,7 @@ def generate_candidates_from_scores(model_output, batch, args, mode = "train"):
         else:
             product_mol = None
 
-        # keep bond changes that are actual changes
-        reactant_pair_to_bond = get_atom_pair_to_bond(reactant_mol)
-        actual_candidate_bond_changes = []
-
-        for atom1, atom2, change_type, score in candidate_bond_changes[i]:
-            bond_in_reactant = reactant_pair_to_bond.get((atom1, atom2), None)
-            if (bond_in_reactant is None and change_type > 0) or \
-                    (bond_in_reactant is not None and bond_in_reactant != change_type):
-                actual_candidate_bond_changes.append((atom1, atom2, change_type, score))
-
-        info = (actual_candidate_bond_changes, real_bond_changes, reactant_mol, product_mol)
+        info = (candidate_bond_changes[i], real_bond_changes, reactant_mol, product_mol)
         valid_candidate_combos_one, candidate_bond_changes_one, reactant_info_one, candidate_smiles_one = pre_process_one_reaction(info, num_candidate_bond_changes, max_num_bond_changes, max_num_change_combos_per_reaction, mode)
         valid_candidate_combos.append(valid_candidate_combos_one)
         # candidate_bond_changes_many.append(candidate_bond_changes_one)
