@@ -33,7 +33,7 @@
     "topk_bonds": ["10 20"],
     "checkpoint_save_last": [false],
     "monitor": ["val_acc_top10"],
-    "num_workers": [24],
+    "num_workers": [10],
     "optimizer_name": ["adam"],
     "patience": [5],
     "train": [true],
@@ -48,7 +48,9 @@
     "logger_name": ["wandb"],
     "workspace": ["peteranditamar"],
     "project_name": ["enzymes"],
-    "logger_tags": ["wln"]
+    "logger_tags": ["wln test"],
+    "from_checkpoint": [true],
+    "checkpoint_path": ["/Mounts/rbg-storage1/snapshots/metabolomics/9e092a1e51cca9a4b2d2a147fe42279f/9e092a1e51cca9a4b2d2a147fe42279fepoch=49.ckpt"]
   },
-  "available_gpus": ["7"]
+  "available_gpus": ["0,1,2,3,4,5,6,7"]
 }
