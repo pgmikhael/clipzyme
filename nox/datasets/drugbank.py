@@ -15,28 +15,30 @@ from nox.utils.pyg import from_smiles
 
 @register_object("drugbank_reactions", "dataset")
 class DrugBankReactions(AbstractDataset):
+
     def get_split_group_dataset(
         self, processed_dataset, split_group: Literal["train", "dev", "test"]
     ) -> List[dict]:
 
-        # TODO: figure out how to just to test
+        assert (self.args.test) and (not self.args.train)
         # all splits will be the same (all the data)
-        return dataset
+        return processed_dataset
 
     def create_dataset(self, split_group: Literal["train", "dev", "test"]) -> List[dict]:
         dataset = []
 
         for idx, row in tqdm(enumerate(self.metadata_json), total = len(self.metadata_json), desc="Creating dataset", ncols=50):
             
-            keys = ['num_reactions_in_pathway' 'substrate_id', 'substrate', 'product']# , 'uniprot_ids', 'sequences']
+            keys = ['num_reactions_in_pathway', 'substrate_id', 'substrate', 'product', 'uniprot_ids', 'sequences']
             sample = {k: row[k] for k in keys}
 
             for i in range(len(sample['uniprot_ids'])):
                 new_sample = sample.copy()
                 new_sample['uniprot_id'] = sample['uniprot_ids'][i]
                 new_sample['sequence'] = sample['sequences'][i] 
-                new_sample["substrate"] = sample["substrate"]
-                new_sample["product"] = sample["product"]
+                new_sample["substrate"] = sample["substrate"] 
+                new_sample["product"] = sample["product"] 
+                new_sample["sample_id"] = f"row{idx}_seq{i}"
 
                 if self.skip_sample(new_sample):
                     continue 
@@ -84,12 +86,42 @@ class DrugBankReactions(AbstractDataset):
     def __getitem__(self, index):
         sample = self.dataset[index]
 
+        reactants, products = copy.deepcopy(sample["substrate"]), copy.deepcopy(sample["product"])
+        sequence = sample["sequence"]
+        uniprot_id = sample['uniprot_id']
+        sample_id = sample["sample_id"]
+
+        if self.args.use_graph_version:
+            reactants, atom_map2new_index = from_mapped_smiles(reactants, encode_no_edge=True)
+            products, _ = from_mapped_smiles(products,  encode_no_edge=True)
+
+        item = {
+            "reactants": reactants,
+            "products": products,
+            "sequence": sequence,
+            "protein_id": uniprot_id,
+            "sample_id": sample_id,
+            "smiles": products,
+            "all_smiles": list(
+                self.reaction_to_products[f"{uniprot_id}_{sample['substrate']}"]
+            ),
+        }
+
         try:
             return sample
 
         except Exception:
             warnings.warn(f"Could not load sample: {sample['sample_id']}")
     
+    def post_process(self, args):
+        # add all possible products
+        reaction_to_products = defaultdict(set)
+        for sample in self.dataset:
+            reaction_to_products[
+                f"{sample['uniprot_id']}_{sample['substrate']}"
+            ].add(sample["product"])
+        self.reaction_to_products = reaction_to_products
+
     @staticmethod
     def add_args(parser) -> None:
         """Add class specific args
@@ -115,6 +147,12 @@ class DrugBankReactions(AbstractDataset):
             type=int,
             default=None,
             help="maximum product size",
+        )
+        parser.add_argument(
+            "--use_graph_version",
+            action="store_true",
+            default=False,
+            help="use graph structure for inputs",
         )
     
     @staticmethod
