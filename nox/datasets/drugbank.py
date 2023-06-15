@@ -6,12 +6,11 @@ import numpy as np
 from collections import defaultdict, Counter
 import argparse
 import warnings
-from rich import print as rprint
+import copy 
+import rdkit 
 from nox.utils.registry import register_object
 from nox.datasets.abstract import AbstractDataset
-import rdkit 
-import hashlib
-from nox.utils.pyg import from_smiles
+from nox.utils.pyg import from_mapped_smiles
 
 @register_object("drugbank_reactions", "dataset")
 class DrugBankReactions(AbstractDataset):
@@ -161,18 +160,3 @@ class DrugBankReactions(AbstractDataset):
         args.dataset_file_path = (
             "/Mounts/rbg-storage1/users/pgmikhael/DrugBank/drugbank_reactions.json"
         )
-
-
-
-@register_object("drugbank_reactions_graph", "dataset")
-class DrugBankReactionsGraph(DrugBankReactions):
-    def __getitem__(self, index):
-        sample = self.dataset[index]
-
-        try:
-            sample['smiles'] = from_smiles(sample["substrate"])
-            return sample
-
-        except Exception:
-            warnings.warn(f"Could not load sample: {sample['sample_id']}")
-   
