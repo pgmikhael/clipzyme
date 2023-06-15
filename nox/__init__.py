@@ -35,6 +35,7 @@ import nox.datasets.qm9
 import nox.datasets.chembl
 import nox.datasets.iocb_synthases
 import nox.datasets.protein_graph
+import nox.datasets.drugbank
 
 # augmentation
 import nox.augmentations.rawinput
