@@ -201,7 +201,7 @@ class WLNAccuracy(Metric, Nox):
         correct = (preds == target).all(dim=-1).sum()
         total = preds.shape[-1]
 
-        self.correct += torch.tensor(correct).to(self.device)
+        self.correct += correct.to(self.device)
         self.total += torch.tensor(total).to(self.device)
 
     def compute(self) -> Dict:

@@ -240,8 +240,6 @@ def robust_edit_mol(rmol, edits):
     return pred_smiles
 
 
-
-
 def get_bond_changes(reaction):
     """Get the bond changes in a reaction.
 
@@ -323,6 +321,17 @@ def edit_mol(reactant_mols, edits, product_info, mode="train", return_full_mol =
     str
         SMILES for the main products
     """
+    ################ for switching IDXes ###########################
+    old_index2atom_number = {}
+    for atom in reactant_mols.GetAtoms():
+        old_index2atom_number[atom.GetIdx()] = int(atom.GetProp("molAtomMapNumber"))  # Update mapping dictionary
+
+    order = sorted(old_index2atom_number.items(), key=lambda x: x[1]) # sort by atom number because k,v = atom_idx, atom_map_number
+    old_index2new_index = {old_idx: new_idx for new_idx, (old_idx, _) in enumerate(order)}
+    new_index2old_index = {new_idx: old_idx for new_idx, (old_idx, _) in enumerate(order)}
+    atom_map_number2new_index = {atom_map_number: new_idx for new_idx, (_, atom_map_number) in enumerate(order)}
+    ######################################################################
+
     bond_change_to_type = {1: Chem.rdchem.BondType.SINGLE, 2: Chem.rdchem.BondType.DOUBLE,
                            3: Chem.rdchem.BondType.TRIPLE, 1.5: Chem.rdchem.BondType.AROMATIC}
 
@@ -330,6 +339,7 @@ def edit_mol(reactant_mols, edits, product_info, mode="train", return_full_mol =
     [atom.SetNumExplicitHs(0) for atom in new_mol.GetAtoms()]
 
     for atom1, atom2, change_type, score in edits:
+        atom1, atom2 = new_index2old_index[atom1], new_index2old_index[atom2]
         bond = new_mol.GetBondBetweenAtoms(atom1, atom2)
         if bond is not None:
             new_mol.RemoveBond(atom1, atom2)
@@ -348,7 +358,7 @@ def edit_mol(reactant_mols, edits, product_info, mode="train", return_full_mol =
         mol = Chem.MolFromSmiles(pred_smiles)
         if mol is None:
             continue
-        atom_set = set([atom.GetAtomMapNum() - 1 for atom in mol.GetAtoms()])
+        atom_set = set([atom_map_number2new_index[atom.GetAtomMapNum()] for atom in mol.GetAtoms()])
 
         if mode == "train":
             if len(atom_set & product_info['atoms']) == 0: # no overlap with gold product atoms
@@ -502,7 +512,7 @@ def is_valid_combo(combo_changes, reactant_info):
         return False
     return True
 
-def bookkeep_reactant(mol, candidate_pairs):
+def bookkeep_reactant(mol): #, candidate_pairs):
     """Bookkeep reaction-related information of reactants.
 
     Parameters
@@ -519,6 +529,17 @@ def bookkeep_reactant(mol, candidate_pairs):
     info : dict
         Reaction-related information of reactants
     """
+    ################ for switching IDXes ###########################
+    # edits are indices, so we need to replace the atom map number with the index
+    old_index2atom_number = {}
+    for atom in mol.GetAtoms():
+        old_index2atom_number[atom.GetIdx()] = int(atom.GetProp("molAtomMapNumber"))  # Update mapping dictionary
+
+    order = sorted(old_index2atom_number.items(), key=lambda x: x[1]) # sort by atom number because k,v = atom_idx, atom_map_number
+    old_index2new_index = {old_idx: new_idx for new_idx, (old_idx, _) in enumerate(order)}
+    # atom_map_number2new_index = {atom_map_number: new_idx for new_idx, (_, atom_map_number) in enumerate(order)}
+    ######################################################################
+
     num_atoms = mol.GetNumAtoms()
     info = {
         # free valence of atoms
@@ -541,6 +562,7 @@ def bookkeep_reactant(mol, candidate_pairs):
 
     # bookkeep atoms
     for j, atom in enumerate(mol.GetAtoms()):
+        j = old_index2new_index[j]
         info['free_val'][j] += atom.GetTotalNumHs() + abs(atom.GetFormalCharge())
         # An aromatic carbon atom next to an aromatic nitrogen atom can get a
         # carbonyl b/c of bookkeeping of hydroxypyridines
@@ -563,30 +585,18 @@ def bookkeep_reactant(mol, candidate_pairs):
             info['is_o'][j] = True
         elif atom.GetSymbol() == 'S':
             info['is_s'][j] = True
-    
-
-    ################ for switching IDXes ###########################
-    # edits are indices, so we need to replace the atom map number with the index
-    old_index2atom_number = {}
-    for atom in mol.GetAtoms():
-        old_index2atom_number[atom.GetIdx()] = int(atom.GetProp("molAtomMapNumber"))  # Update mapping dictionary
-
-    order = sorted(old_index2atom_number.items(), key=lambda x: x[1]) # sort by atom number because k,v = atom_idx, atom_map_number
-    old_index2new_index = {old_idx: new_idx for new_idx, (old_idx, _) in enumerate(order)}
-    # atom_map_number2new_index = {atom_map_number: new_idx for new_idx, (_, atom_map_number) in enumerate(order)}
-    ######################################################################
 
     # bookkeep bonds
     for bond in mol.GetBonds():
         atom1, atom2 = bond.GetBeginAtomIdx(), bond.GetEndAtomIdx()
-        atom1, atom2 = min(atom1, atom2), max(atom1, atom2)
         
         atom1, atom2 = old_index2new_index[atom1], old_index2new_index[atom2]
+        atom1, atom2 = min(atom1, atom2), max(atom1, atom2)
         type_val = bond.GetBondTypeAsDouble()
         info['pair_to_bond_val'][(atom1, atom2)] = type_val
-        if (atom1, atom2) in candidate_pairs:
-            info['free_val'][atom1] += type_val
-            info['free_val'][atom2] += type_val
+        # if (atom1, atom2) in candidate_pairs:
+        #     info['free_val'][atom1] += type_val
+        #     info['free_val'][atom2] += type_val
         if bond.IsInRing():
             info['ring_bonds'].add((atom1, atom2))
 
@@ -605,11 +615,20 @@ def bookkeep_product(mol):
     info : dict
         Reaction-related information of atoms/bonds in products
     """
+    ################ for switching IDXes ###########################
+    old_index2atom_number = {}
+    for atom in mol.GetAtoms():
+        old_index2atom_number[atom.GetIdx()] = int(atom.GetProp("molAtomMapNumber"))  # Update mapping dictionary
+
+    order = sorted(old_index2atom_number.items(), key=lambda x: x[1]) # sort by atom number because k,v = atom_idx, atom_map_number
+    old_index2new_index = {old_idx: new_idx for new_idx, (old_idx, _) in enumerate(order)}
+    atom_map_number2new_index = {atom_map_number: new_idx for new_idx, (_, atom_map_number) in enumerate(order)}
+    ######################################################################
     info = {
         'atoms': set()
     }
     for atom in mol.GetAtoms():
-        info['atoms'].add(atom.GetAtomMapNum() - 1)
+        info['atoms'].add(atom_map_number2new_index[atom.GetAtomMapNum()])
 
     return info
 
@@ -651,9 +670,8 @@ def pre_process_one_reaction(info, num_candidate_bond_changes, max_num_bond_chan
     assert mode in ['train', 'val', 'test'], \
         "Expect mode to be 'train' or 'val' or 'test', got {}".format(mode)
     candidate_bond_changes_, real_bond_changes, reactant_mol, product_mol = info
-    candidate_pairs = [(atom1, atom2) for (atom1, atom2, _, _)
-                       in candidate_bond_changes_]
-    reactant_info = bookkeep_reactant(reactant_mol, candidate_pairs)
+    # candidate_pairs = [(atom1, atom2) for (atom1, atom2, _, _) in candidate_bond_changes_]
+    reactant_info = bookkeep_reactant(reactant_mol) #, candidate_pairs)
     if mode == 'train':
         product_info = bookkeep_product(product_mol)
 
@@ -661,7 +679,7 @@ def pre_process_one_reaction(info, num_candidate_bond_changes, max_num_bond_chan
     candidate_bond_changes = []
     count = 0
     for (atom1, atom2, change_type, score) in candidate_bond_changes_:
-        if ((atom1, atom2) not in reactant_info['pair_to_bond_val'] and change_type > 0) or (reactant_info['pair_to_bond_val'][(atom1, atom2)] != change_type):
+        if ((atom1, atom2) not in reactant_info['pair_to_bond_val'] and change_type > 0) or ((atom1, atom2) in reactant_info['pair_to_bond_val'] and reactant_info['pair_to_bond_val'][(atom1, atom2)] != change_type):
             candidate_bond_changes.append((atom1, atom2, change_type, score))
             count += 1
             if count == num_candidate_bond_changes:
@@ -736,85 +754,6 @@ def pre_process_one_reaction(info, num_candidate_bond_changes, max_num_bond_chan
     candidate_smiles = [get_product_smiles(reactant_mol, combo, None, mode="test", return_full_mol=True) for combo in valid_candidate_combos]
 
     return valid_candidate_combos, candidate_bond_changes, reactant_info, candidate_smiles
-
-def get_candidate_bonds(reaction, preds, num_nodes, max_k, easy, include_scores=False):
-    """Get candidate bonds for a reaction.
-
-    Parameters
-    ----------
-    reaction : str
-        Reaction
-    preds : float32 tensor of shape (E * 5)
-        E for the number of edges in a complete graph and 5 for the number of possible
-        bond changes.
-    num_nodes : int
-        Number of nodes in the graph.
-    max_k : int
-        Maximum number of atom pairs to be selected.
-    easy : bool
-        If True, reactants not contributing atoms to the product will be excluded in
-        top-k atom pair selection, which will make the task easier.
-    include_scores : bool
-        Whether to include the scores for the atom pairs selected. Default to False.
-
-    Returns
-    -------
-    list of 3-tuples or 4-tuples
-        The first three elements in a tuple separately specify the first atom,
-        the second atom and the type for bond change. If include_scores is True,
-        the score for the prediction will be included as a fourth element.
-    """
-    # Decide which atom-pairs will be considered.
-    reaction_atoms = []
-    reaction_bonds = defaultdict(bool)
-    reactants, _, product = reaction.split('>')
-    product_mol = Chem.MolFromSmiles(product)
-    product_atoms = set([atom.GetAtomMapNum() for atom in product_mol.GetAtoms()])
-
-    for reactant in reactants.split('.'):
-        reactant_mol = Chem.MolFromSmiles(reactant)
-        reactant_atoms = [atom.GetAtomMapNum() for atom in reactant_mol.GetAtoms()]
-        # In the hard mode, all reactant atoms will be included.
-        # In the easy mode, only reactants contributing atoms to the product will be included.
-        if (len(set(reactant_atoms) & product_atoms) > 0) or (not easy):
-            reaction_atoms.extend(reactant_atoms)
-            for bond in reactant_mol.GetBonds():
-                end_atoms = sorted([bond.GetBeginAtom().GetAtomMapNum(),
-                                    bond.GetEndAtom().GetAtomMapNum()])
-                bond = tuple(end_atoms + [bond.GetBondTypeAsDouble()])
-                # Bookkeep bonds already in reactants
-                reaction_bonds[bond] = True
-
-    candidate_bonds = []
-    if len(preds)<max_k:
-        max_k = len(preds)
-    topk_values, topk_indices = torch.topk(preds, max_k)
-    for j in range(max_k):
-        preds_j = topk_indices[j].cpu().item()
-        # A bond change can be either losing the bond or forming a
-        # single, double, triple or aromatic bond
-        change_id = preds_j % num_change_types
-        change_type = id_to_bond_change[change_id]
-        pair_id = preds_j // num_change_types
-        # Atom map numbers
-        atom1 = pair_id // num_nodes + 1
-        atom2 = pair_id % num_nodes + 1
-        # Avoid duplicates and an atom cannot form a bond with itself
-        if atom1 >= atom2:
-            continue
-        if atom1 not in reaction_atoms:
-            continue
-        if atom2 not in reaction_atoms:
-            continue
-        candidate = (int(atom1), int(atom2), float(change_type))
-        if reaction_bonds[candidate]:
-            continue
-        if include_scores:
-            candidate += (float(topk_values[j].cpu().item()),)
-        candidate_bonds.append(candidate)
-
-    return candidate_bonds
-
 
 def get_batch_candidate_bonds(reaction_strings, preds, batch_ids):
     all_candidates = []

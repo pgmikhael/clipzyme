@@ -291,7 +291,7 @@ class WLDN(AbstractModel):
 
             # compute the score for each candidate product
             # to dense
-            diff_node_feats, _ = to_dense_batch(diff_node_feats, product_candidates.batch)
+            diff_node_feats, _ = to_dense_batch(diff_node_feats, product_candidates.batch) # num_candidates x max_num_nodes x D
             score = self.final_transform(torch.sum(diff_node_feats, dim=-2))
             candidate_scores.append(score) # K x 1
 
@@ -371,50 +371,138 @@ class WLDN(AbstractModel):
             help="path to pretrained reaction center prediction model"
         )
 
+##########################################################################################
 
-# class EnzymeMoleculeAttn(nn.Module):
-#     def __init__(self, hidden_dim_prot, hidden_dim_candidate):
-#         super(PairwiseAttention, self).__init__()
-#         self.W_q = nn.Linear(hidden_dim_candidate, hidden_dim_prot)
-#         self.W_k = nn.Linear(hidden_dim_prot, hidden_dim_prot)
-#         self.W_v = nn.Linear(hidden_dim_prot, hidden_dim_prot)
+##########################################################################################
 
-#     def forward(self, dense_candidate_node_feats, prot_feats):
-#         # dense_candidate_node_feats: B x num_nodes x D
-#         # prot_feats: 1 x len_seq x hidden_dim_prot
-#         Q = self.W_q(dense_candidate_node_feats) # B x num_nodes x hidden_dim_prot
-#         K = self.W_k(prot_feats) # 1 x len_seq x hidden_dim_prot
-#         V = self.W_v(prot_feats) # 1 x len_seq x hidden_dim_prot
+##########################################################################################
 
-#         attn_weights = torch.softmax(Q @ K.transpose(-1, -2), dim=-1) # B x num_nodes x len_seq
-#         output = attn_weights @ V # B x num_nodes x hidden_dim_prot
+##########################################################################################
 
-#         return output, attn_weights # B x num_nodes x hidden_dim_prot, B x num_nodes x len_seq
-    
-
+##########################################################################################
 
 # @register_object("wldn2", "model")
 # class WLDN2(WLDN):
 #     def __init__(self, args):
 #         super().__init__(self, args) # gives self.wln (GAT)
 #         self.esm_model = get_object(args.esm_version, "model")(args)
-#         self.pairwise_attention = EnzymeMoleculeAttn(args.hidden_dim_enzyme, args.gat_hidden_dim)
+#         econfig = self.get_transformer_config(args)
+#         econfig.is_decoder = False
+#         self.model = BertModel(econfig, add_pooling_layer=False)
+#         self.config = self.model.config
+#         self.args = args
+#         # self.register_buffer("devicevar", torch.zeros(1, dtype=torch.int8))
+
 #         self.final_transform = nn.Linear(args.gat_hidden_dim, 1)  # need to overwrite because output is different size
+
+#     def get_transformer_config(self, args):
+#         if args.transformer_model == "bert":
+#             bert_config = BertConfig(
+#                 # max_position_embeddings=args.max_seq_len,
+#                 # vocab_size=self.bert_tokenizer.vocab_size,
+#                 output_hidden_states=True,
+#                 output_attentions=True,
+#                 hidden_size=args.hidden_size,
+#                 intermediate_size=args.intermediate_size,
+#                 embedding_size=args.embedding_size,
+#                 num_attention_heads=args.num_heads,
+#                 num_hidden_layers=args.num_hidden_layers,
+#             )
+#         else:
+#             raise NotImplementedError
+
+#         return bert_config
 
 #     def forward(self, batch):
 #         prot_feats = self.esm_model([batch["sequence"]]).unsqueeze(0)  # 1 x len_seq x hidden_dim
 
 #         product_candidates_list = self.get_product_candidate_list(batch)
+
+#         reactant_node_feats = self.wln(batch["reactants"])["node_features"] # N x D, where N is all the nodes in the batch
+#         dense_reactant_node_feats, mask = to_dense_batch(reactant_node_feats, batch=batch["reactants"].batch) # B x max_batch_N x D
 #         candidate_scores = []
-#         for product_molecule in product_candidates_list:
+#         for idx, product_candidates in enumerate(product_candidates_list):
+#             # get node features for candidate products
+#             product_candidates = product_candidates.to(reactant_node_feats.device)
 #             candidate_node_feats = self.wln(product_candidates)["node_features"]
 #             dense_candidate_node_feats, mask = to_dense_batch(candidate_node_feats, batch=product_candidates.batch) # B x num_nodes x D
-#             attn_mol_embedding, attn_weights = self.pairwise_attention(dense_candidate_node_feats, prot_feats)
+            
+#             num_nodes = dense_candidate_node_feats.shape[1]
 
-#             logits = self.scoring_layer(attn_mol_embedding)  # B x N x 1
-#             logits = logits.mean(dim=1)  # B x 1, taking mean over the sequence length
+#             # compute difference vectors and replace the node features of the product graph with them
+#             difference_vectors = dense_candidate_node_feats - dense_reactant_node_feats[idx][:num_nodes].unsqueeze(0)
 
-#             candidate_scores.append(logits)
+#             # undensify
+#             total_nodes = dense_candidate_node_feats.shape[0] * num_nodes
+#             difference_vectors = difference_vectors.view(total_nodes, -1)
+#             product_candidates.x = difference_vectors
+            
+#             # apply a separate WLN to the difference graph
+#             wln_diff_output = self.wln_diff(product_candidates)
+#             diff_node_feats = wln_diff_output["node_features"]
+
+#             # compute the score for each candidate product
+#             # to dense
+#             diff_node_feats, attention_mask = to_dense_batch(diff_node_feats, product_candidates.batch) # num_candidates x max_batch_N x D
+#             num_candidates = diff_node_feats.shape[0]
+#             repeated_prot = prot_feats.repeat(num_candidates, 1, 1)
+            
+#             # concatenate the prot features with the product features
+#             diff_node_feats = torch.cat([diff_node_feats, repeated_prot], dim=1) # num_candidates x (max_batch_N + len_seq) x D
+
+
+
+#             num_candidates, max_batch_N, len_seq, D = diff_node_feats.size(0), diff_node_feats.size(1), diff_node_feats.size(2), diff_node_feats.size(3)
+
+#             # Create token_type_ids tensor
+#             token_type_ids = torch.zeros((num_candidates, max_batch_N + len_seq, D), dtype=torch.long)  # Initialize with zeros
+#             token_type_ids[:, max_batch_N:] = 1  # Assign token type 1 to the second sequence
+
+#             concatenated_feats = torch.cat([diff_node_feats, repeated_prot], dim=1)
+
+
+
+
+#             # compute the attention mask so that padded product features are not attended to
+#             prot_mask = torch.ones_like(repeated_prot)
+#             attention_mask = torch.cat([attention_mask, prot_mask], dim=1) # num_candidates x (max_batch_N + len_seq)
+#             attention_mask = attention_mask.to(diff_node_feats.device)
+
+#             token_type_ids = torch.zeros(attention_mask)
+
+#             token_type_ids = token_type_ids.to(diff_node_feats.device)
+
+#             forward_args = {
+#                 "input_ids": None,
+#                 # If padding apply attention mask on padding (below)
+#                 "attention_mask": attention_mask,
+#                 # torch.LongTensor of shape (batch_size, sequence_length)
+#                 "token_type_ids": # TODO, indicates which is prot and which is molecule,
+#                 "position_ids": None,
+#                 "head_mask": None,
+#                 # encoder inputs can be (batch, sec_len, hidden_dim) so need to pad to max_seq_len
+#                 "inputs_embeds": # TODO put input here,
+#                 "encoder_hidden_states": None,
+#                 "encoder_attention_mask": None,
+#                 "past_key_values": None,
+#                 "use_cache": None,
+#                 "output_attentions": False,
+#                 "output_hidden_states": True,
+#                 "return_dict": True,
+#             }
+
+#         logits = decoder_outputs.logits if return_dict else decoder_outputs[0]
+
+#         output = {
+#             "logit": logits,
+#         }
+
+
+
+
+
+#             score = self.final_transform(torch.sum(diff_node_feats, dim=-2))
+#             candidate_scores.append(score) # K x 1
         
 #         output = {
 #             "logit": candidate_scores,
@@ -442,4 +530,210 @@ class WLDN(AbstractModel):
 #             type=int,
 #             default=480,
 #             help="Hidden dimension of enzyme embedding",
+#         )
+
+
+# ###########################################################################################
+
+# class EnzymeMoleculeBERT(AbstractModel):
+#     def __init__(self, args):
+#         super().__init__()
+#         econfig = self.get_transformer_config(args)
+#         econfig.is_decoder = False
+#         self.model = BertModel(econfig, add_pooling_layer=False)
+#         self.config = self.model.config
+#         self.args = args
+#         self.register_buffer("devicevar", torch.zeros(1, dtype=torch.int8))
+#         self.generation_config = self.make_generation_config(args)
+
+#     def get_transformer_config(self, args):
+#         if args.transformer_model == "bert":
+#             bert_config = BertConfig(
+#                 # max_position_embeddings=args.max_seq_len,
+#                 # vocab_size=self.bert_tokenizer.vocab_size,
+#                 output_hidden_states=True,
+#                 output_attentions=True,
+#                 hidden_size=args.hidden_size,
+#                 intermediate_size=args.intermediate_size,
+#                 embedding_size=args.embedding_size,
+#                 num_attention_heads=args.num_heads,
+#                 num_hidden_layers=args.num_hidden_layers,
+#             )
+#         else:
+#             raise NotImplementedError
+
+#         return bert_config
+
+#     def forward(self, batch) -> Dict:
+
+#         forward_args = {
+#             "input_ids": None,
+#             # If padding apply attention mask on padding (below)
+#             "attention_mask": # TODO,
+#             # torch.LongTensor of shape (batch_size, sequence_length)
+#             "token_type_ids": # TODO, indicates which is prot and which is molecule,
+#             "position_ids": None,
+#             "head_mask": None,
+#             # encoder inputs can be (batch, sec_len, hidden_dim) so need to pad to max_seq_len
+#             "inputs_embeds": # TODO put input here,
+#             "encoder_hidden_states": None,
+#             "encoder_attention_mask": None,
+#             "past_key_values": None,
+#             "use_cache": None,
+#             "output_attentions": False,
+#             "output_hidden_states": True,
+#             "return_dict": True,
+#         }
+
+#         logits = decoder_outputs.logits if return_dict else decoder_outputs[0]
+
+#         output = {
+#             "logit": logits,
+#         }
+
+        
+#         return output
+
+#     @staticmethod
+#     def add_args(parser) -> None:
+#         parser.add_argument(
+#             "--esm_model_version",
+#             type=str,
+#             default="facebook/esm2_t33_650M_UR50D",
+#             help="which version of ESM to use",
+#         )
+#         parser.add_argument(
+#             "--transformer_model",
+#             type=str,
+#             default="bert",
+#             help="name of backbone model",
+#         )
+#         parser.add_argument(
+#             "--vocab_path",
+#             type=str,
+#             default=None,
+#             required=True,
+#             help="path to vocab text file required for tokenizer",
+#         )
+#         parser.add_argument(
+#             "--merges_file_path",
+#             type=str,
+#             default=None,
+#             help="path to merges file required for RoBerta tokenizer",
+#         )
+#         parser.add_argument(
+#             "--freeze_encoder",
+#             action="store_true",
+#             default=False,
+#             help="whether use model as pre-trained encoder and not update weights",
+#         )
+#         parser.add_argument(
+#             "--num_hidden_layers",
+#             type=int,
+#             default=6,
+#             help="number of layers in the transformer",
+#         )
+#         parser.add_argument(
+#             "--max_seq_len",
+#             type=int,
+#             default=512,
+#             help="maximum length allowed for the input sequence",
+#         )
+#         parser.add_argument(
+#             "--hidden_size",
+#             type=int,
+#             default=256,
+#             help="maximum length allowed for the input sequence",
+#         )
+#         parser.add_argument(
+#             "--intermediate_size",
+#             type=int,
+#             default=512,
+#             help="maximum length allowed for the input sequence",
+#         )
+#         parser.add_argument(
+#             "--embedding_size",
+#             type=int,
+#             default=128,
+#             help="maximum length allowed for the input sequence",
+#         )
+#         parser.add_argument(
+#             "--num_heads",
+#             type=int,
+#             default=8,
+#             help="maximum length allowed for the input sequence",
+#         )
+#         parser.add_argument(
+#             "--do_masked_language_model",
+#             "-mlm",
+#             action="store_true",
+#             default=False,
+#             help="whether to perform masked language model task",
+#         )
+#         parser.add_argument(
+#             "--mlm_probability",
+#             type=float,
+#             default=0.1,
+#             help="probability that a token chosen to be masked. IF chosen, 80% will be masked, 10% random, 10% original",
+#         )
+#         parser.add_argument(
+#             "--use_cls_token",
+#             action="store_true",
+#             default=False,
+#             help="use cls token as hidden representation of sequence",
+#         )
+#         parser.add_argument(
+#             "--hidden_aggregate_func",
+#             type=str,
+#             default="mean",
+#             choices=["mean", "sum", "cls"],
+#             help="use cls token as hidden representation of sequence",
+#         )
+#         parser.add_argument(
+#             "--longformer_model_path",
+#             type=str,
+#             default=None,
+#             help="path to saved model if loading from pretrained",
+#         )
+#         parser.add_argument(
+#             "--generation_max_new_tokens",
+#             type=int,
+#             default=200,
+#             help="The maximum numbers of tokens to generate, ignoring the number of tokens in the prompt.",
+#         )
+#         parser.add_argument(
+#             "--generation_num_beams",
+#             type=int,
+#             default=1,
+#             help="Number of beams for beam search. 1 means no beam search.",
+#         )
+#         parser.add_argument(
+#             "--generation_num_return_sequences",
+#             type=int,
+#             default=1,
+#             help="The number of independently computed returned sequences for each element in the batch. <= num_beams",
+#         )
+#         parser.add_argument(
+#             "--generation_num_beam_groups",
+#             type=int,
+#             default=1,
+#             help="Number of groups to divide `num_beams` into in order to ensure diversity among different groups of beams. [this paper](https://arxiv.org/pdf/1610.02424.pdf) for more details",
+#         )
+#         parser.add_argument(
+#             "--generation_do_sample",
+#             action="store_true",
+#             default=False,
+#             help="Whether or not to use sampling ; use greedy decoding otherwise.",
+#         )
+#         parser.add_argument(
+#             "--generation_early_stopping",
+#             action="store_true",
+#             default=False,
+#             help="Whether to stop the beam search when at least `num_beams` sentences are finished per batch or not",
+#         )
+#         parser.add_argument(
+#             "--generation_renormalize_logits",
+#             action="store_true",
+#             default=False,
+#             help=" Whether to renormalize the logits after applying all the logits processors or warpers (including the custom ones). It's highly recommended to set this flag to `True` as the search algorithms suppose the score logits are normalized but some logit processors or warpers break the normalization.",
 #         )

@@ -22,17 +22,17 @@
     "gat_complete_edge_dim": [5],
     "gat_pool": ["none"],
     "attn_type": ["pairwise_global_attn"],
-    "reactivity_model_path": ["/Mounts/rbg-storage1/snapshots/metabolomics/e3984f2f54a0c1fb8ef023651215b40f/checkpoint27.ckpt"],
+    "reactivity_model_path": ["/Mounts/rbg-storage1/snapshots/metabolomics/e3984f2f54a0c1fb8ef023651215b40f/e3984f2f54a0c1fb8ef023651215b40fepoch=48.ckpt"],
     "callback_names": ["lr_monitor checkpointer"],
     "max_epochs": [50],
     "lr_decay": [0.1],
     "lr": [1e-3],
     "weight_decay": [0],
     "loss_names": ["candidate_loss"],
-    "metric_names": ["candidate_accuracy candidate_topk"],
+    "metric_names": ["candidate_accuracy"],
     "checkpoint_save_last": [false],
-    "monitor": ["val_top_1"],
-    "num_workers": [24],
+    "monitor": ["val_per_reaction_accuracy"],
+    "num_workers": [10],
     "optimizer_name": ["adam"],
     "patience": [5],
     "train": [true],
@@ -48,7 +48,7 @@
     "workspace": ["peteranditamar"],
     "project_name": ["enzymes"],
     "logger_tags": ["wldn"],
-    "cache_path": ["/Mounts/rbg-storage1/results/metabolomics"]
+    "cache_path": ["/Mounts/rbg-storage1/results/metabolomics/cache/"]
   },
-  "available_gpus": ["4,5,6,7"]
+  "available_gpus": ["0,1,2,3"]
 }
