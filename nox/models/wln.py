@@ -243,25 +243,30 @@ class WLDN(AbstractModel):
         self.use_cache = args.cache_path is not None 
         if self.use_cache:
             self.cache = WLDN_Cache(os.path.join(args.cache_path), "pt")
+        if self.args.predict:
+            assert not self.args.train 
 
     def predict(self, batch, product_candidates_list, candidate_scores):
-        smiles_predictions = []
+        predictions = []
         for idx, (candidates, scores) in enumerate(zip(product_candidates_list, candidate_scores)):
+            smiles_predictions = []
             # sort according to ranker score
             scores_indices = torch.argsort(scores.view(-1),descending=True)
             valid_candidate_combos = [candidates.candidate_bond_change[i] for i in scores_indices]
             reactant_mol = Chem.MolFromSmiles(batch["smiles"][idx])
-            smiles = robust_edit_mol(reactant_mol, edits)
-            if len(smiles) != 0:
-                smiles_predictions.append(smiles)
-            try:
-                Chem.Kekulize(reactant_mol)
+            for edits in valid_candidate_combos:
                 smiles = robust_edit_mol(reactant_mol, edits)
-                smiles_predictions.append(smiles)
-            except Exception as e:
-                smiles_predictions.append(smiles)
+                if len(smiles) != 0:
+                    smiles_predictions.append(smiles)
+                try:
+                    Chem.Kekulize(reactant_mol)
+                    smiles = robust_edit_mol(reactant_mol, edits)
+                    smiles_predictions.append(smiles)
+                except Exception as e:
+                    smiles_predictions.append(smiles)
+            predictions.append(smiles_predictions)
             
-        return {"preds": smiles_predictions}
+        return {"preds": predictions}
 
     def forward(self, batch):
         product_candidates_list = self.get_product_candidate_list(batch)
@@ -309,16 +314,13 @@ class WLDN(AbstractModel):
 
     # seperate function because stays the same for different forward methods
     def get_product_candidate_list(self, batch):
-        with torch.no_grad():
-            reactivity_output = self.reactivity_net(batch) # s_uv: N x N x 5, 'candidate_bond_changes', 'real_bond_changes'
-
-        if self.training:
-            mode = "train"
-        else:
-            mode = "test"
+        mode = "train" # this is used to get candidates, using robust_edit_mol when in predict later for actual smiles generation
 
         if self.use_cache:
             if not all( self.cache.exists(sid) for sid in batch["sample_id"] ):
+                with torch.no_grad():
+                    reactivity_output = self.reactivity_net(batch) # s_uv: N x N x 5, 'candidate_bond_changes', 'real_bond_changes'
+
                 # get candidate products as graph structures
                 # each element in this list is a batch of candidate products (where each batch represents one reaction)
                 product_candidates_list = generate_candidates_from_scores(reactivity_output, batch, self.args, mode)
@@ -327,6 +329,9 @@ class WLDN(AbstractModel):
                 product_candidates_list =  [self.cache.get(sid) for sid in batch["sample_id"]]
         else:
             # each element in this list is a batch of candidate products (where each batch represents one reaction)
+            with torch.no_grad():
+                reactivity_output = self.reactivity_net(batch) # s_uv: N x N x 5, 'candidate_bond_changes', 'real_bond_changes'
+
             product_candidates_list = generate_candidates_from_scores(reactivity_output, batch, self.args, mode)
 
         return product_candidates_list
