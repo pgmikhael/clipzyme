@@ -236,7 +236,7 @@ class WLDN(AbstractModel):
         self.reactivity_net.eval()
         self.wln = GAT(args) # WLN for mol representation
         wln_diff_args = copy.deepcopy(args)
-        wln_diff_args.gat_node_dim = args.gat_hidden_dim
+        wln_diff_args.gat_node_dim = args.gat_hidden_dim * 2 if args.append_reactant_to_diff else args.gat_hidden_dim
         # wln_diff_args.gat_edge_dim = args.gat_hidden_dim
         self.wln_diff = GAT(wln_diff_args) # WLN for difference graph
         self.final_transform = nn.Linear(args.gat_hidden_dim, 1) # for scoring
@@ -287,6 +287,10 @@ class WLDN(AbstractModel):
 
             # undensify
             total_nodes = dense_candidate_node_feats.shape[0] * num_nodes
+            if self.args.args.append_reactant_to_diff:
+                num_cands = len(dense_candidate_node_feats)
+                r_node_feats = dense_reactant_node_feats[idx][:num_nodes].unsqueeze(0).repeat_interleave(num_cands, dim=0)
+                difference_vectors = torch.concat([difference_vectors, r_node_feats], -1)
             difference_vectors = difference_vectors.view(total_nodes, -1)
             product_candidates.x = difference_vectors
             
@@ -298,6 +302,9 @@ class WLDN(AbstractModel):
             # to dense
             diff_node_feats, _ = to_dense_batch(diff_node_feats, product_candidates.batch) # num_candidates x max_num_nodes x D
             score = self.final_transform(torch.sum(diff_node_feats, dim=-2))
+            if self.args.add_core_score:
+                core_scores = [sum(c[-1] for c in cand_changes) for cand_changes in product_candidates.candidate_bond_change]
+                score = score + torch.tensor(core_scores, device = score.device).unsqueeze(-1)
             candidate_scores.append(score) # K x 1
 
         # ! PREDICT SMILES
@@ -374,6 +381,18 @@ class WLDN(AbstractModel):
             "--reactivity_model_path",
             type=str,
             help="path to pretrained reaction center prediction model"
+        )
+        parser.add_argument(
+            "--add_core_score",
+            action="store_true",
+            default=False,
+            help="whether to add core score to ranking prediction"
+        )
+        parser.add_argument(
+            "--append_reactant_to_diff",
+            action="store_true",
+            default=False,
+            help="whether to use reactant features with difference graph"
         )
 
 ##########################################################################################

@@ -23,6 +23,10 @@
     "gat_pool": ["none"],
     "attn_type": ["pairwise_global_attn"],
     "reactivity_model_path": ["/Mounts/rbg-storage1/snapshots/metabolomics/e3984f2f54a0c1fb8ef023651215b40f/e3984f2f54a0c1fb8ef023651215b40fepoch=48.ckpt"],
+    "add_core_score": [true],
+    "max_num_change_combos_per_reaction": [150],
+    "num_candidate_bond_changes": [16],
+    "max_num_bond_changes": [5],
     "callback_names": ["lr_monitor checkpointer"],
     "max_epochs": [50],
     "lr_decay": [0.1],
@@ -37,7 +41,7 @@
     "patience": [5],
     "train": [true],
     "dev": [false],
-    "test": [true],
+    "test": [false],
     "num_sanity_val_steps": [0],
     "val_check_interval": [1.0],
     "gpus": [4],
@@ -50,5 +54,5 @@
     "logger_tags": ["wldn"],
     "cache_path": ["/Mounts/rbg-storage1/results/metabolomics/cache/"]
   },
-  "available_gpus": ["0,1,2,3"]
+  "available_gpus": ["4,5,6,7"]
 }
