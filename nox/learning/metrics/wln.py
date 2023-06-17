@@ -198,7 +198,7 @@ class WLNAccuracy(Metric, Nox):
         preds = predictions_dict["preds"]
         target = predictions_dict["golds"]
         
-        correct = (preds == target).all(dim=-1).sum()
+        correct = (preds == target).sum()
         total = preds.shape[-1]
 
         self.correct += correct.to(self.device)

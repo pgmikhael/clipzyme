@@ -287,7 +287,7 @@ class WLDN(AbstractModel):
 
             # undensify
             total_nodes = dense_candidate_node_feats.shape[0] * num_nodes
-            if self.args.args.append_reactant_to_diff:
+            if self.args.append_reactant_to_diff:
                 num_cands = len(dense_candidate_node_feats)
                 r_node_feats = dense_reactant_node_feats[idx][:num_nodes].unsqueeze(0).repeat_interleave(num_cands, dim=0)
                 difference_vectors = torch.concat([difference_vectors, r_node_feats], -1)
