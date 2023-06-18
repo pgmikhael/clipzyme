@@ -235,22 +235,19 @@ class WLDN(AbstractModel):
             self.reactivity_net = get_object(args.reactivity_net_type, "model")(args).requires_grad_(False)
             print("Could not load pretrained model")
         self.reactivity_net.eval()
-        self.wln = get_object(args.gnn_type, "model")(args) # WLN for mol representation GAT(args)
+        
+        wln_diff_args = copy.deepcopy(args)
+        # GAT
+        self.wln = GAT(args) # WLN for mol representation GAT(args)
         wln_diff_args = copy.deepcopy(args)
         wln_diff_args.gat_node_dim  = args.gat_hidden_dim
-        wln_diff_args.chemprop_node_dim = args.chemprop_hidden_dim
-        wln_diff_args.gat_num_layers = wln_diff_args.chemprop_num_layers = 1
-        self.wln_diff = DMPNNEncoder(wln_diff_args) # WLN for difference graph GAT(wln_diff_args)
-        # self.final_transform = nn.Sequential(
-        #     nn.Linear(args.gat_hidden_dim, args.gat_hidden_dim),
-        #     nn.ReLU(),
-        #     nn.Linear(args.gat_hidden_dim, 1)
-        # )
+        wln_diff_args.gat_num_layers = 1
+        self.wln_diff = GAT(wln_diff_args)
         self.final_transform = nn.Sequential(
-            nn.Linear(args.chemprop_hidden_dim, args.chemprop_hidden_dim),
+            nn.Linear(args.gat_hidden_dim, args.gat_hidden_dim),
             nn.ReLU(),
-            nn.Linear(args.chemprop_hidden_dim, 1)
-        ) # for scoring
+            nn.Linear(args.gat_hidden_dim, 1)
+        )
         self.use_cache = args.cache_path is not None 
         if self.use_cache:
             self.cache = WLDN_Cache(os.path.join(args.cache_path), "pt")
@@ -280,7 +277,7 @@ class WLDN(AbstractModel):
         return {"preds": predictions}
 
     def forward(self, batch):
-        product_candidates_list = self.get_product_candidate_list(batch)
+        product_candidates_list = self.get_product_candidate_list(batch, batch["sample_id"])
 
         reactant_node_feats = self.wln(batch["reactants"])["node_features"] # N x D, where N is all the nodes in the batch
         dense_reactant_node_feats, mask = to_dense_batch(reactant_node_feats, batch=batch["reactants"].batch) # B x max_batch_N x D
@@ -327,20 +324,25 @@ class WLDN(AbstractModel):
         return output
 
     # seperate function because stays the same for different forward methods
-    def get_product_candidate_list(self, batch):
+    def get_product_candidate_list(self, batch, sample_ids):
+        """
+        Args:
+            batch : collated samples from dataloader
+            sample_ids: list of sample ids
+        """
         mode = "train" # this is used to get candidates, using robust_edit_mol when in predict later for actual smiles generation
 
         if self.use_cache:
-            if not all( self.cache.exists(sid) for sid in batch["sample_id"] ):
+            if not all( self.cache.exists(sid) for sid in sample_ids ):
                 with torch.no_grad():
                     reactivity_output = self.reactivity_net(batch) # s_uv: N x N x 5, 'candidate_bond_changes', 'real_bond_changes'
 
                 # get candidate products as graph structures
                 # each element in this list is a batch of candidate products (where each batch represents one reaction)
                 product_candidates_list = generate_candidates_from_scores(reactivity_output, batch, self.args, mode)
-                [self.cache.add(sid, product_candidates) for sid, product_candidates in zip(batch["sample_id"], product_candidates_list)]
+                [self.cache.add(sid, product_candidates) for sid, product_candidates in zip(sample_ids, product_candidates_list)]
             else:
-                product_candidates_list =  [self.cache.get(sid) for sid in batch["sample_id"]]
+                product_candidates_list =  [self.cache.get(sid) for sid in sample_ids]
         else:
             # each element in this list is a batch of candidate products (where each batch represents one reaction)
             with torch.no_grad():
@@ -395,189 +397,192 @@ class WLDN(AbstractModel):
             default=False,
             help="whether to add core score to ranking prediction"
         )
-        parser.add_argument(
-            "--gnn_type",
-            type=str,
-            action=set_nox_type("model"),
-            default="gatv2",
-            help="Type of gat to use, mainly to init args"
+
+##########################################################################################
+
+##########################################################################################
+
+##########################################################################################
+
+##########################################################################################
+
+##########################################################################################
+
+from transformers import BertConfig, BertModel, AutoTokenizer, EsmModel
+@register_object("wldn_transformer", "model")
+class WLDNTransformer(WLDN):
+    def __init__(self, args):
+        super().__init__(args) # gives self.wln (GAT)
+        self.esm_tokenizer = AutoTokenizer.from_pretrained(args.esm_model_version)
+        self.esm_model = EsmModel.from_pretrained(args.esm_model_version)
+        self.freeze_encoder = args.freeze_encoder
+        if self.freeze_encoder:
+            self.esm_model.eval()
+        econfig = self.get_transformer_config(args)
+        econfig.is_decoder = False
+        self.model = BertModel(econfig, add_pooling_layer=True)
+        self.config = self.model.config
+        self.args = args
+        self.register_buffer("token_type_ids", torch.zeros(1, dtype=torch.long))
+
+        self.final_transform = nn.Sequential(
+            nn.Linear(args.hidden_size, args.hidden_size),
+            nn.ReLU(),
+            nn.Linear(args.hidden_size, 1)
+        )  # need to overwrite because output is different size
+
+    def get_transformer_config(self, args):
+        bert_config = BertConfig(
+                # vocab_size=self.bert_tokenizer.vocab_size,
+                max_position_embeddings=args.max_seq_len,
+                type_vocab_size = 2,
+                output_hidden_states=True,
+                output_attentions=True,
+                hidden_size=args.hidden_size,
+                intermediate_size=args.intermediate_size,
+                num_attention_heads=args.num_heads,
+                num_hidden_layers=args.num_hidden_layers,
+            )
+        return bert_config
+
+    def encode_sequence(self, batch):
+        encoder_input_ids = self.esm_tokenizer(
+            batch["sequence"],
+            padding="longest",
+            return_tensors="pt",
+            return_special_tokens_mask=True,
         )
+        for k, v in encoder_input_ids.items():
+            encoder_input_ids[k] = v.to(self.token_type_ids.device)
 
-##########################################################################################
+        if self.freeze_encoder:
+            with torch.no_grad():
+                encoder_outputs = self.esm_model(
+                    input_ids=encoder_input_ids["input_ids"],
+                    attention_mask=encoder_input_ids["attention_mask"],
+                )
+        else:
+            encoder_outputs = self.esm_model(
+                input_ids=encoder_input_ids["input_ids"],
+                attention_mask=encoder_input_ids["attention_mask"],
+            )
+        encoder_hidden_states = encoder_outputs["last_hidden_state"]
+        return encoder_hidden_states, encoder_input_ids["attention_mask"]
 
-##########################################################################################
+    def forward(self, batch):
+        prot_feats, prot_attn = self.encode_sequence(batch) # 1 x len_seq x hidden_dim
 
-##########################################################################################
+        product_candidates_list = self.get_product_candidate_list(batch, batch["row_id"])
 
-##########################################################################################
-
-##########################################################################################
-
-# from transformers import BertModel
-# @register_object("wldn_transformer", "model")
-# class WLDNTransformer(WLDN):
-#     def __init__(self, args):
-#         super().__init__(self, args) # gives self.wln (GAT)
-        # self.esm_tokenizer = AutoTokenizer.from_pretrained(args.esm_model_version)
-        # self.esm_model = EsmModel.from_pretrained(args.esm_model_version)
-        # if self.freeze_encoder:
-        #     self.esm_model.eval()
-#         econfig = self.get_transformer_config(args)
-#         econfig.is_decoder = False
-#         self.model = BertModel(econfig, add_pooling_layer=False)
-#         self.config = self.model.config
-#         self.args = args
-#         # self.register_buffer("devicevar", torch.zeros(1, dtype=torch.int8))
-
-#         self.final_transform = nn.Linear(args.gat_hidden_dim, 1)  # need to overwrite because output is different size
-
-#     def get_transformer_config(self, args):
-#         if args.transformer_model == "bert":
-#             bert_config = BertConfig(
-#                 # max_position_embeddings=args.max_seq_len,
-#                 # vocab_size=self.bert_tokenizer.vocab_size,
-#                 output_hidden_states=True,
-#                 output_attentions=True,
-#                 hidden_size=args.hidden_size,
-#                 intermediate_size=args.intermediate_size,
-#                 embedding_size=args.embedding_size,
-#                 num_attention_heads=args.num_heads,
-#                 num_hidden_layers=args.num_hidden_layers,
-#             )
-#         else:
-#             raise NotImplementedError
-
-#         return bert_config
-
-#     def forward(self, batch):
-#         prot_feats = self.esm_model([batch["sequence"]]).unsqueeze(0)  # 1 x len_seq x hidden_dim
-
-#         product_candidates_list = self.get_product_candidate_list(batch)
-
-#         reactant_node_feats = self.wln(batch["reactants"])["node_features"] # N x D, where N is all the nodes in the batch
-#         dense_reactant_node_feats, mask = to_dense_batch(reactant_node_feats, batch=batch["reactants"].batch) # B x max_batch_N x D
-#         candidate_scores = []
-#         for idx, product_candidates in enumerate(product_candidates_list):
-#             # get node features for candidate products
-#             product_candidates = product_candidates.to(reactant_node_feats.device)
-#             candidate_node_feats = self.wln(product_candidates)["node_features"]
-#             dense_candidate_node_feats, mask = to_dense_batch(candidate_node_feats, batch=product_candidates.batch) # B x num_nodes x D
+        reactant_node_feats = self.wln(batch["reactants"])["node_features"] # N x D, where N is all the nodes in the batch
+        dense_reactant_node_feats, mask = to_dense_batch(reactant_node_feats, batch=batch["reactants"].batch) # B x max_batch_N x D
+        candidate_scores = []
+        for idx, product_candidates in enumerate(product_candidates_list):
+            # get node features for candidate products
+            product_candidates = product_candidates.to(reactant_node_feats.device)
+            candidate_node_feats = self.wln(product_candidates)["node_features"]
+            dense_candidate_node_feats, candidate_mask = to_dense_batch(candidate_node_feats, batch=product_candidates.batch) # B x num_nodes x D
             
-#             num_nodes = dense_candidate_node_feats.shape[1]
+            num_nodes = dense_candidate_node_feats.shape[1]
 
-#             # compute difference vectors and replace the node features of the product graph with them
-#             difference_vectors = dense_candidate_node_feats - dense_reactant_node_feats[idx][:num_nodes].unsqueeze(0)
+            # compute difference vectors and replace the node features of the product graph with them
+            diff_node_feats = dense_candidate_node_feats - dense_reactant_node_feats[idx][:num_nodes].unsqueeze(0)
 
-#             # undensify
-#             total_nodes = dense_candidate_node_feats.shape[0] * num_nodes
-#             difference_vectors = difference_vectors.view(total_nodes, -1)
-#             product_candidates.x = difference_vectors
+            num_candidates = diff_node_feats.shape[0]
+            # repeat protein features and mask to shape
+            repeated_prot = prot_feats[idx].unsqueeze(0).repeat(num_candidates, 1, 1)
+            prot_mask = prot_attn[idx].unsqueeze(0).repeat(num_candidates, 1)
             
-#             # apply a separate WLN to the difference graph
-#             wln_diff_output = self.wln_diff(product_candidates)
-#             diff_node_feats = wln_diff_output["node_features"]
+            # concatenate the prot features with the product features
+            concatenated_feats = torch.cat([diff_node_feats, repeated_prot], dim=1) # num_candidates x (max_batch_N + len_seq) x D
 
-#             # compute the score for each candidate product
-#             # to dense
-#             diff_node_feats, attention_mask = to_dense_batch(diff_node_feats, product_candidates.batch) # num_candidates x max_batch_N x D
-#             num_candidates = diff_node_feats.shape[0]
-#             repeated_prot = prot_feats.repeat(num_candidates, 1, 1)
-            
-#             # concatenate the prot features with the product features
-#             diff_node_feats = torch.cat([diff_node_feats, repeated_prot], dim=1) # num_candidates x (max_batch_N + len_seq) x D
+            # create token_type_ids tensor
+            token_type_ids = self.token_type_ids.repeat(*concatenated_feats.shape[:2])  # Initialize with zeros
+            token_type_ids[:, num_nodes:] = 1  # Assign token type 1 to the second sequence
 
+            # compute the attention mask so that padded product features are not attended to
+            attention_mask = torch.cat([candidate_mask, prot_mask], dim=1) # num_candidates x (max_batch_N + len_seq)
 
+            outputs = self.model(
+                inputs_embeds= concatenated_feats,
+                attention_mask= attention_mask,
+                token_type_ids= token_type_ids
+            )
 
-#             num_candidates, max_batch_N, len_seq, D = diff_node_feats.size(0), diff_node_feats.size(1), diff_node_feats.size(2), diff_node_feats.size(3)
-
-#             # Create token_type_ids tensor
-#             token_type_ids = torch.zeros((num_candidates, max_batch_N + len_seq, D), dtype=torch.long)  # Initialize with zeros
-#             token_type_ids[:, max_batch_N:] = 1  # Assign token type 1 to the second sequence
-
-#             concatenated_feats = torch.cat([diff_node_feats, repeated_prot], dim=1)
-
-
-
-
-#             # compute the attention mask so that padded product features are not attended to
-#             prot_mask = torch.ones_like(repeated_prot)
-#             attention_mask = torch.cat([attention_mask, prot_mask], dim=1) # num_candidates x (max_batch_N + len_seq)
-#             attention_mask = attention_mask.to(diff_node_feats.device)
-
-#             token_type_ids = torch.zeros(attention_mask)
-
-#             token_type_ids = token_type_ids.to(diff_node_feats.device)
-
-#             forward_args = {
-#                 "input_ids": None,
-#                 # If padding apply attention mask on padding (below)
-#                 "attention_mask": attention_mask,
-#                 # torch.LongTensor of shape (batch_size, sequence_length)
-#                 "token_type_ids": # TODO, indicates which is prot and which is molecule,
-#                 "position_ids": None,
-#                 "head_mask": None,
-#                 # encoder inputs can be (batch, sec_len, hidden_dim) so need to pad to max_seq_len
-#                 "inputs_embeds": # TODO put input here,
-#                 "encoder_hidden_states": None,
-#                 "encoder_attention_mask": None,
-#                 "past_key_values": None,
-#                 "use_cache": None,
-#                 "output_attentions": False,
-#                 "output_hidden_states": True,
-#                 "return_dict": True,
-#             }
-
-#         logits = decoder_outputs.logits if return_dict else decoder_outputs[0]
-
-#         output = {
-#             "logit": logits,
-#         }
-
-
-
-
-
-#             score = self.final_transform(torch.sum(diff_node_feats, dim=-2))
-#             candidate_scores.append(score) # K x 1
+            score = self.final_transform(outputs["pooler_output"])
+            if self.args.add_core_score:
+                core_scores = [sum(c[-1] for c in cand_changes) for cand_changes in product_candidates.candidate_bond_change]
+                score = score + torch.tensor(core_scores, device = score.device).unsqueeze(-1)
+            candidate_scores.append(score) # K x 1
         
-#         output = {
-#             "logit": candidate_scores,
-#             "product_candidates_list": product_candidates_list,
-#             }
-#         return output
+        output = {
+            "logit": candidate_scores,
+            "product_candidates_list": product_candidates_list,
+            }
+        return output
 
-#     @staticmethod
-#     def add_args(parser) -> None:
-#         """Add class specific args
+    @staticmethod
+    def add_args(parser) -> None:
+        """Add class specific args
 
-#         Args:
-#             parser (argparse.ArgumentParser): argument parser
-#         """
-#         super(WLDN2, WLDN2).add_args(parser)
-#         parser.add_argument(
-#             "--esm_version",
-#             type=str,
-#             action=set_nox_type("model"),
-#             default="fair_esm2",
-#             help="Name of esm encoder to use",
-#         )
-#         parser.add_argument(
-#             "--hidden_dim_enzyme",
-#             type=int,
-#             default=480,
-#             help="Hidden dimension of enzyme embedding",
-#         )
+        Args:
+            parser (argparse.ArgumentParser): argument parser
+        """
+        super(WLDNTransformer, WLDNTransformer).add_args(parser)
+        parser.add_argument(
+            "--esm_model_version",
+            type=str,
+            default=None,
+            help="which version of ESM to use",
+        )
+        parser.add_argument(
+            "--freeze_encoder",
+            action="store_true",
+            default=False,
+            help="whether use model as pre-trained encoder and not update weights",
+        )
+        parser.add_argument(
+            "--num_hidden_layers",
+            type=int,
+            default=6,
+            help="number of layers in the transformer",
+        )
+        parser.add_argument(
+            "--max_seq_len",
+            type=int,
+            default=512,
+            help="maximum length allowed for the input sequence",
+        )
+        parser.add_argument(
+            "--hidden_size",
+            type=int,
+            default=256,
+            help="maximum length allowed for the input sequence",
+        )
+        parser.add_argument(
+            "--intermediate_size",
+            type=int,
+            default=512,
+            help="maximum length allowed for the input sequence",
+        )
+        parser.add_argument(
+            "--num_heads",
+            type=int,
+            default=8,
+            help="maximum length allowed for the input sequence",
+        )
+        
 
 
-# ###########################################################################################
+###########################################################################################
 
 # class EnzymeMoleculeBERT(AbstractModel):
 #     def __init__(self, args):
 #         super().__init__()
-        # self.esm_tokenizer = AutoTokenizer.from_pretrained(args.esm_model_version)
-        # self.esm_model = EsmModel.from_pretrained(args.esm_model_version)
-        # if self.freeze_encoder:
-        #     self.esm_model.eval()
+#         self.esm_tokenizer = AutoTokenizer.from_pretrained(args.esm_model_version)
+#         self.esm_model = EsmModel.from_pretrained(args.esm_model_version)
+#         if self.freeze_encoder:
+#             self.esm_model.eval()
 #         econfig = self.get_transformer_config(args)
 #         econfig.is_decoder = False
 #         self.model = BertModel(econfig, add_pooling_layer=False)
