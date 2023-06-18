@@ -10,6 +10,7 @@ from torch_scatter import scatter, scatter_add
 from torch_geometric.utils import to_dense_batch, to_dense_adj
 from collections import defaultdict
 from nox.models.gat import GAT
+from nox.models.chemprop import DMPNNEncoder
 from rdkit import Chem 
 import copy 
 import os 
@@ -234,16 +235,21 @@ class WLDN(AbstractModel):
             self.reactivity_net = get_object(args.reactivity_net_type, "model")(args).requires_grad_(False)
             print("Could not load pretrained model")
         self.reactivity_net.eval()
-        self.wln = GAT(args) # WLN for mol representation
+        self.wln = get_object(args.gnn_type, "model")(args) # WLN for mol representation GAT(args)
         wln_diff_args = copy.deepcopy(args)
-        wln_diff_args.gat_node_dim = args.gat_hidden_dim
-        wln_diff_args.gat_num_layers = 1
-        # wln_diff_args.gat_edge_dim = args.gat_hidden_dim
-        self.wln_diff = GAT(wln_diff_args) # WLN for difference graph
+        wln_diff_args.gat_node_dim  = args.gat_hidden_dim
+        wln_diff_args.chemprop_node_dim = args.chemprop_hidden_dim
+        wln_diff_args.gat_num_layers = wln_diff_args.chemprop_num_layers = 1
+        self.wln_diff = DMPNNEncoder(wln_diff_args) # WLN for difference graph GAT(wln_diff_args)
+        # self.final_transform = nn.Sequential(
+        #     nn.Linear(args.gat_hidden_dim, args.gat_hidden_dim),
+        #     nn.ReLU(),
+        #     nn.Linear(args.gat_hidden_dim, 1)
+        # )
         self.final_transform = nn.Sequential(
-            nn.Linear(args.gat_hidden_dim, args.gat_hidden_dim),
+            nn.Linear(args.chemprop_hidden_dim, args.chemprop_hidden_dim),
             nn.ReLU(),
-            nn.Linear(args.gat_hidden_dim, 1)
+            nn.Linear(args.chemprop_hidden_dim, 1)
         ) # for scoring
         self.use_cache = args.cache_path is not None 
         if self.use_cache:
@@ -388,6 +394,13 @@ class WLDN(AbstractModel):
             action="store_true",
             default=False,
             help="whether to add core score to ranking prediction"
+        )
+        parser.add_argument(
+            "--gnn_type",
+            type=str,
+            action=set_nox_type("model"),
+            default="gatv2",
+            help="Type of gat to use, mainly to init args"
         )
 
 ##########################################################################################
