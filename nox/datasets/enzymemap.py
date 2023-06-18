@@ -1083,10 +1083,12 @@ class EnzymeMapGraph(EnzymeMap):
                         "reactants": reactants,
                         "products": products,
                         "ec": ec,
-                        "rowid": f"{uniprot}_{reaction['rxnid']}",
+                        "rowid": reaction['rxnid'],
+                        "sample_id": f"{uniprot}_{reaction['rxnid']}",
                         "uniprot_id": uniprot,
                         "protein_id": uniprot,
                         "bond_changes": list(bond_changes),
+                        "split": reaction["split"],
                     }
                     # add reaction sample to dataset
                     dataset.append(sample)
@@ -1096,6 +1098,7 @@ class EnzymeMapGraph(EnzymeMap):
                         "products": products,
                         "ec": ec,
                         "rowid": reaction['rxnid'],
+                        "sample_id": reaction['rxnid'],
                         "uniprot_id": "", 
                         "protein_id": "", 
                         "sequence": "X",
@@ -1146,7 +1149,8 @@ class EnzymeMapGraph(EnzymeMap):
 
             bond_changes = [(atom_map2new_index[int(u)], atom_map2new_index[int(v)], btype) for u, v, btype in sample["bond_changes"]]
             reactants.bond_changes = bond_changes
-            sample_id = sample["rowid"]
+            sample_id = sample["sample_id"]
+            rowid = sample["rowid"]
             item = {
                 "reaction": reaction,
                 "reactants": reactants,
@@ -1156,6 +1160,7 @@ class EnzymeMapGraph(EnzymeMap):
                 "organism": sample.get("organism", "none"),
                 "protein_id": uniprot_id,
                 "sample_id": sample_id,
+                "row_id": rowid,
                 "smiles": products,
                 "all_smiles": list(
                     self.reaction_to_products[f"{ec}{'.'.join(sorted(sample['reactants']))}"]
