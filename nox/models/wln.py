@@ -236,10 +236,15 @@ class WLDN(AbstractModel):
         self.reactivity_net.eval()
         self.wln = GAT(args) # WLN for mol representation
         wln_diff_args = copy.deepcopy(args)
-        wln_diff_args.gat_node_dim = args.gat_hidden_dim * 2 if args.append_reactant_to_diff else args.gat_hidden_dim
+        wln_diff_args.gat_node_dim = args.gat_hidden_dim
+        wln_diff_args.gat_num_layers = 1
         # wln_diff_args.gat_edge_dim = args.gat_hidden_dim
         self.wln_diff = GAT(wln_diff_args) # WLN for difference graph
-        self.final_transform = nn.Linear(args.gat_hidden_dim, 1) # for scoring
+        self.final_transform = nn.Sequential(
+            nn.Linear(args.gat_hidden_dim, args.gat_hidden_dim),
+            nn.ReLU(),
+            nn.Linear(args.gat_hidden_dim, 1)
+        ) # for scoring
         self.use_cache = args.cache_path is not None 
         if self.use_cache:
             self.cache = WLDN_Cache(os.path.join(args.cache_path), "pt")
@@ -287,10 +292,6 @@ class WLDN(AbstractModel):
 
             # undensify
             total_nodes = dense_candidate_node_feats.shape[0] * num_nodes
-            if self.args.append_reactant_to_diff:
-                num_cands = len(dense_candidate_node_feats)
-                r_node_feats = dense_reactant_node_feats[idx][:num_nodes].unsqueeze(0).repeat_interleave(num_cands, dim=0)
-                difference_vectors = torch.concat([difference_vectors, r_node_feats], -1)
             difference_vectors = difference_vectors.view(total_nodes, -1)
             product_candidates.x = difference_vectors
             
@@ -388,12 +389,6 @@ class WLDN(AbstractModel):
             default=False,
             help="whether to add core score to ranking prediction"
         )
-        parser.add_argument(
-            "--append_reactant_to_diff",
-            action="store_true",
-            default=False,
-            help="whether to use reactant features with difference graph"
-        )
 
 ##########################################################################################
 
@@ -405,11 +400,15 @@ class WLDN(AbstractModel):
 
 ##########################################################################################
 
-# @register_object("wldn2", "model")
-# class WLDN2(WLDN):
+# from transformers import BertModel
+# @register_object("wldn_transformer", "model")
+# class WLDNTransformer(WLDN):
 #     def __init__(self, args):
 #         super().__init__(self, args) # gives self.wln (GAT)
-#         self.esm_model = get_object(args.esm_version, "model")(args)
+        # self.esm_tokenizer = AutoTokenizer.from_pretrained(args.esm_model_version)
+        # self.esm_model = EsmModel.from_pretrained(args.esm_model_version)
+        # if self.freeze_encoder:
+        #     self.esm_model.eval()
 #         econfig = self.get_transformer_config(args)
 #         econfig.is_decoder = False
 #         self.model = BertModel(econfig, add_pooling_layer=False)
@@ -562,6 +561,10 @@ class WLDN(AbstractModel):
 # class EnzymeMoleculeBERT(AbstractModel):
 #     def __init__(self, args):
 #         super().__init__()
+        # self.esm_tokenizer = AutoTokenizer.from_pretrained(args.esm_model_version)
+        # self.esm_model = EsmModel.from_pretrained(args.esm_model_version)
+        # if self.freeze_encoder:
+        #     self.esm_model.eval()
 #         econfig = self.get_transformer_config(args)
 #         econfig.is_decoder = False
 #         self.model = BertModel(econfig, add_pooling_layer=False)
@@ -574,7 +577,7 @@ class WLDN(AbstractModel):
 #         if args.transformer_model == "bert":
 #             bert_config = BertConfig(
 #                 # max_position_embeddings=args.max_seq_len,
-#                 # vocab_size=self.bert_tokenizer.vocab_size,
+#                 # vocab_size=3,
 #                 output_hidden_states=True,
 #                 output_attentions=True,
 #                 hidden_size=args.hidden_size,
