@@ -1148,6 +1148,7 @@ class EnzymeMapGraph(EnzymeMap):
             products, _ = from_mapped_smiles(".".join(products),  encode_no_edge=True)
 
             bond_changes = [(atom_map2new_index[int(u)], atom_map2new_index[int(v)], btype) for u, v, btype in sample["bond_changes"]]
+            bond_changes = [(min(x,y), max(x,y), t) for x,y,t in bond_changes]
             reactants.bond_changes = bond_changes
             sample_id = sample["sample_id"]
             rowid = sample["rowid"]
