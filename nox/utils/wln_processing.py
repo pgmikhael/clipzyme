@@ -874,7 +874,7 @@ def generate_candidates_from_scores(model_output, batch, args, mode = "train"):
     for i, list_of_candidates in enumerate(candidate_smiles):
         data_batch = []
         for j, candidate in enumerate(list_of_candidates):
-            data, _ = from_mapped_smiles(candidate, encode_no_edge=True, sanitize= mode!="train" )
+            data, _ = from_mapped_smiles(candidate, encode_no_edge=False, sanitize= mode!="train" )
             # fail to convert to rdkit mol
             if (data is None) or (len(data.x) == 0):
                 continue 
