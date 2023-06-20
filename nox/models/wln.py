@@ -237,29 +237,32 @@ class WLDN(AbstractModel):
         self.reactivity_net.eval()
         
         wln_diff_args = copy.deepcopy(args)
-        # GAT
-        self.wln = GAT(args) # WLN for mol representation GAT(args)
-        wln_diff_args = copy.deepcopy(args)
-        wln_diff_args.gat_node_dim  = args.gat_hidden_dim
-        wln_diff_args.gat_num_layers = 1
-        self.wln_diff = GAT(wln_diff_args)
-        self.final_transform = nn.Sequential(
-            nn.Linear(args.gat_hidden_dim + 1, args.gat_hidden_dim),
-            nn.ReLU(),
-            nn.Linear(args.gat_hidden_dim, 1)
+    
+        if args.use_wln_encoder:
+            # WLNEncoder
+            self.wln = WLNEncoder(args) # WLN for mol representation
+            wln_diff_args = copy.deepcopy(args)
+            wln_diff_args.wln_enc_node_dim  = args.wln_enc_hidden_dim
+            wln_diff_args.wln_enc_num_layers = 1
+            self.wln_diff = WLNEncoder(wln_diff_args)
+            self.final_transform = nn.Sequential(
+                nn.Linear(args.wln_enc_hidden_dim, args.wln_enc_hidden_dim),
+                nn.ReLU(),
+                nn.Linear(args.wln_enc_hidden_dim, 1)
+            )
+        
+        else:
+            # GAT
+            self.wln = GAT(args) # WLN for mol representation GAT(args)
+            wln_diff_args = copy.deepcopy(args)
+            wln_diff_args.gat_node_dim  = args.gat_hidden_dim
+            wln_diff_args.gat_num_layers = 1
+            self.wln_diff = GAT(wln_diff_args)
+            self.final_transform = nn.Sequential(
+                nn.Linear(args.gat_hidden_dim + 1, args.gat_hidden_dim),
+                nn.ReLU(),
+                nn.Linear(args.gat_hidden_dim, 1)
         )
-
-        # WLNEncoder
-        # self.wln = WLNEncoder(args) # WLN for mol representation GAT(args)
-        # wln_diff_args = copy.deepcopy(args)
-        # wln_diff_args.wln_enc_node_dim  = args.wln_enc_hidden_dim
-        # wln_diff_args.wln_enc_num_layers = 1
-        # self.wln_diff = WLNEncoder(wln_diff_args)
-        # self.final_transform = nn.Sequential(
-        #     nn.Linear(args.wln_enc_hidden_dim, args.wln_enc_hidden_dim),
-        #     nn.ReLU(),
-        #     nn.Linear(args.wln_enc_hidden_dim, 1)
-        # )
 
         self.use_cache = args.cache_path is not None 
         if self.use_cache:
@@ -321,11 +324,13 @@ class WLDN(AbstractModel):
             graph_feats = torch.sum(diff_node_feats, dim=-2)
             core_scores = [sum(c[-1] for c in cand_changes) for cand_changes in product_candidates.candidate_bond_change]
             core_scores = torch.tensor(core_scores, device = graph_feats.device).unsqueeze(-1)
-            graph_feats = torch.concat([graph_feats,core_scores], dim = -1)
+            score_order = torch.argsort(core_scores, dim = 0)
+            graph_feats = torch.concat([graph_feats,score_order], dim = -1)
             score = self.final_transform(graph_feats)
             if self.args.add_core_score:
-                # core_scores = [sum(c[-1] for c in cand_changes) for cand_changes in product_candidates.candidate_bond_change]
-                score = score + core_scores #torch.tensor(core_scores, device = score.device).unsqueeze(-1)
+                core_scores = [sum(c[-1] for c in cand_changes) for cand_changes in product_candidates.candidate_bond_change]
+                core_scores = torch.tensor(core_scores, device = graph_feats.device).unsqueeze(-1)
+                score = score + torch.log_softmax(core_scores, dim =0) #torch.tensor(core_scores, device = score.device).unsqueeze(-1)
             candidate_scores.append(score) # K x 1
 
         # ! PREDICT SMILES
@@ -415,6 +420,12 @@ class WLDN(AbstractModel):
             help="whether to add core score to ranking prediction"
         )
         #### Wln encoder
+        parser.add_argument(
+            "--use_wln_encoder",
+            action="store_true",
+            default=False,
+            help="use wln implementation.",
+        )
         parser.add_argument(
             "--wln_enc_num_layers",
             type=int,
