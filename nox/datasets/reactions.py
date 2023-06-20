@@ -127,13 +127,16 @@ class ChemRXNGraph(ChemRXN):
     ) -> List[dict]:
 
         dataset = []
-        for rxn_dict in tqdm(self.metadata_json[:1000]):
+        for rxn_dict in tqdm(self.metadata_json):
             reaction = rxn_dict["reaction"]
             reactants, products = rxn_dict["reaction"].split(">>")
             reactants = reactants.split(".")
             products = products.split(".")
 
-            bond_changes = get_bond_changes(reaction)
+            if "bond_changes" not in rxn_dict:
+                bond_changes = get_bond_changes(reaction)
+            else:
+                bond_changes = rxn_dict["bond_changes"]
 
             dataset.append(
                 {
