@@ -1,7 +1,7 @@
 {
   "script": "main",
   "cartesian_hyperparams": {
-    "batch_size": [16],
+    "batch_size": [32],
     "precision": ["bf16"],
     "accumulate_grad_batches": [1],
     "dataset_name": ["enzymemap_reaction_graph"],
@@ -43,14 +43,14 @@
     "test": [false],
     "num_sanity_val_steps": [0],
     "val_check_interval": [1.0],
-    "gpus": [1],
+    "gpus": [8],
     "ignore_warnings": [false],
     "dropout": [0],
     "checkpoint_dir": ["/Mounts/rbg-storage1/snapshots/metabolomics"],
     "logger_name": ["wandb"],
     "workspace": ["peteranditamar"],
     "project_name": ["enzymes"],
-    "logger_tags": ["debug"]
+    "logger_tags": ["wldn"]
   },
-  "available_gpus": ["0"]
+  "available_gpus": ["0,1,2,3,4,5,6,7"]
 }

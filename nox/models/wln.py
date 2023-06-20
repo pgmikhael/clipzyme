@@ -246,7 +246,7 @@ class WLDN(AbstractModel):
             wln_diff_args.wln_enc_num_layers = 1
             self.wln_diff = WLNEncoder(wln_diff_args)
             self.final_transform = nn.Sequential(
-                nn.Linear(args.wln_enc_hidden_dim, args.wln_enc_hidden_dim),
+                nn.Linear(args.wln_enc_hidden_dim + 1, args.wln_enc_hidden_dim),
                 nn.ReLU(),
                 nn.Linear(args.wln_enc_hidden_dim, 1)
             )

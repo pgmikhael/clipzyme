@@ -15,8 +15,7 @@
     "class_bal_key": ["ec"],
     "lightning_name": ["base"],
     "compute_metrics_every_step": [true],
-    "from_checkpoint": [true],
-    "checkpoint_path": ["/Mounts/rbg-storage1/snapshots/metabolomics/43bc76dc72c04adc064c7442897a06cc/43bc76dc72c04adc064c7442897a06ccepoch=48.ckpt"],
+    "from_checkpoint": [false],
     "model_name": ["reaction_center_net"],
     "gat_num_layers": [3],
     "gat_hidden_dim": [240],
@@ -28,7 +27,7 @@
     "gat_pool": ["none"],
     "attn_type": ["pairwise_global_attn"],
     "callback_names": ["lr_monitor checkpointer"],
-    "max_epochs": [150],
+    "max_epochs": [50],
     "lr_decay": [0.1],
     "lr": [1e-3],
     "weight_decay": [0],
@@ -52,7 +51,7 @@
     "logger_name": ["wandb"],
     "workspace": ["peteranditamar"],
     "project_name": ["enzymes"],
-    "logger_tags": ["wln"]
+    "logger_tags": ["wln maskself"]
   },
   "available_gpus": ["0,1,2,3,4,5,6,7"]
 }
