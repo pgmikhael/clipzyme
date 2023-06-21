@@ -2,7 +2,7 @@
   "script": "main",
   "cartesian_hyperparams": {
     "batch_size": [32],
-    "precision": ["bf16"],
+    "precision": ["16"],
     "accumulate_grad_batches": [1],
     "dataset_name": ["chemical_reactions_graph"],
     "assign_splits": [false],
@@ -39,7 +39,7 @@
     "test": [false],
     "num_sanity_val_steps": [0],
     "val_check_interval": [1.0],
-    "gpus": [1],
+    "gpus": [4],
     "ignore_warnings": [false],
     "dropout": [0],
     "checkpoint_dir": ["/Mounts/rbg-storage1/snapshots/metabolomics"],

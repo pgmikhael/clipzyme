@@ -267,7 +267,7 @@ class WLDN(AbstractModel):
         self.use_cache = args.cache_path is not None 
         if self.use_cache:
             self.cache = WLDN_Cache(os.path.join(args.cache_path), "pt")
-        if self.args.predict:
+        if self.args.test:
             assert not self.args.train 
 
     def predict(self, batch, product_candidates_list, candidate_scores):
@@ -277,17 +277,19 @@ class WLDN(AbstractModel):
             # sort according to ranker score
             scores_indices = torch.argsort(scores.view(-1),descending=True)
             valid_candidate_combos = [candidates.candidate_bond_change[i] for i in scores_indices]
-            reactant_mol = Chem.MolFromSmiles(batch["smiles"][idx])
+            reactant_mol = Chem.MolFromSmiles(batch["reactants"].smiles[idx])
             for edits in valid_candidate_combos:
-                smiles = robust_edit_mol(reactant_mol, edits)
+                edits_no_scores = [(x,y,t) for x,y,t,s in edits ]
+                smiles = robust_edit_mol(reactant_mol, edits_no_scores)
                 if len(smiles) != 0:
                     smiles_predictions.append(smiles)
-                try:
-                    Chem.Kekulize(reactant_mol)
-                    smiles = robust_edit_mol(reactant_mol, edits)
-                    smiles_predictions.append(smiles)
-                except Exception as e:
-                    smiles_predictions.append(smiles)
+                else:
+                    try:
+                        Chem.Kekulize(reactant_mol)
+                        smiles = robust_edit_mol(reactant_mol, edits_no_scores)
+                        smiles_predictions.append(smiles)
+                    except Exception as e:
+                        smiles_predictions.append([])
             predictions.append(smiles_predictions)
             
         return {"preds": predictions}
@@ -352,7 +354,7 @@ class WLDN(AbstractModel):
             batch : collated samples from dataloader
             sample_ids: list of sample ids
         """
-        mode = "train" # this is used to get candidates, using robust_edit_mol when in predict later for actual smiles generation
+        mode = "test" if self.args.test else "train" # this is used to get candidates, using robust_edit_mol when in predict later for actual smiles generation
 
         if self.use_cache:
             if not all( self.cache.exists(sid) for sid in sample_ids ):
