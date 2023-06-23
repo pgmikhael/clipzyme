@@ -78,6 +78,7 @@ class ReactivityLoss(Nox):
             mask_block[cur_i:(cur_i + n_i), cur_i:(cur_i + n_j)] = mask_val
             cur_i += n_i
         
+        # mask_block.fill_diagonal_(0)
         mask_block = mask_block.unsqueeze(-1)
 
         # compute loss
