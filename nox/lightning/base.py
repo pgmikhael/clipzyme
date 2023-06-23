@@ -102,6 +102,7 @@ class Base(pl.LightningModule, Nox):
             "cosine_similarity",
             "top",
             "coverage",
+            "found",
         ]
 
     @property
