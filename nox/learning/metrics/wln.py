@@ -99,10 +99,14 @@ class CandidateTopK(Metric, Nox):
         self.add_state("total", default=torch.tensor(0), dist_reduce_fx="sum")
         self.add_state("ground", default=torch.tensor(0), dist_reduce_fx="sum")
         self.add_state("ground_sanitized", default=torch.tensor(0), dist_reduce_fx="sum")
+        self.add_state("nonstereo_ground", default=torch.tensor(0), dist_reduce_fx="sum")
+        self.add_state("nonstereo_ground_sanitized", default=torch.tensor(0), dist_reduce_fx="sum")
 
         for k in args.candidate_topk_values:
             self.add_state('top_{:d}'.format(k), default=torch.tensor(0), dist_reduce_fx="sum")
             self.add_state('top_{:d}_sanitized'.format(k), default=torch.tensor(0), dist_reduce_fx="sum")
+            self.add_state('nonstereo_top_{:d}'.format(k), default=torch.tensor(0), dist_reduce_fx="sum")
+            self.add_state('nonstereo_top_{:d}_sanitized'.format(k), default=torch.tensor(0), dist_reduce_fx="sum")
 
         self.candidate_topk_values = args.candidate_topk_values
 
@@ -144,10 +148,15 @@ class CandidateTopK(Metric, Nox):
                 topk_combos.append(combo)
             
             batch_found_info = examine_topk_candidate_product(args.candidate_topk_values, topk_combos, reactant_mol, real_bond_changes, product_mol)
-
+            nonstereo_batch_found_info = examine_topk_candidate_product(args.candidate_topk_values, topk_combos, reactant_mol, real_bond_changes, product_mol, remove_stereochemistry=True)
+            
             for k, v in batch_found_info.items():
                 current = getattr(self, k)
                 setattr(self, k, current + float(v))      
+            
+            for k, v in nonstereo_batch_found_info.items():
+                current = getattr(self, f"nonstereo_{k}")
+                setattr(self, f"nonstereo_{k}", current + float(v))    
 
         self.total += len(batch_real_bond_changes)
 
@@ -156,11 +165,16 @@ class CandidateTopK(Metric, Nox):
 
         stats_dict["strict_gfound"] = self.ground.float() / self.total
         stats_dict["molvs_gfound"] = self.ground_sanitized.float() / self.total
+        
+        stats_dict["nonstereo_strict_gfound"] = self.nonstereo_ground.float() / self.total
+        stats_dict["nonstereo_molvs_gfound"] = self.nonstereo_ground_sanitized.float() / self.total
 
         for k in self.candidate_topk_values:
             stats_dict[f"strict_top{k}"] = getattr(self, 'top_{:d}'.format(k)).float() / self.total
             stats_dict[f"molvs_top{k}"] = getattr(self, 'top_{:d}_sanitized'.format(k)).float() / self.total
-        
+            stats_dict[f"nonstereo_strict_top{k}"] = getattr(self, 'nonstereo_top_{:d}'.format(k)).float() / self.total
+            stats_dict[f"nonstereo_molvs_top{k}"] = getattr(self, 'nonstereo_top_{:d}_sanitized'.format(k)).float() / self.total
+
         return stats_dict
     
     @staticmethod
