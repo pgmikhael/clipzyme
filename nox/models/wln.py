@@ -456,6 +456,7 @@ class WLDNTransformer(WLDN):
             encoder_input_ids[k] = v.to(self.token_type_ids.device)
 
         if self.freeze_encoder:
+            self.esm_model.requires_grad_(False)
             with torch.no_grad():
                 encoder_outputs = self.esm_model(
                     input_ids=encoder_input_ids["input_ids"],
