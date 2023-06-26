@@ -462,15 +462,7 @@ class WLDN(AbstractModel):
 
 ##########################################################################################
 
-##########################################################################################
-
-##########################################################################################
-
-##########################################################################################
-
-##########################################################################################
-
-from transformers import BertConfig, BertModel, AutoTokenizer, EsmModel
+from transformers import BertConfig, BertModel, AutoTokenizer, EsmModel, BertTokenizer
 @register_object("wldn_transformer", "model")
 class WLDNTransformer(WLDN):
     def __init__(self, args):
@@ -638,212 +630,185 @@ class WLDNTransformer(WLDN):
         )
         
 
+@register_object("rxn_string_ranker", "model")
+class RXNStringRanker(WLDNTransformer):
+    def __init__(self, args):
+        super().__init__(args) # gives self.wln (GAT)
+        # from parent class
+        # self.esm_tokenizer = AutoTokenizer.from_pretrained(args.esm_model_version)
+        # self.esm_model = EsmModel.from_pretrained(args.esm_model_version)
+        # self.freeze_encoder = args.freeze_encoder
+        # if self.freeze_encoder:
+        #     self.esm_model.requires_grad_(False)
+        #     self.esm_model.eval()
+        # econfig = self.get_transformer_config(args)
+        # econfig.is_decoder = False
+        # self.model = BertModel(econfig, add_pooling_layer=True)
+        # self.config = self.model.config
+        # self.args = args
+        # self.register_buffer("token_type_ids", torch.zeros(1, dtype=torch.long))
 
-###########################################################################################
+        # self.final_transform = nn.Sequential(
+        #     nn.Linear(args.hidden_size, args.hidden_size),
+        #     nn.ReLU(),
+        #     nn.Linear(args.hidden_size, 1)
+        # )  # need to overwrite because output is different size
+        self.tokenizer = self.init_tokenizer(args)
+        reactant_config = self.get_transformer_config(args)
+        reactant_config.is_decoder = False
+        reactant_config.vocab_size=self.tokenizer.vocab_size
+        reactant_config.type_vocab_size = None
+        self.reactant_encoder = BertModel(reactant_config, add_pooling_layer=True)
 
-# class EnzymeMoleculeBERT(AbstractModel):
-#     def __init__(self, args):
-#         super().__init__()
-#         self.esm_tokenizer = AutoTokenizer.from_pretrained(args.esm_model_version)
-#         self.esm_model = EsmModel.from_pretrained(args.esm_model_version)
-#         if self.freeze_encoder:
-#             self.esm_model.eval()
-#         econfig = self.get_transformer_config(args)
-#         econfig.is_decoder = False
-#         self.model = BertModel(econfig, add_pooling_layer=False)
-#         self.config = self.model.config
-#         self.args = args
-#         self.register_buffer("devicevar", torch.zeros(1, dtype=torch.int8))
-#         self.generation_config = self.make_generation_config(args)
+    @staticmethod
+    def init_tokenizer(args):
+        return BertTokenizer(
+            vocab_file=args.vocab_path,
+            do_lower_case=False,
+            do_basic_tokenize=False,
+            # sep_token=".",
+            padding=True,
+            truncation=True,
+            model_max_length=args.max_seq_len,
+            cls_token="[CLS]",
+            eos_token="[EOS]",
+        )
 
-#     def get_transformer_config(self, args):
-#         if args.transformer_model == "bert":
-#             bert_config = BertConfig(
-#                 # max_position_embeddings=args.max_seq_len,
-#                 # vocab_size=3,
-#                 output_hidden_states=True,
-#                 output_attentions=True,
-#                 hidden_size=args.hidden_size,
-#                 intermediate_size=args.intermediate_size,
-#                 embedding_size=args.embedding_size,
-#                 num_attention_heads=args.num_heads,
-#                 num_hidden_layers=args.num_hidden_layers,
-#             )
-#         else:
-#             raise NotImplementedError
+    def get_transformer_config(self, args):
+        bert_config = BertConfig(
+                # vocab_size=self.tokenizer.vocab_size,
+                max_position_embeddings=args.max_seq_len,
+                type_vocab_size = 2,
+                output_hidden_states=True,
+                output_attentions=True,
+                hidden_size=args.hidden_size,
+                intermediate_size=args.intermediate_size,
+                num_attention_heads=args.num_heads,
+                num_hidden_layers=args.num_hidden_layers,
+            )
+        return bert_config
 
-#         return bert_config
+    @staticmethod
+    def tokenize(list_of_text: List[str], tokenizer, args):
+        # standardize reaction
+        x = [standardize_reaction(r + ">>")[:-2] for r in list_of_text]
+        x = [tokenize_smiles(r, return_as_str=True) for r in x]
+        if args.use_cls_token:
+            # add [CLS] and [EOS] tokens
+            x = [f"{tokenizer.cls_token} {r} {tokenizer.eos_token}" for r in x]
 
-#     def forward(self, batch) -> Dict:
+        # tokenize str characters into tensor of indices with corresponding masks
+        tokenized_inputs = tokenizer(
+            x,
+            add_special_tokens=False,
+            padding=True,
+            truncation=True,
+            max_length=tokenizer.model_max_length,
+            return_tensors="pt",
+        )
 
-#         forward_args = {
-#             "input_ids": None,
-#             # If padding apply attention mask on padding (below)
-#             "attention_mask": # TODO,
-#             # torch.LongTensor of shape (batch_size, sequence_length)
-#             "token_type_ids": # TODO, indicates which is prot and which is molecule,
-#             "position_ids": None,
-#             "head_mask": None,
-#             # encoder inputs can be (batch, sec_len, hidden_dim) so need to pad to max_seq_len
-#             "inputs_embeds": # TODO put input here,
-#             "encoder_hidden_states": None,
-#             "encoder_attention_mask": None,
-#             "past_key_values": None,
-#             "use_cache": None,
-#             "output_attentions": False,
-#             "output_hidden_states": True,
-#             "return_dict": True,
-#         }
+        # get mask for special tokens that are not masked in MLM (return_special_tokens_mask=True doesn't work for additional special tokens)
+        special_tokens_mask = [
+            tokenizer.get_special_tokens_mask(
+                toks, None, already_has_special_tokens=True
+            )
+            for toks in tokenized_inputs["input_ids"]
+        ]
 
-#         logits = decoder_outputs.logits if return_dict else decoder_outputs[0]
+        tokenized_inputs["special_tokens_mask"] = torch.tensor(
+            special_tokens_mask, dtype=torch.int64
+        )
 
-#         output = {
-#             "logit": logits,
-#         }
+        return tokenized_inputs
 
+    def encode_sequence(self, batch):
+        encoder_input_ids = self.esm_tokenizer(
+            batch["sequence"],
+            padding="longest",
+            return_tensors="pt",
+            return_special_tokens_mask=True,
+        )
+        for k, v in encoder_input_ids.items():
+            encoder_input_ids[k] = v.to(self.token_type_ids.device)
+
+        if self.freeze_encoder:
+            self.esm_model.requires_grad_(False)
+            with torch.no_grad():
+                encoder_outputs = self.esm_model(
+                    input_ids=encoder_input_ids["input_ids"],
+                    attention_mask=encoder_input_ids["attention_mask"],
+                )
+        else:
+            encoder_outputs = self.esm_model(
+                input_ids=encoder_input_ids["input_ids"],
+                attention_mask=encoder_input_ids["attention_mask"],
+            )
+        encoder_hidden_states = encoder_outputs["pooler_output"].unsqueeze(1)
+        mask = encoder_input_ids["attention_mask"][:,0:1]
+        return encoder_hidden_states, mask
+
+    def forward(self, batch):
+        product_candidates_list = self.get_product_candidate_list(batch, batch["row_id"])
+        product_candidate_smiles = [[d.smiles for d in dbatch.to_data_list()] for dbatch in product_candidates_list] # TODO: can maybe do this quicker
+        prot_feats, prot_attn = self.encode_sequence(batch) # 1 x len_seq x hidden_dim
+        for rxn_idx3, rxn_product_candidate_smiles in enumerate(product_candidate_smiles):
+            bert_input_ids = self.tokenize(rxn_product_candidate_smiles, self.tokenizer, self.args)
+            # move to device
+            for k, v in bert_input_ids.items():
+                bert_input_ids[k] = v.to(self.devicevar.device)
+
+            encoder_outputs = self.reactant_encoder(
+                input_ids=bert_input_ids["input_ids"],
+                attention_mask=bert_input_ids["attention_mask"],
+            )
+
+            rxn_reactant_embeddings = encoder_outputs[0] # TODO: need to get mask also
+
+            max_rxn_len = rxn_reactant_embeddings.shape[1] # TODO: check this
+
+            num_candidates = len(rxn_product_candidate_smiles)
+            # repeat protein features and mask to shape
+            repeated_prot = prot_feats[rxn_idx3].unsqueeze(0).repeat(num_candidates, 1, 1)
+            prot_mask = prot_attn[rxn_idx3].unsqueeze(0).repeat(num_candidates, 1)
+            
+            # concatenate the prot features with the product features
+            concatenated_feats = torch.cat([rxn_reactant_embeddings, repeated_prot], dim=1) # num_candidates x (max_batch_N + len_seq) x D
+
+            # create token_type_ids tensor
+            token_type_ids = self.token_type_ids.repeat(*concatenated_feats.shape[:2])  # Initialize with zeros
+            token_type_ids[:, max_rxn_len:] = 1  # Assign token type 1 to the second sequence
+
+            # compute the attention mask so that padded product features are not attended to
+            attention_mask = torch.cat([candidate_mask, prot_mask], dim=1) # num_candidates x (max_batch_N + len_seq)
+
+            outputs = self.model(
+                inputs_embeds= concatenated_feats,
+                attention_mask= attention_mask,
+                token_type_ids= token_type_ids
+            )
+
+            score = self.final_transform(outputs["pooler_output"])
+            candidate_scores.append(score)
         
-#         return output
+        output = {
+            "logit": candidate_scores,
+            "product_candidates_list": product_candidates_list,
+            }
+        return output
 
-#     @staticmethod
-#     def add_args(parser) -> None:
-#         parser.add_argument(
-#             "--esm_model_version",
-#             type=str,
-#             default="facebook/esm2_t33_650M_UR50D",
-#             help="which version of ESM to use",
-#         )
-#         parser.add_argument(
-#             "--transformer_model",
-#             type=str,
-#             default="bert",
-#             help="name of backbone model",
-#         )
-#         parser.add_argument(
-#             "--vocab_path",
-#             type=str,
-#             default=None,
-#             required=True,
-#             help="path to vocab text file required for tokenizer",
-#         )
-#         parser.add_argument(
-#             "--merges_file_path",
-#             type=str,
-#             default=None,
-#             help="path to merges file required for RoBerta tokenizer",
-#         )
-#         parser.add_argument(
-#             "--freeze_encoder",
-#             action="store_true",
-#             default=False,
-#             help="whether use model as pre-trained encoder and not update weights",
-#         )
-#         parser.add_argument(
-#             "--num_hidden_layers",
-#             type=int,
-#             default=6,
-#             help="number of layers in the transformer",
-#         )
-#         parser.add_argument(
-#             "--max_seq_len",
-#             type=int,
-#             default=512,
-#             help="maximum length allowed for the input sequence",
-#         )
-#         parser.add_argument(
-#             "--hidden_size",
-#             type=int,
-#             default=256,
-#             help="maximum length allowed for the input sequence",
-#         )
-#         parser.add_argument(
-#             "--intermediate_size",
-#             type=int,
-#             default=512,
-#             help="maximum length allowed for the input sequence",
-#         )
-#         parser.add_argument(
-#             "--embedding_size",
-#             type=int,
-#             default=128,
-#             help="maximum length allowed for the input sequence",
-#         )
-#         parser.add_argument(
-#             "--num_heads",
-#             type=int,
-#             default=8,
-#             help="maximum length allowed for the input sequence",
-#         )
-#         parser.add_argument(
-#             "--do_masked_language_model",
-#             "-mlm",
-#             action="store_true",
-#             default=False,
-#             help="whether to perform masked language model task",
-#         )
-#         parser.add_argument(
-#             "--mlm_probability",
-#             type=float,
-#             default=0.1,
-#             help="probability that a token chosen to be masked. IF chosen, 80% will be masked, 10% random, 10% original",
-#         )
-#         parser.add_argument(
-#             "--use_cls_token",
-#             action="store_true",
-#             default=False,
-#             help="use cls token as hidden representation of sequence",
-#         )
-#         parser.add_argument(
-#             "--hidden_aggregate_func",
-#             type=str,
-#             default="mean",
-#             choices=["mean", "sum", "cls"],
-#             help="use cls token as hidden representation of sequence",
-#         )
-#         parser.add_argument(
-#             "--longformer_model_path",
-#             type=str,
-#             default=None,
-#             help="path to saved model if loading from pretrained",
-#         )
-#         parser.add_argument(
-#             "--generation_max_new_tokens",
-#             type=int,
-#             default=200,
-#             help="The maximum numbers of tokens to generate, ignoring the number of tokens in the prompt.",
-#         )
-#         parser.add_argument(
-#             "--generation_num_beams",
-#             type=int,
-#             default=1,
-#             help="Number of beams for beam search. 1 means no beam search.",
-#         )
-#         parser.add_argument(
-#             "--generation_num_return_sequences",
-#             type=int,
-#             default=1,
-#             help="The number of independently computed returned sequences for each element in the batch. <= num_beams",
-#         )
-#         parser.add_argument(
-#             "--generation_num_beam_groups",
-#             type=int,
-#             default=1,
-#             help="Number of groups to divide `num_beams` into in order to ensure diversity among different groups of beams. [this paper](https://arxiv.org/pdf/1610.02424.pdf) for more details",
-#         )
-#         parser.add_argument(
-#             "--generation_do_sample",
-#             action="store_true",
-#             default=False,
-#             help="Whether or not to use sampling ; use greedy decoding otherwise.",
-#         )
-#         parser.add_argument(
-#             "--generation_early_stopping",
-#             action="store_true",
-#             default=False,
-#             help="Whether to stop the beam search when at least `num_beams` sentences are finished per batch or not",
-#         )
-#         parser.add_argument(
-#             "--generation_renormalize_logits",
-#             action="store_true",
-#             default=False,
-#             help=" Whether to renormalize the logits after applying all the logits processors or warpers (including the custom ones). It's highly recommended to set this flag to `True` as the search algorithms suppose the score logits are normalized but some logit processors or warpers break the normalization.",
-#         )
+    @staticmethod
+    def add_args(parser) -> None:
+        """Add class specific args
+
+        Args:
+            parser (argparse.ArgumentParser): argument parser
+        """
+        super(RXNStringRanker, RXNStringRanker).add_args(parser)
+        # TODO: update vocab path default
+        parser.add_argument(
+            "--vocab_path",
+            type=str,
+            default="/Mounts/rbg-storage1/datasets/Enzymes/ECReact/uspto_ecreact_selfies_vocab.txt",
+            help="vocab for tokenizer",
+        )
+        
