@@ -18,7 +18,7 @@ from transformers import (
     AutoModelForCausalLM,
 )
 from transformers.modeling_outputs import BaseModelOutput
-
+import selfies as sf
 
 @register_object("reaction_encoder", "model")
 class ReactionEncoder(AbstractModel):
@@ -35,6 +35,8 @@ class ReactionEncoder(AbstractModel):
         self.register_buffer("devicevar", torch.zeros(1, dtype=torch.int8))
 
         self.generation_config = self.make_generation_config(args)
+
+        self.use_selfies = getattr(args, 'use_selfies', False) 
 
     def make_generation_config(self, args):
         generate_args = inspect.signature(self.model.generate).parameters
@@ -92,8 +94,13 @@ class ReactionEncoder(AbstractModel):
     @staticmethod
     def tokenize(list_of_text: List[str], tokenizer, args):
         # standardize reaction
-        x = [standardize_reaction(r + ">>")[:-2] for r in list_of_text]
-        x = [tokenize_smiles(r, return_as_str=True) for r in x]
+        
+        if getattr(args, "selfies", False):
+            x = [ " ".join(sf.split_selfie(sf.encoder(r))) for r in x] 
+        else:
+            x = [standardize_reaction(r + ">>")[:-2] for r in list_of_text]
+            x = [tokenize_smiles(r, return_as_str=True) for r in x]
+
         if args.use_cls_token:
             # add [CLS] and [EOS] tokens
             x = [f"{tokenizer.cls_token} {r} {tokenizer.eos_token}" for r in x]
@@ -127,7 +134,7 @@ class ReactionEncoder(AbstractModel):
         if self.args.predict:
             predictions = self.generate(batch)
             return {
-                "preds": predictions,
+                "preds": predictions["batch_samples"],
                 "golds": batch["products"],
             }
 
@@ -228,16 +235,24 @@ class ReactionEncoder(AbstractModel):
             return_dict_in_generate=True,
             **self.generation_config,
         )
-        generated_samples = self.tokenizer.batch_decode(
+        generated_raw_samples = self.tokenizer.batch_decode(
             generated_ids.sequences, skip_special_tokens=True
         )
-        generated_samples = [s.replace(" ", "") for s in generated_samples]
+        generated_samples = [s.replace(" ", "") for s in generated_raw_samples]
         beam_search_n = self.generation_config["num_return_sequences"]
         batch_samples = [
             generated_samples[i : i + beam_search_n]
             for i in range(0, len(generated_samples), beam_search_n)
         ]
-        return batch_samples
+        batch_raw_samples = [
+            generated_raw_samples[i : i + beam_search_n]
+            for i in range(0, len(generated_samples), beam_search_n)
+        ]
+        batch_ids = [
+            generated_ids.sequences[i : i + beam_search_n]
+            for i in range(0, len(generated_samples), beam_search_n)
+        ]
+        return {"batch_samples": batch_samples, "batch_raw_samples": batch_raw_samples, "batch_ids": batch_ids}
 
     @staticmethod
     def add_args(parser) -> None:
@@ -376,6 +391,12 @@ class ReactionEncoder(AbstractModel):
             default=False,
             help=" Whether to renormalize the logits after applying all the logits processors or warpers (including the custom ones). It's highly recommended to set this flag to `True` as the search algorithms suppose the score logits are normalized but some logit processors or warpers break the normalization.",
         )
+        parser.add_argument(
+            "--use_selfies",
+            action="store_true",
+            default=False,
+            help="use selfies instead of SMILES for reaction",
+        )
 
 
 @register_object("enzymatic_reaction_encoder", "model")
@@ -506,7 +527,7 @@ class EnzymaticReactionEncoder(ReactionEncoder):
         if self.args.predict:
             predictions = self.generate(batch)
             return {
-                "preds": predictions,
+                "preds": predictions["batch_samples"],
                 "golds": batch["products"],
             }
 
@@ -587,19 +608,7 @@ class EnzymaticReactionEncoder(ReactionEncoder):
             else s
             for s in decoded_preds
         ]  # stop at first eos
-        output["pred_smiles"] = decoded_preds
-
-        # pred_mask = (preds == self.tokenizer.eos_token_id).int().detach()
-        # pred_mask_has_eos = pred_mask.sum(-1)
-        # indices = torch.argmax(pred_mask, dim=1)
-        # for r, i in enumerate(indices):
-        #     if pred_mask_has_eos[r] > 0:
-        #         pred_mask[r,i:] = self.tokenizer.eos_token_id # set everything after first eos to eos
-        # output["preds_mask"] = pred_mask
-
-        # metric_labels = labels.clone()  # .view(-1)
-        # metric_labels[metric_labels==-100] = self.tokenizer.eos_token_id
-        # output["y"] = metric_labels
+        output["pred_smiles"] = [s.split(".") for s in decoded_preds]
 
         # create predictions and labels to penalize errors due to early/late truncation but nothing after
         # get mask of 1s until first eos token for predictions
@@ -668,16 +677,24 @@ class EnzymaticReactionEncoder(ReactionEncoder):
             return_dict_in_generate=True,
             **self.generation_config,
         )
-        generated_samples = self.tokenizer.batch_decode(
+        generated_raw_samples = self.tokenizer.batch_decode(
             generated_ids.sequences, skip_special_tokens=True
         )
-        generated_samples = [s.replace(" ", "") for s in generated_samples]
+        generated_samples = [s.replace(" ", "") for s in generated_raw_samples]
         beam_search_n = self.generation_config["num_return_sequences"]
         batch_samples = [
             generated_samples[i : i + beam_search_n]
             for i in range(0, len(generated_samples), beam_search_n)
         ]
-        return batch_samples
+        batch_raw_samples = [
+            generated_raw_samples[i : i + beam_search_n]
+            for i in range(0, len(generated_samples), beam_search_n)
+        ]
+        batch_ids = [
+            generated_ids.sequences[i : i + beam_search_n]
+            for i in range(0, len(generated_samples), beam_search_n)
+        ]
+        return {"batch_samples": batch_samples, "batch_raw_samples": batch_raw_samples, "batch_ids": batch_ids}
 
     @staticmethod
     def add_args(parser) -> None:
@@ -1099,3 +1116,345 @@ class ESMDecoder(AbstractModel):
             default=False,
             help=" Whether to renormalize the logits after applying all the logits processors or warpers (including the custom ones). It's highly recommended to set this flag to `True` as the search algorithms suppose the score logits are normalized but some logit processors or warpers break the normalization.",
         )
+
+@register_object("corrector", "model")
+class Corrector(EnzymaticReactionEncoder):
+    def __init__(self, args):
+        super().__init__(args)
+        state_dict = torch.load(args.generator_model_path)
+        self.generator = EnzymaticReactionEncoder(state_dict['hyper_parameters']['args'])
+        generator_state_dict = {k[len("model."):]: v for k,v in state_dict["state_dict"].items() }
+        self.generator.load_state_dict(generator_state_dict)
+        self.generator.eval()
+        self.generator.generation_config = self.generator.make_generation_config(args)
+
+        if args.corrector_model_path is not None:
+            corrector_state_dict = torch.load(args.corrector_model_path)
+            corrector_state_dict = {k[len("model."):]: v for k,v in corrector_state_dict["state_dict"].items() }
+            self.model.load_state_dict({k[len("model."):]: v for k,v in corrector_state_dict.items() if k.startswith("model")})
+            self.protein_model.load_state_dict({k[len("protein_model."):]: v for k,v in corrector_state_dict.items() if k.startswith("protein_model")})
+
+        self.corrector_error_alpha = getattr(args, "corrector_error_alpha", 0.5)
+
+    def make_generation_config(self, args):
+        generate_args = inspect.signature(self.model.generate).parameters
+        args_dict = vars(args)
+        gen_config = {}
+
+        for k in generate_args:
+            if f"corrector_generation_{k}" in args_dict:
+                gen_config[k] = args_dict[f"corrector_generation_{k}"]
+
+        return gen_config
+
+    @staticmethod
+    def add_args(parser) -> None:
+        super(Corrector, Corrector).add_args(parser)
+        parser.add_argument(
+            "--generator_model_path",
+            type=str,
+            default=None,
+            help="pretrained model to use",
+        )
+        parser.add_argument(
+            "--corrector_model_path",
+            type=str,
+            default=None,
+            help="pretrained model to use",
+        )
+        parser.add_argument(
+            "--corrector_error_alpha",
+            type=float,
+            default=0.5,
+            help="how much to weigh mistakes over correct generator predictions",
+        )
+        parser.add_argument(
+            "--corrector_generation_max_new_tokens",
+            type=int,
+            default=200,
+            help="The maximum numbers of tokens to generate, ignoring the number of tokens in the prompt.",
+        )
+        parser.add_argument(
+            "--corrector_generation_num_beams",
+            type=int,
+            default=1,
+            help="Number of beams for beam search. 1 means no beam search.",
+        )
+        parser.add_argument(
+            "--corrector_generation_num_return_sequences",
+            type=int,
+            default=1,
+            help="The number of independently computed returned sequences for each element in the batch. <= num_beams",
+        )
+        parser.add_argument(
+            "--corrector_generation_num_beam_groups",
+            type=int,
+            default=1,
+            help="Number of groups to divide `num_beams` into in order to ensure diversity among different groups of beams. [this paper](https://arxiv.org/pdf/1610.02424.pdf) for more details",
+        )
+        parser.add_argument(
+            "--corrector_generation_do_sample",
+            action="store_true",
+            default=False,
+            help="Whether or not to use sampling ; use greedy decoding otherwise.",
+        )
+        parser.add_argument(
+            "--corrector_generation_early_stopping",
+            action="store_true",
+            default=False,
+            help="Whether to stop the beam search when at least `num_beams` sentences are finished per batch or not",
+        )
+        parser.add_argument(
+            "--corrector_generation_renormalize_logits",
+            action="store_true",
+            default=False,
+            help=" Whether to renormalize the logits after applying all the logits processors or warpers (including the custom ones). It's highly recommended to set this flag to `True` as the search algorithms suppose the score logits are normalized but some logit processors or warpers break the normalization.",
+        )
+
+
+
+    @staticmethod
+    def tokenize(list_of_inputs: List[str], tokenizer, args, list_of_predictions = None):
+        # standardize reaction
+        
+        if getattr(args, "selfies", False):
+            x = [ " ".join(sf.split_selfie(sf.encoder(r))) for r in x] 
+        else:
+            x = [standardize_reaction(r + ">>")[:-2] for r in list_of_inputs]
+            x = [tokenize_smiles(r, return_as_str=True) for r in x]
+
+        if args.use_cls_token:
+            # add [CLS] and [EOS] tokens
+            x = [f"{tokenizer.cls_token} {r} {tokenizer.eos_token}" for r in x]
+
+        if list_of_predictions is not None:
+            list_of_predictions = [pred for sample_preds in list_of_predictions for pred in sample_preds] # flatten out
+            x = [ "{} {} {}".format(given_input, tokenizer.sep_token, pred) for given_input, pred in zip(x, list_of_predictions)]
+
+
+        # tokenize str characters into tensor of indices with corresponding masks
+        tokenized_inputs = tokenizer(
+            x,
+            add_special_tokens=False,
+            padding=True,
+            truncation=True,
+            max_length=tokenizer.model_max_length,
+            return_tensors="pt",
+        )
+
+        # get mask for special tokens that are not masked in MLM (return_special_tokens_mask=True doesn't work for additional special tokens)
+        special_tokens_mask = [
+            tokenizer.get_special_tokens_mask(
+                toks, None, already_has_special_tokens=True
+            )
+            for toks in tokenized_inputs["input_ids"]
+        ]
+
+        tokenized_inputs["special_tokens_mask"] = torch.tensor(
+            special_tokens_mask, dtype=torch.int64
+        )
+
+        return tokenized_inputs
+
+    def forward(self, batch):
+        if self.args.predict:
+            predictions = self.generate(batch)
+            return {
+                "preds": predictions,
+                "golds": batch["products"],
+            }
+
+        return_dict = self.config.use_return_dict
+
+        # generate product
+        with torch.no_grad():
+            # list of product(s)
+            generation_dict = self.generator.generate(batch)
+        
+        generations = generation_dict["batch_raw_samples"]
+
+        # add product to input
+        reactants, products = [], []
+        for idx, sample in enumerate(generations):
+            reactants += [batch["reactants"][idx] for s in sample]
+            products += [batch["products"][idx] for s in sample]
+
+        # -------------------------------
+        # same language modeling as above
+        # -------------------------------
+
+        # get molecule tokens
+        encoder_input_ids = self.tokenize(reactants, self.tokenizer, self.args, generations)
+        decoder_input_ids = self.tokenize(products, self.tokenizer, self.args)
+
+        # move to device
+        for k, v in encoder_input_ids.items():
+            encoder_input_ids[k] = v.to(self.devicevar.device)
+
+        for k, v in decoder_input_ids.items():
+            decoder_input_ids[k] = v.to(self.devicevar.device)
+
+        # encode and get attention mask with proteins
+        encoder_outputs, encoder_attention_mask = self.encode_reactants_and_enzyme(
+            batch, encoder_input_ids
+        )
+
+        encoder_hidden_states = encoder_outputs[0]
+
+        # optionally project encoder_hidden_states
+        if (
+            self.model.encoder.config.hidden_size
+            != self.model.decoder.config.hidden_size
+            and self.model.decoder.config.cross_attention_hidden_size is None
+        ):
+            encoder_hidden_states = self.model.enc_to_dec_proj(encoder_hidden_states)
+
+        # Decode
+        decoder_outputs = self.model.decoder(
+            input_ids=decoder_input_ids["input_ids"],
+            attention_mask=decoder_input_ids["attention_mask"],
+            encoder_hidden_states=encoder_hidden_states,
+            encoder_attention_mask=encoder_attention_mask,
+            return_dict=return_dict,
+        )
+
+        labels = decoder_input_ids["input_ids"].clone()
+        labels[
+            ~decoder_input_ids["attention_mask"].bool()
+        ] = -100  # remove pad tokens from loss
+        logits = decoder_outputs.logits if return_dict else decoder_outputs[0]
+        # transformers/models/bert/modeling_bert.py:1233
+        # we are doing next-token prediction; shift prediction scores and input ids by one
+        shifted_logits = logits[:, :-1, :].contiguous()
+        labels = labels[:, 1:].contiguous()
+        
+        # weigh samples in loss according to generator accuracy
+        gen_batch_ids = torch.cat(generation_dict['batch_ids'],dim=0) # generator predictions
+        decoder_shape = min(gen_batch_ids.shape[-1], decoder_input_ids["input_ids"].shape[-1])
+        weights = torch.eq(gen_batch_ids[:, :decoder_shape], decoder_input_ids["input_ids"][:,:decoder_shape]).all(1).int() # samples equal based on decoded ids
+        weights = (1-weights)*self.corrector_error_alpha + weights*(1-self.corrector_error_alpha) # weight according to if correct (higher alpha -> weigh mistakes more)
+        weights = weights.repeat_interleave(labels.shape[-1]) # number of tokens in loss function
+
+        loss = torch.nn.functional.cross_entropy(
+            shifted_logits.reshape(-1, self.model.decoder.config.vocab_size),
+            labels.view(-1), 
+            reduction="none") * weights
+            
+        loss = loss[torch.logical_and(labels.view(-1)!=-100, weights!=0)].mean()
+
+        # loss = torch.nn.functional.cross_entropy(
+        #     shifted_logits.reshape(-1, self.model.decoder.config.vocab_size),
+        #     labels.view(-1),
+        # )
+
+        metric_logits = shifted_logits  # .reshape(-1, self.model.decoder.config.vocab_size)[metric_labels!= -100]
+
+        output = {
+            "loss": loss,
+            "logit": metric_logits,
+            "cross_attentions": decoder_outputs["cross_attentions"],
+        }
+
+        preds = torch.argmax(metric_logits.detach(), dim=-1)
+        decoded_preds = self.tokenizer.batch_decode(preds, skip_special_tokens=False)
+        decoded_preds = [s.replace(" ", "") for s in decoded_preds]
+        decoded_preds = [
+            s[: s.index(self.tokenizer.eos_token)]
+            if s.find(self.tokenizer.eos_token) > -1
+            else s
+            for s in decoded_preds
+        ]  # stop at first eos
+        output["pred_smiles"] = [s.split(".") for s in decoded_preds]
+
+        # create predictions and labels to penalize errors due to early/late truncation but nothing after
+        # get mask of 1s until first eos token for predictions
+        pred_mask = (preds == self.tokenizer.eos_token_id).int().detach()
+        pred_mask_has_eos = pred_mask.sum(-1)
+        indices = torch.argmax(pred_mask, dim=1)
+        pred_mask = torch.zeros_like(pred_mask)
+        for r, i in enumerate(indices):
+            if pred_mask_has_eos[r] > 0:
+                pred_mask[r, : (i + 1)] = 1
+
+        metric_labels = labels.clone()
+
+        # get mask of 1s until first eos token that occurs last between prediction and label
+        mask = ((metric_labels != -100) + pred_mask) > 0
+
+        # prediction too long: make missing labels for extra (wrong) predictions different from predictions to count as wrong
+        metric_labels[torch.logical_and(metric_labels == -100, mask)] = (
+            preds[torch.logical_and(metric_labels == -100, mask)] + 1
+        ) % self.args.num_classes
+        # prediction too short: make missing predictions for labels different from labels to count as wrong
+        preds[torch.logical_and(pred_mask == 0, mask)] = (
+            metric_labels[torch.logical_and(pred_mask == 0, mask)] + 1
+        ) % self.args.num_classes
+
+        output["y"] = metric_labels
+        output["preds"] = preds
+
+        preds_mask = mask.int()
+        preds_mask[preds_mask == 0] = -100
+        output["preds_mask"] = preds_mask
+
+        return output
+
+    def generate(self, batch):
+        """Applies auto-regressive generation for reaction prediction
+        Usage: https://huggingface.co/docs/transformers/main/en/main_classes/text_generation#transformers.GenerationMixin
+
+        Args:
+            batch (dict): dictionary with input reactants
+            decoder_start_token_id = 2,
+            bos_token_id = 2,
+            max_new_tokens=100
+        """
+        # generate product
+        with torch.no_grad():
+            # list of product(s)
+            generation_dict = self.generator.generate(batch)
+        
+        generations = generation_dict["batch_raw_samples"]
+
+        # add product to input
+        reactants, sequences = [], []
+        for idx, sample in enumerate(generations):
+            reactants += [batch["reactants"][idx] for s in sample]
+            sequences += [batch["sequence"][idx] for s in sample]
+
+        bos_id = self.tokenizer.cls_token_id
+        eos_id = self.tokenizer.eos_token_id
+        pad_id = self.tokenizer.pad_token_id
+
+        encoder_input_ids = self.tokenize(reactants, self.tokenizer, self.args, generations)
+        for k, v in encoder_input_ids.items():
+            encoder_input_ids[k] = v.to(self.devicevar.device)
+
+        encoder_outputs, encoder_attention_mask = self.encode_reactants_and_enzyme(
+            {"sequence": sequences}, encoder_input_ids
+        )
+
+        generated_ids = self.model.generate(
+            encoder_outputs=encoder_outputs,
+            attention_mask=encoder_attention_mask,
+            # input_ids=encoder_input_ids["input_ids"],
+            decoder_start_token_id=bos_id,
+            bos_token_id=bos_id,
+            eos_token_id=eos_id,
+            pad_token_id=pad_id,
+            output_scores=True,
+            return_dict_in_generate=True,
+            **self.generation_config,
+        )
+        generated_samples = self.tokenizer.batch_decode(
+            generated_ids.sequences, skip_special_tokens=True
+        )
+        generated_samples = [s.replace(" ", "") for s in generated_samples]
+        beam_search_n = self.generation_config["num_return_sequences"] * self.generator.generation_config["num_return_sequences"]
+        batch_samples = [
+            generated_samples[i : i + beam_search_n]
+            for i in range(0, len(generated_samples), beam_search_n)
+        ]
+
+        return batch_samples
+    

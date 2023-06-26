@@ -40,12 +40,12 @@ class TopK(Metric, Nox):
         preds = predictions_dict["preds"]  # B, k (list)
         golds = predictions_dict["golds"]  # B
         golds = [canonicalize_smiles(g) for g in golds]
-        nonstereo_golds = [canonicalize_smiles(g, isomericSmiles=False) for g in golds]
+        nonstereo_golds = [canonicalize_smiles(g, return_stereo=False) for g in golds]
         ranks = []
         nonstereo_ranks = []
         for top_preds, gold, nonstereo_gold in zip(preds, golds, nonstereo_golds):
             standardized_preds = [canonicalize_smiles(g) for g in top_preds]
-            standardized_nonstereo_preds = [canonicalize_smiles(g, isomericSmiles=False) for g in top_preds]
+            standardized_nonstereo_preds = [canonicalize_smiles(g, return_stereo=False) for g in top_preds]
             matches = [p == gold for p in standardized_preds]
             nonstereo_matches = [p == nonstereo_gold for p in standardized_nonstereo_preds]
             if sum(matches) > 0:
