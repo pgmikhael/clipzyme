@@ -124,3 +124,89 @@ class DMPNNEncoder(AbstractModel):
             default="sum",
             help="Type of pooling to do to obtain graph features",
         )
+
+@register_object("wln_encoder", "model")
+class WLNEncoder(AbstractModel):
+    def __init__(self, args):
+        super(WLNEncoder, self).__init__()
+        hidden_size = args.wln_enc_hidden_dim
+        node_fdim = args.wln_enc_node_dim
+        edge_fdim = args.wln_enc_edge_dim
+
+        self.act_func = nn.ReLU()
+        self.W0 = nn.Linear(node_fdim, hidden_size, bias=False)
+        self.W1 = nn.Linear(hidden_size + edge_fdim, hidden_size, bias=False)
+        self.W2 = nn.Linear(2 * hidden_size, hidden_size, bias=True)
+
+        self.depth = args.wln_enc_num_layers
+        self.pool_type = args.wln_enc_pool
+
+    def forward(self, data):
+        output = {}
+        x, edge_index, edge_attr, num_nodes, batch = (
+            data.x,
+            data.edge_index,
+            data.edge_attr,
+            data.num_nodes,
+            data.batch,
+        )
+
+        # project node features
+        node_feats = self.act_func(self.W0(x.float()))
+
+        for _ in range(self.depth):
+            # concatenate source node features with edge features
+            concat_edge_feats = torch.cat([node_feats[edge_index[0]], edge_attr], dim=1).float()
+            # project
+            he = self.act_func(self.W1(concat_edge_feats))
+            # message passing of edge features into nodes
+            hv_new = aggregate_at_nodes(num_nodes, he, edge_index)    
+            # update nodes
+            node_feats = self.act_func(self.W2(torch.cat([node_feats, hv_new], dim=1) ))
+        
+        output["node_features"] = node_feats
+        output["edge_features"] = he
+        if self.pool_type != "none":
+            output["graph_features"] = global_mean_pool(node_feats, batch)
+            output["hidden"] = output["graph_features"]
+        return output
+
+
+    @staticmethod
+    def add_args(parser) -> None:
+        """Add class specific args
+
+        Args:
+            parser (argparse.ArgumentParser): argument parser
+        """
+        parser.add_argument(
+            "--wln_enc_num_layers",
+            type=int,
+            default=1,
+            help="Number of layers in GNN, equivalently number of convolution iterations.",
+        )
+        parser.add_argument(
+            "--wln_enc_hidden_dim",
+            type=int,
+            default=None,
+            help="Dimension of hidden layers (node features)",
+        )
+        parser.add_argument(
+            "--wln_enc_node_dim",
+            type=int,
+            default=None,
+            help="Node feature dimensionality.",
+        )
+        parser.add_argument(
+            "--wln_enc_edge_dim",
+            type=int,
+            default=None,
+            help="Edge feature dimensionality (in case there are any).",
+        )
+        parser.add_argument(
+            "--wln_enc_pool",
+            type=str,
+            choices=["none", "sum", "mul", "mean", "min", "max"],
+            default="sum",
+            help="Type of pooling to do to obtain graph features",
+        )

@@ -7,10 +7,10 @@ import torch
 from torchmetrics import Metric
 
 
-def canonicalize_smiles(smiles):
+def canonicalize_smiles(smiles, return_stereo=True):
     mol = Chem.MolFromSmiles(smiles)
     if mol is not None:
-        return Chem.MolToSmiles(mol, isomericSmiles=True)
+        return Chem.MolToSmiles(mol, isomericSmiles=return_stereo)
     else:
         return ""
 
@@ -25,6 +25,9 @@ class TopK(Metric, Nox):
                 f"num_correct_top{k}", default=torch.tensor(0.0), dist_reduce_fx="sum"
             )
             self.add_state(
+                f"num_nonstereo_correct_top{k}", default=torch.tensor(0.0), dist_reduce_fx="sum"
+            )
+            self.add_state(
                 f"total_top{k}", default=torch.tensor(0.0), dist_reduce_fx="sum"
             )
 
@@ -37,35 +40,56 @@ class TopK(Metric, Nox):
         preds = predictions_dict["preds"]  # B, k (list)
         golds = predictions_dict["golds"]  # B
         golds = [canonicalize_smiles(g) for g in golds]
+        nonstereo_golds = [canonicalize_smiles(g, isomericSmiles=False) for g in golds]
         ranks = []
-        for top_preds, gold in zip(preds, golds):
+        nonstereo_ranks = []
+        for top_preds, gold, nonstereo_gold in zip(preds, golds, nonstereo_golds):
             standardized_preds = [canonicalize_smiles(g) for g in top_preds]
+            standardized_nonstereo_preds = [canonicalize_smiles(g, isomericSmiles=False) for g in top_preds]
             matches = [p == gold for p in standardized_preds]
+            nonstereo_matches = [p == nonstereo_gold for p in standardized_nonstereo_preds]
             if sum(matches) > 0:
                 match_idx = matches.index(True) + 1
             else:
                 match_idx = 0
+            if sum(nonstereo_matches):
+                nonstereo_match_idx = nonstereo_matches.index(True) + 1
+            else:
+                nonstereo_match_idx = 0
             ranks.append(match_idx)
+            nonstereo_ranks.append(nonstereo_match_idx)
 
         ranks_np = np.array(ranks)
+        nonstereo_ranks = np.array(nonstereo_ranks)
 
         for k in self.topk_values:
             num_samples = len(golds)
             num_correct = np.logical_and(ranks_np > 0, ranks_np <= k).sum()
+            num_nonstereo_correct = np.logical_and(nonstereo_ranks > 0, nonstereo_ranks <= k).sum()
+            last_nonstereo_correct = getattr(self, f"num_nonstereo_correct_top{k}")
             last_correct = getattr(self, f"num_correct_top{k}")
             last_total = getattr(self, f"total_top{k}")
 
+            setattr(
+                self, f"num_nonstereo_correct_top{k}", last_nonstereo_correct + torch.tensor(num_nonstereo_correct)
+            )
             setattr(
                 self, f"num_correct_top{k}", last_correct + torch.tensor(num_correct)
             )
             setattr(self, f"total_top{k}", last_total + torch.tensor(num_samples))
 
     def compute(self) -> Dict:
-        stats_dict = {
+        stats_dict = {}
+        stats_dict.update({
             f"top_{k}": getattr(self, f"num_correct_top{k}").float()
             / getattr(self, f"total_top{k}")
             for k in self.topk_values
-        }
+        })
+        stats_dict.update({
+            f"top_{k}": getattr(self, f"num_nonstereo_correct_top{k}").float()
+            / getattr(self, f"total_top{k}")
+            for k in self.topk_values
+        })
 
         return stats_dict
 

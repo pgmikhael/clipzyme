@@ -13,14 +13,12 @@
     "num_classes": [5],
     "lightning_name": ["base"],
     "model_name": ["wldn"],
-    "gat_num_layers": [3],
-    "gat_hidden_dim": [500],
-    "gat_num_heads": [2],
-    "gat_concat": [true],
-    "gat_node_dim": [9],
-    "gat_edge_dim": [3],
-    "gat_complete_edge_dim": [5],
-    "gat_pool": ["none"],
+    "use_wln_encoder": [true],
+    "wln_enc_num_layers": [5],
+    "wln_enc_hidden_dim": [500],
+    "wln_enc_node_dim": [9],
+    "wln_enc_edge_dim": [3],
+    "wln_enc_pool": ["none"],
     "compute_metrics_every_step": [true],
     "attn_type": ["pairwise_global_attn"],
     "reactivity_model_path": ["/Mounts/rbg-storage1/snapshots/metabolomics/e3984f2f54a0c1fb8ef023651215b40f/e3984f2f54a0c1fb8ef023651215b40fepoch=48.ckpt"],
@@ -45,7 +43,7 @@
     "test": [false],
     "num_sanity_val_steps": [0],
     "val_check_interval": [1.0],
-    "gpus": [1],
+    "gpus": [8],
     "ignore_warnings": [false],
     "dropout": [0],
     "checkpoint_dir": ["/Mounts/rbg-storage1/snapshots/metabolomics"],
@@ -54,5 +52,5 @@
     "project_name": ["enzymes"],
     "logger_tags": ["wldn"]
   },
-  "available_gpus": ["0"]
+  "available_gpus": ["0,1,2,3,4,5,6,7"]
 }

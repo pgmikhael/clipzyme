@@ -10,7 +10,7 @@ from torch_scatter import scatter, scatter_add
 from torch_geometric.utils import to_dense_batch, to_dense_adj
 from collections import defaultdict
 from nox.models.gat import GAT
-from nox.models.chemprop import DMPNNEncoder
+from nox.models.chemprop import WLNEncoder
 from rdkit import Chem 
 import copy 
 import os 
@@ -237,21 +237,37 @@ class WLDN(AbstractModel):
         self.reactivity_net.eval()
         
         wln_diff_args = copy.deepcopy(args)
-        # GAT
-        self.wln = GAT(args) # WLN for mol representation GAT(args)
-        wln_diff_args = copy.deepcopy(args)
-        wln_diff_args.gat_node_dim  = args.gat_hidden_dim
-        wln_diff_args.gat_num_layers = 1
-        self.wln_diff = GAT(wln_diff_args)
-        self.final_transform = nn.Sequential(
-            nn.Linear(args.gat_hidden_dim, args.gat_hidden_dim),
-            nn.ReLU(),
-            nn.Linear(args.gat_hidden_dim, 1)
+    
+        if args.use_wln_encoder:
+            # WLNEncoder
+            self.wln = WLNEncoder(args) # WLN for mol representation
+            wln_diff_args = copy.deepcopy(args)
+            wln_diff_args.wln_enc_node_dim  = args.wln_enc_hidden_dim
+            wln_diff_args.wln_enc_num_layers = 1
+            self.wln_diff = WLNEncoder(wln_diff_args)
+            self.final_transform = nn.Sequential(
+                nn.Linear(args.wln_enc_hidden_dim + 1, args.wln_enc_hidden_dim),
+                nn.ReLU(),
+                nn.Linear(args.wln_enc_hidden_dim, 1)
+            )
+        
+        else:
+            # GAT
+            self.wln = GAT(args) # WLN for mol representation GAT(args)
+            wln_diff_args = copy.deepcopy(args)
+            wln_diff_args.gat_node_dim  = args.gat_hidden_dim
+            wln_diff_args.gat_num_layers = 1
+            self.wln_diff = GAT(wln_diff_args)
+            self.final_transform = nn.Sequential(
+                nn.Linear(args.gat_hidden_dim + 1, args.gat_hidden_dim),
+                nn.ReLU(),
+                nn.Linear(args.gat_hidden_dim, 1)
         )
+
         self.use_cache = args.cache_path is not None 
         if self.use_cache:
             self.cache = WLDN_Cache(os.path.join(args.cache_path), "pt")
-        if self.args.predict:
+        if self.args.test:
             assert not self.args.train 
 
     def predict(self, batch, product_candidates_list, candidate_scores):
@@ -261,17 +277,19 @@ class WLDN(AbstractModel):
             # sort according to ranker score
             scores_indices = torch.argsort(scores.view(-1),descending=True)
             valid_candidate_combos = [candidates.candidate_bond_change[i] for i in scores_indices]
-            reactant_mol = Chem.MolFromSmiles(batch["smiles"][idx])
+            reactant_mol = Chem.MolFromSmiles(batch["reactants"].smiles[idx])
             for edits in valid_candidate_combos:
-                smiles = robust_edit_mol(reactant_mol, edits)
+                edits_no_scores = [(x,y,t) for x,y,t,s in edits ]
+                smiles = robust_edit_mol(reactant_mol, edits_no_scores)
                 if len(smiles) != 0:
                     smiles_predictions.append(smiles)
-                try:
-                    Chem.Kekulize(reactant_mol)
-                    smiles = robust_edit_mol(reactant_mol, edits)
-                    smiles_predictions.append(smiles)
-                except Exception as e:
-                    smiles_predictions.append(smiles)
+                else:
+                    try:
+                        Chem.Kekulize(reactant_mol)
+                        smiles = robust_edit_mol(reactant_mol, edits_no_scores)
+                        smiles_predictions.append(smiles)
+                    except Exception as e:
+                        smiles_predictions.append([])
             predictions.append(smiles_predictions)
             
         return {"preds": predictions}
@@ -305,10 +323,16 @@ class WLDN(AbstractModel):
             # compute the score for each candidate product
             # to dense
             diff_node_feats, _ = to_dense_batch(diff_node_feats, product_candidates.batch) # num_candidates x max_num_nodes x D
-            score = self.final_transform(torch.sum(diff_node_feats, dim=-2))
+            graph_feats = torch.sum(diff_node_feats, dim=-2)
+            core_scores = [sum(c[-1] for c in cand_changes) for cand_changes in product_candidates.candidate_bond_change]
+            core_scores = torch.tensor(core_scores, device = graph_feats.device).unsqueeze(-1)
+            score_order = torch.argsort(core_scores, dim = 0)
+            graph_feats = torch.concat([graph_feats,score_order], dim = -1)
+            score = self.final_transform(graph_feats)
             if self.args.add_core_score:
                 core_scores = [sum(c[-1] for c in cand_changes) for cand_changes in product_candidates.candidate_bond_change]
-                score = score + torch.tensor(core_scores, device = score.device).unsqueeze(-1)
+                core_scores = torch.tensor(core_scores, device = graph_feats.device).unsqueeze(-1)
+                score = score + torch.log_softmax(core_scores, dim =0) #torch.tensor(core_scores, device = score.device).unsqueeze(-1)
             candidate_scores.append(score) # K x 1
 
         # ! PREDICT SMILES
@@ -330,7 +354,7 @@ class WLDN(AbstractModel):
             batch : collated samples from dataloader
             sample_ids: list of sample ids
         """
-        mode = "train" # this is used to get candidates, using robust_edit_mol when in predict later for actual smiles generation
+        mode = "test" if self.args.test else "train" # this is used to get candidates, using robust_edit_mol when in predict later for actual smiles generation
 
         if self.use_cache:
             if not all( self.cache.exists(sid) for sid in sample_ids ):
@@ -397,6 +421,44 @@ class WLDN(AbstractModel):
             default=False,
             help="whether to add core score to ranking prediction"
         )
+        #### Wln encoder
+        parser.add_argument(
+            "--use_wln_encoder",
+            action="store_true",
+            default=False,
+            help="use wln implementation.",
+        )
+        parser.add_argument(
+            "--wln_enc_num_layers",
+            type=int,
+            default=1,
+            help="Number of layers in GNN, equivalently number of convolution iterations.",
+        )
+        parser.add_argument(
+            "--wln_enc_hidden_dim",
+            type=int,
+            default=None,
+            help="Dimension of hidden layers (node features)",
+        )
+        parser.add_argument(
+            "--wln_enc_node_dim",
+            type=int,
+            default=None,
+            help="Node feature dimensionality.",
+        )
+        parser.add_argument(
+            "--wln_enc_edge_dim",
+            type=int,
+            default=None,
+            help="Edge feature dimensionality (in case there are any).",
+        )
+        parser.add_argument(
+            "--wln_enc_pool",
+            type=str,
+            choices=["none", "sum", "mul", "mean", "min", "max"],
+            default="sum",
+            help="Type of pooling to do to obtain graph features",
+        )
 
 ##########################################################################################
 
@@ -417,6 +479,7 @@ class WLDNTransformer(WLDN):
         self.esm_model = EsmModel.from_pretrained(args.esm_model_version)
         self.freeze_encoder = args.freeze_encoder
         if self.freeze_encoder:
+            self.esm_model.requires_grad_(False)
             self.esm_model.eval()
         econfig = self.get_transformer_config(args)
         econfig.is_decoder = False
@@ -467,8 +530,9 @@ class WLDNTransformer(WLDN):
                 input_ids=encoder_input_ids["input_ids"],
                 attention_mask=encoder_input_ids["attention_mask"],
             )
-        encoder_hidden_states = encoder_outputs["last_hidden_state"]
-        return encoder_hidden_states, encoder_input_ids["attention_mask"]
+        encoder_hidden_states = encoder_outputs["pooler_output"].unsqueeze(1)
+        mask = encoder_input_ids["attention_mask"][:,0:1]
+        return encoder_hidden_states, mask
 
     def forward(self, batch):
         prot_feats, prot_attn = self.encode_sequence(batch) # 1 x len_seq x hidden_dim

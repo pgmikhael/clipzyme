@@ -187,16 +187,25 @@ class WLNAccuracy(Metric, Nox):
         is_differentiable = False
         full_state_update: bool = False
 
+        self.add_state("is_found", default=torch.tensor(0), dist_reduce_fx="sum")
+        self.add_state("is_max", default=torch.tensor(0), dist_reduce_fx="sum")
         self.add_state("correct", default=torch.tensor(0), dist_reduce_fx="sum")
         self.add_state("total", default=torch.tensor(0), dist_reduce_fx="sum")
  
     @property
     def metric_keys(self):
-        return ["probs", "preds", "golds"]
+        return ["probs", "preds", "golds", "product_candidates_list"]
 
     def update(self, predictions_dict, args) -> Dict:
         preds = predictions_dict["preds"]
         target = predictions_dict["golds"]
+
+        product_candidates_list = predictions_dict["product_candidates_list"]
+        raw_scores = [ torch.tensor([sum(c[-1] for c in cand_changes) for cand_changes in candidate_bond_change.candidate_bond_change], device=self.device) for candidate_bond_change in product_candidates_list ]
+        score_is_found = sum([s[0] != 0 for s in raw_scores])
+        score_is_max = sum([torch.argmax(s) == 0 for s in raw_scores])
+        self.is_max += score_is_max
+        self.is_found += score_is_found
         
         correct = (preds == target).sum()
         total = preds.shape[-1]
@@ -207,5 +216,7 @@ class WLNAccuracy(Metric, Nox):
     def compute(self) -> Dict:
         stats_dict = {
             "per_reaction_accuracy": self.correct.float() / self.total,
+            "candidate_recall_top1": self.is_max.float() / self.total,
+            "candidate_recall_found": self.is_found.float() / self.total,
         }
         return stats_dict
