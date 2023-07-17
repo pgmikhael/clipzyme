@@ -7,6 +7,7 @@ from nox.utils.registry import md5
 import json
 import copy
 from nox.utils.classes import set_nox_type
+import inspect
 
 EMPTY_NAME_ERR = 'Name of augmentation or one of its arguments cant be empty\n\
                   Use "name/arg1=value/arg2=value" format'
@@ -645,21 +646,48 @@ def get_parser():
 
 def parse_args(args_strings=None):
     # run
-    parser = Trainer.add_argparse_args(get_parser())
+    # Lightning 2.0 removes add_argparse_args
+    parser = get_parser()
+    sig = inspect.signature(Trainer.__init__)
+    for name, param in sig.parameters.items():
+        if name == 'self':
+            continue
+        if param.default is inspect.Parameter.empty:
+            parser.add_argument(f'--{name}')
+        else:
+            # Note that this does not store types, because many defaults are None
+            parser.add_argument(f'--{name}', default=param.default)
+    
+    # legacy
+    if not hasattr(Trainer, "add_argparse_args"):
+        parser.add_argument(
+        "--gpus",
+            default=None,
+            help="Number of GPUs to train on",
+        )
+    
     if args_strings is None:
         args = parser.parse_args()
     else:
         args = parser.parse_args(args_strings)
+
+    # legacy - fix arg changes
+    if hasattr(args, "gpus") and not hasattr(Trainer, "add_argparse_args"):
+        args.devices = args.gpus
 
     # using gpus
     if (isinstance(args.gpus, str) and len(args.gpus.split(",")) > 1) or (
         isinstance(args.gpus, int) and args.gpus > 1
     ):
         args.strategy = "ddp"
-        args.replace_sampler_ddp = False
+        # should not matter since we set our sampler, in 2.0 this is default True and used to be called replace_sampler_ddp
+        args.use_distributed_sampler = False 
     else:
-        args.strategy = None
-        args.replace_sampler_ddp = False
+        if not hasattr(Trainer, "add_argparse_args"): # lightning 2.0
+            args.strategy = "auto" 
+        else: # legacy
+            args.strategy = None
+            args.replace_sampler_ddp = False
 
     # username
     args.unix_username = pwd.getpwuid(os.getuid())[0]

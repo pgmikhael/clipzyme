@@ -20,6 +20,9 @@ class Base(pl.LightningModule, Nox):
 
     def __init__(self, args):
         super(Base, self).__init__()
+        self.training_step_outputs = []
+        self.validation_step_outputs = []
+        self.test_step_outputs = []
         self.save_hyperparameters()
         self.args = args
         self.model = get_object(args.model_name, "model")(args)
@@ -204,6 +207,7 @@ class Base(pl.LightningModule, Nox):
         """
         self.phase = "train"
         output = self.step(batch, batch_idx, optimizer_idx)
+        self.training_step_outputs.append(output)
         return output
 
     def validation_step(self, batch, batch_idx, optimizer_idx=None):
@@ -212,6 +216,7 @@ class Base(pl.LightningModule, Nox):
         """
         self.phase = "val"
         output = self.step(batch, batch_idx, optimizer_idx)
+        self.validation_step_outputs.append(output)
         return output
 
     def test_step(self, batch, batch_idx):
@@ -231,59 +236,63 @@ class Base(pl.LightningModule, Nox):
         output["preds_dict"] = {
             k: v for k, v in output["preds_dict"].items() if k not in self.UNLOG_KEYS
         }
+        self.test_step_outputs.append(output)
         return output
 
-    def training_epoch_end(self, outputs):
+    def on_train_epoch_end(self):
         """
         End of single training epoch
             - Aggregates predictions and losses from all steps
             - Computes the metric (auc, accuracy, etc.)
         """
         self.phase = "train"
-        if len(outputs) == 0:
+        if len(self.training_step_outputs) == 0:
             return
-        outputs = gather_step_outputs(outputs)
+        outputs = gather_step_outputs(self.training_step_outputs)
         outputs["loss"] = outputs["loss"].mean()
         outputs.update(self.call_metric({}, "compute"))
         self.log_outputs(outputs, "train")
         for metric_fn in self.metrics["train"]:
             metric_fn.reset()
+        self.training_step_outputs.clear()
         return
 
-    def validation_epoch_end(self, outputs):
+    def on_validation_epoch_end(self):
         """
         End of single validation epoch
             - Aggregates predictions and losses from all steps
             - Computes the metric (auc, accuracy, etc.)
         """
         self.phase = "val"
-        if len(outputs) == 0:
+        if len(self.validation_step_outputs) == 0:
             return
-        outputs = gather_step_outputs(outputs)
+        outputs = gather_step_outputs(self.validation_step_outputs)
         outputs["loss"] = outputs["loss"].mean()
         outputs.update(self.call_metric({}, "compute"))
         self.log_outputs(outputs, "val")
         for metric_fn in self.metrics["val"]:
             metric_fn.reset()
+        self.validation_step_outputs.clear()
         return
 
-    def test_epoch_end(self, outputs):
+    def on_test_epoch_end(self):
         """
         End of testing
             - Aggregates predictions and losses from all batches
             - Computes the metric if defined in args
         """
         self.phase = "test"
-        if len(outputs) == 0:
+        if len(self.test_step_outputs) == 0:
             return
-        outputs = gather_step_outputs(outputs)
+        outputs = gather_step_outputs(self.test_step_outputs)
         if isinstance(outputs.get("loss", 0), torch.Tensor):
             outputs["loss"] = outputs["loss"].mean()
-        
-        outputs.update(self.call_metric({}, "compute"))
+        if not self.args.predict:
+            outputs.update(self.call_metric({}, "compute"))
         self.log_outputs(outputs, "test")
         for metric_fn in self.metrics["test"]:
             metric_fn.reset()
+        self.test_step_outputs.clear()
         return
 
     def configure_optimizers(self):
@@ -292,7 +301,7 @@ class Base(pl.LightningModule, Nox):
 
         """
         optimizer = get_object(self.args.optimizer_name, "optimizer")(
-            self.parameters(), self.args
+            [p for p in self.parameters() if p.requires_grad], self.args
         )
         schedule = get_object(self.args.scheduler_name, "scheduler")(
             optimizer, self.args
@@ -509,7 +518,7 @@ class Base(pl.LightningModule, Nox):
             choices=["epoch", "step"],
             help="how often to apply scheduling on model parameters.",
         )
-        
+
 
 
 def gather_step_outputs(outputs):

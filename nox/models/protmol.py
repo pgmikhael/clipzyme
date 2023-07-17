@@ -101,6 +101,7 @@ class ProtMolClassifier(AbstractModel):
     def forward(self, batch):
         # encode molecule
         if self.args.freeze_substrate_encoder:
+            self.substrate_encoder.requires_grad_(False)
             with torch.no_grad():
                 substrate_dict = self.substrate_encoder(batch)
         else:
@@ -108,6 +109,7 @@ class ProtMolClassifier(AbstractModel):
         # encode protein -> must have sequence attribute or key
         x = self.convert_batch_to_seq_list(batch)
         if self.args.freeze_enzyme_encoder:
+            self.enzyme_encoder.requires_grad_(False)
             with torch.no_grad():
                 enzyme_dict = self.enzyme_encoder(x)
         else:

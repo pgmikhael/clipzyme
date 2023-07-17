@@ -9,7 +9,10 @@ import torch
 from torch.utils import data
 from nox.utils.sampler import DistributedWeightedSampler
 from nox.utils.augmentations import get_augmentations_by_split
-from pytorch_lightning.utilities.cloud_io import load as pl_load
+try:
+    from pytorch_lightning.utilities.cloud_io import load as pl_load
+except:
+    from lightning_fabric.utilities.cloud_io import _load as pl_load
 from torch_geometric.data import Data, HeteroData, Batch
 from rich import print as rprint
 

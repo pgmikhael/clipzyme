@@ -77,7 +77,7 @@ import nox.learning.metrics.wln
 # callbacks
 import nox.callbacks.basic
 import nox.callbacks.swa
-import nox.callbacks.ema
+# import nox.callbacks.ema
 
 # models
 import nox.models.vision

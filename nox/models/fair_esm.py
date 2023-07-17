@@ -52,6 +52,7 @@ class FairEsm(AbstractModel):
         batch_tokens = batch_tokens.to(self.devicevar.device)
 
         if self.args.freeze_esm:
+            self.model.requires_grad_(False)
             with torch.no_grad():
                 result = self.model(
                     batch_tokens,
@@ -161,6 +162,7 @@ class ProteinEncoder(AbstractModel):
     def forward(self, batch):
         output = {}
         if self.args.freeze_encoder:
+            self.encoder.requires_grad_(False)
             with torch.no_grad():
                 output_esm = self.encoder(batch["x"])
         else:

@@ -68,5 +68,5 @@
     "sample_negatives_on_get": [true],
     "max_protein_length": [1024]
   },
-  "available_gpus": ["4,5,6,7"]
+  "available_gpus": ["3,5,6,7"]
 }

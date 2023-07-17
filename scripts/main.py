@@ -13,6 +13,7 @@ import comet_ml
 import torch
 import pytorch_lightning as pl
 from pytorch_lightning import _logger as log
+import inspect
 
 from nox.utils.parsing import parse_args
 from nox.utils.registry import get_object
@@ -22,10 +23,25 @@ from rich import print
 
 
 def train(args):
-
+    # legacy
+    if not hasattr(pl.Trainer, "from_argparse_args"):
+        def cast_type(val):
+            if isinstance(val, str):
+                if val.isdigit():
+                    return int(val)
+                try:
+                    return float(val)
+                except ValueError:
+                    return val
+            return val
+        # Get the trainer's argument names
+        trainer_arg_names = set(inspect.signature(pl.Trainer).parameters.keys())
+        trainer_args = {k: cast_type(v) for k, v in vars(args).items() if k in trainer_arg_names}
+        trainer = pl.Trainer(**trainer_args)
+    else:
     # Remove callbacks from args for safe pickling later
-    args.find_unused_parameters = False
-    trainer = pl.Trainer.from_argparse_args(args)
+        args.find_unused_parameters = False
+        trainer = pl.Trainer.from_argparse_args(args)
     args.callbacks = None
     args.num_nodes = trainer.num_nodes
     args.num_processes = trainer.num_devices
@@ -53,7 +69,9 @@ def train(args):
 
     # create or load lightning model from checkpoint
     model = loaders.get_lightning_model(args)
-
+    # compile model
+    # model = torch.compile(model)
+     
     # logger
     trainer.logger = get_object(args.logger_name, "logger")(args)
 
@@ -80,7 +98,10 @@ def train(args):
 
 def eval(model, logger, args):
     # reinit trainer
-    trainer = pl.Trainer(gpus=1)
+    if not hasattr(pl.Trainer, "add_argparse_args"):
+        trainer = pl.Trainer(devices=1)
+    else:
+        trainer = pl.Trainer(gpus=1)
 
     # change model args
     model.args.num_nodes = trainer.num_nodes
@@ -90,7 +111,10 @@ def eval(model, logger, args):
     model.args.local_rank = trainer.local_rank
 
     # reset ddp
-    args.strategy = None
+    if not hasattr(pl.Trainer, "add_argparse_args"):
+        args.strategy = "auto" # note must set devices=1 otherwise will use all available gpus
+    else:
+        args.strategy = None # legacy
 
     # connect to same logger as in training
     trainer.logger = logger
