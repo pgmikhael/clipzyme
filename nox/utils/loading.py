@@ -31,6 +31,8 @@ def default_collate(batch):
 
     elem = batch[0]
     elem_type = type(elem)
+    if isinstance(elem, Batch):
+        return batch 
     if isinstance(elem, (Data, HeteroData)):
         # optional args for more complex graphs (see pytorch geometric https://pytorch-geometric.readthedocs.io/en/latest/notes/batching.html)
         follow_batch = None
@@ -85,6 +87,8 @@ def default_collate(batch):
         # check to make sure that the elements in batch have consistent size
         it = iter(batch)
         elem_size = len(next(it))
+        if all(all(isinstance(t, tuple) for t in elem) for elem in it):
+            return batch 
         if not all(len(elem) == elem_size for elem in it):
             # if its a list of ints then append ints and return 
             it = iter(batch)
@@ -94,8 +98,6 @@ def default_collate(batch):
             it = iter(batch)
             if all(all(isinstance(s, string_classes) for s in elem) for elem in it) or all(all(all(isinstance(s, string_classes) for s in t) and isinstance(t, tuple) for t in elem) for elem in it):
                 return batch
-            if all(all(isinstance(t, tuple) for t in elem) for elem in it):
-                return batch 
             raise RuntimeError("each element in list of batch should be of equal size")
         transposed = zip(*batch)
         return [default_collate(samples) for samples in transposed]
