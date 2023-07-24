@@ -1,8 +1,9 @@
 from collections import OrderedDict
 from nox.utils.classes import Nox
+from torchmetrics import Metric
 from nox.utils.registry import register_object
 import torch
-
+from typing import Dict
 
 def get_sample_similarity(h1, h2):
     cov = torch.mm(h1, h2.T)
@@ -123,3 +124,46 @@ class AlignmentUniformityLoss(Nox):
             default=2.0,
             help="Temperature for uniformity loss",
         )
+
+
+@register_object("clip_classification", "metric")
+class ClipClassification(Metric, Nox):
+    def __init__(self, args) -> None:
+        """
+        Computes standard classification metrics
+
+        Args:
+            predictions_dict: dictionary obtained from computing loss and model outputs
+                * should contain the keys ['probs', 'preds', 'golds']
+            args: argparser Namespace
+
+        Returns:
+            stats_dict (dict): contains (where applicable) values for accuracy, confusion matrix, precision, recall, f1, precision-recall auc, roc auc
+
+        Note:
+            Binary: two labels
+            Multiclass: more than two labels
+            Multilabel: potentially more than one label per sample (independent classes)
+        """
+        super().__init__()
+        self.add_state("num_correct", default=torch.tensor(0.0), dist_reduce_fx="sum")
+        self.add_state("total", default=torch.tensor(0.0), dist_reduce_fx="sum")
+        
+
+    @property
+    def metric_keys(self):
+        return ["probs", "preds", "golds"]
+
+    def update(self, predictions_dict, args) -> Dict:
+        
+        preds = predictions_dict["preds"]  # B
+        golds = predictions_dict["golds"].int()  # B
+
+        self.num_correct += (golds == preds).sum()
+        self.total += len(golds)
+
+    def compute(self) -> Dict:
+        stats_dict = {
+            "clip_accuracy": self.num_correct.float() / self.total,
+        }
+        return stats_dict

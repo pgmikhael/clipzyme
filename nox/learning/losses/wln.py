@@ -4,6 +4,8 @@ import torch.nn.functional as F
 from collections import OrderedDict
 from nox.utils.classes import Nox
 from collections import defaultdict 
+from nox.utils.wln_processing import get_product_smiles
+from rdkit import Chem
 
 def get_pair_label(graph_edits, num_atoms):
     """Construct labels for each pair of atoms in reaction center prediction
@@ -102,7 +104,7 @@ class CandidateLoss(Nox):
 
     def __call__(self, model_output, batch, model, args):
         logging_dict, predictions = OrderedDict(), OrderedDict()
-        logits = model_output["logit"] # list for each reaction of [score per candidate]
+        logits = model_output["candidate_logit"] # list for each reaction of [score per candidate]
         label = torch.zeros(1, dtype=torch.long, device = logits[0].device)
         
         loss = 0 # torch.tensor(0.0, device=logit[0].device)
@@ -114,12 +116,60 @@ class CandidateLoss(Nox):
         loss = loss / len(logits)
 
         logging_dict["candidate_loss"] = loss.detach()
-        predictions["golds"] = label.repeat(len(logits))
-        predictions["probs"] = [p.detach() for p in probs]
-        predictions["preds"] = torch.concat([torch.argmax(p).unsqueeze(-1) for p in probs])
+        predictions["candidate_golds"] = label.repeat(len(logits))
+        predictions["candidate_probs"] = [p.detach() for p in probs]
+        predictions["candidate_preds"] = torch.concat([torch.argmax(p).unsqueeze(-1) for p in probs])
         predictions["product_candidates_list"] = model_output["product_candidates_list"]
         predictions["reactant_smiles"] = batch["reactants"].smiles
         predictions["product_smiles"] = batch["products"].smiles
+        predictions["all_product_smiles"] = batch["all_smiles"]
+        
+        batch_real_bond_changes = []
+        for i in range(len(batch['reactants']['bond_changes'])):
+            reaction_real_bond_changes = []
+            for elem in batch['reactants']['bond_changes'][i]:
+                reaction_real_bond_changes.append(tuple(elem))
+            batch_real_bond_changes.append(reaction_real_bond_changes)
+        predictions['real_bond_changes'] = batch_real_bond_changes # for topk metric
+
+        return loss, logging_dict, predictions
+
+@register_object("multi_candidate_loss", "loss")
+class MultiCandidateLoss(Nox):
+    def __init__(self) -> None:
+        super().__init__()
+
+    def __call__(self, model_output, batch, model, args):
+        logging_dict, predictions = OrderedDict(), OrderedDict()
+        logits = model_output["candidate_logit"] # list for each reaction of [score per candidate]
+        
+        loss = 0 # torch.tensor(0.0, device=logit[0].device)
+        probs, labels = [], []
+        for i, logit in enumerate(logits):
+            reactant_mol = Chem.MolFromSmiles(batch["reactants"].smiles[i])
+            logit = logit.view(1,-1)
+            label = torch.zeros_like(logit)
+            valid_bond_changes = [t[1] for t in batch["all_smiles"][i]]
+            valid_bond_changes = [set( (x,y,t,0) for x,y,t in bc) for bc in valid_bond_changes]
+            valid_products = [ get_product_smiles(reactant_mol, bc, None, mode="test", return_full_mol=True) for bc in valid_bond_changes ] # bond changes
+            label[:,0] = 1
+            for j, cand_smile in enumerate(model_output["product_candidates_list"][i].smiles):
+                if cand_smile in valid_products:
+                    label[:,j] = 1
+            loss = loss + torch.nn.functional.binary_cross_entropy_with_logits(logit, label, reduction="sum")  # may need to unsqueeze
+            probs.append(torch.softmax(logit, dim=-1))
+            labels.append(label)
+        loss = loss / len(logits)
+
+        logging_dict["candidate_loss"] = loss.detach()
+        predictions["candidate_golds"] = labels
+        predictions["candidate_probs"] = [p.detach() for p in probs]
+        predictions["candidate_preds"] = [(p > 0.5).int() for p in probs]
+        predictions["product_candidates_list"] = model_output["product_candidates_list"]
+        predictions["reactant_smiles"] = batch["reactants"].smiles
+        predictions["product_smiles"] = batch["products"].smiles
+        predictions["all_product_smiles"] = batch["all_smiles"]
+        
         batch_real_bond_changes = []
         for i in range(len(batch['reactants']['bond_changes'])):
             reaction_real_bond_changes = []

@@ -2,7 +2,7 @@
   "script": "main",
   "cartesian_hyperparams": {
     "batch_size": [32],
-    "precision": ["16"],
+    "precision": ["bf16"],
     "accumulate_grad_batches": [1],
     "dataset_name": ["chemical_reactions_graph"],
     "assign_splits": [false],
@@ -13,8 +13,8 @@
     "from_checkpoint": [false],
     "model_name": ["reaction_center_net"],
     "gat_num_layers": [3],
-    "gat_hidden_dim": [240],
-    "gat_num_heads": [8],
+    "gat_hidden_dim": [480],
+    "gat_num_heads": [4],
     "gat_concat": [true],
     "gat_node_dim": [9],
     "gat_edge_dim": [3],
@@ -24,7 +24,7 @@
     "callback_names": ["lr_monitor checkpointer"],
     "max_epochs": [50],
     "lr_decay": [0.1],
-    "lr": [1e-3],
+    "lr": [4e-3],
     "weight_decay": [0],
     "loss_names": ["reactivity_loss"],
     "metric_names": ["reactivity_exact_accuracy reactivity_topk"],
@@ -39,7 +39,7 @@
     "test": [false],
     "num_sanity_val_steps": [0],
     "val_check_interval": [1.0],
-    "gpus": [4],
+    "gpus": [7],
     "ignore_warnings": [false],
     "dropout": [0],
     "checkpoint_dir": ["/Mounts/rbg-storage1/snapshots/metabolomics"],
@@ -48,5 +48,5 @@
     "project_name": ["enzymes"],
     "logger_tags": ["wln uspto"]
   },
-  "available_gpus": ["0,1,2,3,4,5,6,7"]
+  "available_gpus": ["0,1,2,3,4,5,7"]
 }

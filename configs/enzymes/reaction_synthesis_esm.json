@@ -29,7 +29,7 @@
     "num_classes": [465],
     "vocab_path": ["/Mounts/rbg-storage1/datasets/Enzymes/ECReact/uspto_ecreact_vocab.txt"],
     "from_checkpoint": [true],
-    "checkpoint_path": ["/Mounts/rbg-storage1/snapshots/metabolomics/bd58c03ede1b4b8fc553ec580d90c74d/bd58c03ede1b4b8fc553ec580d90c74depoch=0.ckpt"],
+    "checkpoint_path": ["/Mounts/rbg-storage1/snapshots/metabolomics/a0ed8a6f4eaa19900bfaeab59edc0e74/a0ed8a6f4eaa19900bfaeab59edc0e74epoch=14.ckpt"],
     "relax_checkpoint_matching": [true],
     "max_seq_len": [2000],
     "callback_names": ["lr_monitor checkpointer"],
@@ -37,9 +37,7 @@
     "lr_decay": [0.1],
     "lr": [1e-4],
     "weight_decay": [0],
-    "loss_names": ["cross_entropy cross_attention_loss"],
-    "attention_loss_lambda": [1e-2],
-    "use_pesto_scores": [true],
+    "loss_names": ["cross_entropy"],
     "precomputed_loss": [true],
     "keep_preds_dim": [true],
     "task_type": ["multiclass"],
@@ -56,7 +54,7 @@
     "patience": [5],
     "train": [true],
     "dev": [false],
-    "test": [false],
+    "test": [true],
     "num_sanity_val_steps": [0],
     "val_check_interval": [1.0],
     "gpus": [8],
@@ -66,7 +64,7 @@
     "logger_name": ["wandb"],
     "workspace": ["peteranditamar"],
     "project_name": ["enzymes"],
-    "logger_tags": ["enzyme-synthesis esm"]
+    "logger_tags": ["iocb esm"]
   },
   "available_gpus": ["0,1,2,3,4,5,6,7"]
 }

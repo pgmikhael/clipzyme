@@ -11,7 +11,9 @@ from nox.utils.registry import register_object
 from nox.datasets.abstract import AbstractDataset
 import rdkit 
 import hashlib
-from nox.utils.pyg import from_smiles
+from nox.utils.pyg import from_smiles, from_mapped_smiles
+from nox.utils.smiles import get_rdkit_feature, remove_atom_maps, assign_dummy_atom_maps
+import copy 
 
 @register_object("iocb", "dataset")
 class IOCB(AbstractDataset):
@@ -177,6 +179,32 @@ class IOCB(AbstractDataset):
         sample = self.dataset[index]
 
         try:
+            if self.args.use_graph_version:
+                reactants, products = copy.deepcopy(sample["reactants"]), copy.deepcopy(sample["products"])
+                sequence = sample["sequence"]
+                uniprot_id = sample['protein_id']
+                sample_id = sample["sample_id"]
+                
+
+                reactants = assign_dummy_atom_maps(reactants)
+                reactants, atom_map2new_index = from_mapped_smiles(reactants, encode_no_edge=True)
+                reactants.bond_changes = []
+                products = assign_dummy_atom_maps(products)
+                products, _ = from_mapped_smiles(products,  encode_no_edge=True)
+                all_smiles = [(sample["products"],[])]
+                item = {
+                    "reaction": "{}>>{}".format(sample["reactants"], sample["products"]),
+                    "reactants": reactants,
+                    "products": products,
+                    "sequence": sequence,
+                    "protein_id": uniprot_id,
+                    "sample_id": sample_id,
+                    "smiles": products,
+                    "all_smiles": all_smiles,
+                }
+                return item 
+
+
             return sample
 
         except Exception:
@@ -232,6 +260,12 @@ class IOCB(AbstractDataset):
             type=int,
             default=None,
             help="remove common substrates",
+        )
+        parser.add_argument(
+            "--use_graph_version",
+            action="store_true",
+            default=False,
+            help="use graph structure for inputs",
         )
     
     @staticmethod

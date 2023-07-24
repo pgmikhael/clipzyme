@@ -652,9 +652,16 @@ def standardize_reaction(reaction: str):
     # parsed_input = {k: v.to(self.device) for k, v in encoded_ids.items()}
     # return encoded_ids
 
-def remove_atom_maps(smiles: str):
+def remove_atom_maps(smiles: str, sanitize=True):
     """Remove atom maps from smiles string"""
-    mol = Chem.MolFromSmiles(smiles)
+    mol = Chem.MolFromSmiles(smiles, sanitize=sanitize)
     for atom in mol.GetAtoms():
         atom.SetAtomMapNum(0)
+    return Chem.MolToSmiles(mol)
+
+def assign_dummy_atom_maps(smiles: str):
+    """Assign atom numbers to smiles string for use in graph editing"""
+    mol = Chem.MolFromSmiles(smiles)
+    for i, atom in enumerate(mol.GetAtoms()):
+        atom.SetAtomMapNum(i + 1)
     return Chem.MolToSmiles(mol)

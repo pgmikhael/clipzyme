@@ -173,6 +173,7 @@ class ChemRXNGraph(ChemRXN):
                 "reactants": reactants,
                 "products": products,
                 "sample_id": sample_id,
+                "all_smiles": []
             }
             return item
 
