@@ -17,7 +17,7 @@ import warnings
 import hashlib
 from collections import defaultdict
 from rich import print as rprint
-from typing import Optional, List, Union, Tuple, Any
+from typing import Optional, List, Union, Tuple, Any, Dict
 
 import torch_geometric
 from torch_geometric.nn import MessagePassing
@@ -27,6 +27,7 @@ from torch_scatter import scatter
 from torch_geometric.utils import to_dense_batch
 from torch_geometric.utils.loop import add_remaining_self_loops
 
+import math
 
 def exists(val):
     return val is not None
@@ -44,9 +45,27 @@ class CoorsNorm(nn.Module):
         normed_coors = coors / norm.clamp(min=self.eps)
         return normed_coors * self.scale
 
+class SinusoidalEmbeddings(nn.Module):
+    """A simple sinusoidal embedding layer. From Jeremy."""
+
+    def __init__(self, dim, theta: float = 10000.0) -> None:
+        super().__init__()
+        self.dim = dim
+        self.theta = theta
+
+    def forward(self, time: torch.Tensor) -> torch.Tensor:
+        half_dim = self.dim // 2
+        embeddings = math.log(self.theta) / (half_dim - 1)
+        embeddings = torch.exp(torch.arange(half_dim, device=time.device) * -embeddings)
+        embeddings = time[:, None] * embeddings[None, :]
+        embeddings = torch.cat((embeddings.sin(), embeddings.cos()), dim=-1)
+
+        return embeddings
+
 
 class EGNN_Sparse(MessagePassing):
     """ """
+    propagate_type = {"x": Tensor, "edge_attr": Tensor, "coors": Tensor, "rel_coors": Tensor, "size": Size, "batch": Dict}
 
     def __init__(self, args, **kwargs):
         self.args = args
@@ -66,6 +85,7 @@ class EGNN_Sparse(MessagePassing):
         super(EGNN_Sparse, self).__init__(**kwargs)
         # model params
         self.feats_dim = self.args.protein_dim
+        self.feat_proj_dim = self.args.feat_proj_dim
         self.edge_attr_dim = self.args.edge_attr_dim
         self.m_dim = self.args.message_dim
         self.soft_edge = self.args.soft_edge
@@ -74,8 +94,17 @@ class EGNN_Sparse(MessagePassing):
         self.norm_coors_scale_init = self.args.norm_coors_scale_init
         self.coor_weights_clamp_value = self.args.coor_weights_clamp_value
 
-        self.edge_input_dim = self.edge_attr_dim + 1 + (self.feats_dim * 2)
+        if not self.args.use_sinusoidal:
+            self.edge_input_dim = self.edge_attr_dim + 1 + (self.feats_dim * 2)
+        else:
+            self.edge_input_dim = self.feats_dim * 3
         self.dropout = nn.Dropout(self.args.dropout) if self.args.dropout > 0 else nn.Identity()
+
+        if self.args.use_sinusoidal:
+            dist_dim = self.args.protein_dim # can replace if using different distance embedding
+            self.dist_embedding = SinusoidalEmbeddings(dist_dim)
+        else:
+            self.dist_embedding = nn.Linear(1, dist_dim)  # type: ignore
 
         # EDGES
         # \phi_e
@@ -148,7 +177,11 @@ class EGNN_Sparse(MessagePassing):
     ) -> Tensor:
         """ """
         rel_coors = coors[edge_index[0]] - coors[edge_index[1]]
-        rel_dist = (rel_coors**2).sum(dim=-1, keepdim=True)
+        # rel_dist = (rel_coors**2).sum(dim=-1, keepdim=True)
+        rel_dist = torch.sqrt((rel_coors**2).sum(dim=-1, keepdim=True))
+        rel_dist = self.dist_embedding(rel_dist) 
+        if rel_dist.shape[1] == 1:
+            rel_dist = rel_dist.squeeze(1)
 
         if exists(edge_attr):
             edge_attr_feats = torch.cat([edge_attr, rel_dist], dim=-1)
@@ -717,4 +750,16 @@ class EGNN_Mol_Classifier(AbstractModel):
             type=int,
             default=64,
             help="",
+        )
+        parser.add_argument(
+            "--feat_proj_dim",
+            type=int,
+            default=1280,
+            help="dim that features are projected to upon being fed to phi_e",
+        )
+        parser.add_argument(
+            "--use_sinusoidal",
+            action="store_true",
+            default=False,
+            help="whether or not to use sinusoidal embeddings for distance",
         )

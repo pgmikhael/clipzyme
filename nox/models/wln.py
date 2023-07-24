@@ -14,6 +14,8 @@ from nox.models.chemprop import WLNEncoder
 from rdkit import Chem 
 import copy 
 import os 
+from typing import Optional, List, Union, Tuple, Any, Dict
+
 
 class WLDN_Cache:
     def __init__(self, path, extension="pt"):

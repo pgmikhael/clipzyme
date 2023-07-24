@@ -561,13 +561,19 @@ class EnzymeMapSubstrate(EnzymeMap):
 
         dataset = []
         seen_before = set()
-
         for rowid, reaction in tqdm(
             enumerate(self.metadata_json),
             desc="Building dataset",
             total=len(self.metadata_json),
             ncols=100,
         ):
+        # print("Using small test dataset")
+        # for rowid, reaction in tqdm(
+        #     enumerate(self.metadata_json[:1000]),
+        #     desc="Building dataset",
+        #     total=len(self.metadata_json[:1000]),
+        #     ncols=100,
+        # ):
             self.mol2size = {}
 
             ec = reaction["ec"]
