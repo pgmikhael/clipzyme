@@ -373,7 +373,7 @@ class Base(pl.LightningModule, Nox):
         if (self.args.profiler is not None) and (self.args.log_profiler):
             logging_dict.update(self.get_time_profile(key))
         self.log_dict(
-            logging_dict, prog_bar=True, logger=True, batch_size=self.args.batch_size
+            logging_dict, prog_bar=True, logger=True, batch_size=self.args.batch_size, sync_dist=True
         )
 
     def get_time_profile(self, key):
