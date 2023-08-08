@@ -100,8 +100,8 @@ class EGNN_Sparse(MessagePassing):
             self.edge_input_dim = self.feats_dim * 3
         self.dropout = nn.Dropout(self.args.dropout) if self.args.dropout > 0 else nn.Identity()
 
+        dist_dim = self.args.protein_dim # can replace if using different distance embedding
         if self.args.use_sinusoidal:
-            dist_dim = self.args.protein_dim # can replace if using different distance embedding
             self.dist_embedding = SinusoidalEmbeddings(dist_dim)
         else:
             self.dist_embedding = nn.Linear(1, dist_dim)  # type: ignore

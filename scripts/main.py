@@ -39,7 +39,11 @@ def train(args):
         # Get the trainer's argument names
         trainer_arg_names = set(inspect.signature(pl.Trainer).parameters.keys())
         trainer_args = {k: cast_type(v) for k, v in vars(args).items() if k in trainer_arg_names}
-        trainer_args["strategy"] = DDPStrategy(find_unused_parameters=True)
+        if int(args.devices) > 1:
+            trainer_args["strategy"] = DDPStrategy(find_unused_parameters=True)
+            args.strategy = 'ddp' # important for loading
+        else:
+            trainer_args["strategy"] = 'auto'
         trainer = pl.Trainer(**trainer_args)
     else:
     # Remove callbacks from args for safe pickling later
@@ -115,7 +119,9 @@ def eval(model, logger, args):
     model.args.local_rank = trainer.local_rank
 
     # reset ddp
+    # just keeps track for args, trainer is reinitialized above
     if not hasattr(pl.Trainer, "add_argparse_args"):
+        args.devices = 1
         args.strategy = "auto" # note must set devices=1 otherwise will use all available gpus
     else:
         args.strategy = None # legacy

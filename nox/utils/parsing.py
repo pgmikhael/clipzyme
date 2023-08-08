@@ -684,7 +684,8 @@ def parse_args(args_strings=None):
         args.use_distributed_sampler = False 
     else:
         if not hasattr(Trainer, "add_argparse_args"): # lightning 2.0
-            args.strategy = "auto" 
+            # args.strategy = "auto"
+            args.strategy = "ddp" # should be overwritten later in main
         else: # legacy
             args.strategy = None
             args.replace_sampler_ddp = False
