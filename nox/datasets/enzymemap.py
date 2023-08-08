@@ -5,7 +5,7 @@ from tqdm import tqdm
 import argparse
 import pickle
 from rxn.chemutils.smiles_randomization import randomize_smiles_rotated
-from nox.utils.smiles import get_rdkit_feature, remove_atom_maps, assign_dummy_atom_maps
+from nox.utils.smiles import get_rdkit_feature, remove_atom_maps, assign_dummy_atom_maps, generate_scaffold
 from nox.utils.pyg import from_smiles, from_mapped_smiles
 import warnings
 import copy, os
@@ -31,10 +31,13 @@ from nox.utils.protein_utils import (
     get_sequences,
 )
 from nox.utils.wln_processing import get_bond_changes
-from torch_geometric.data import HeteroData, Data
-from torch_geometric.data import Dataset
+from torch_geometric.data import HeteroData, Data, Batch, Dataset
 import argparse
 from nox.models.wln import WLDN_Cache
+from nox.utils.amino_acids import AA_TO_SMILES
+
+
+from random import Random
 
 def stringify_sets(sets):
     final = []
@@ -84,6 +87,13 @@ class EnzymeMap(AbstractDataset):
                 "rb",
             )
         )
+        if not self.args.use_all_sequences:
+            self.uniprot2split = pickle.load(
+                open(
+                    "/Mounts/rbg-storage1/datasets/Enzymes/EnzymeMap/mmseq_splits_precomputed.p",
+                    "rb"
+                )
+            )
 
     def create_dataset(self, split_group: Literal["train", "dev", "test"]) -> List[dict]:
 
@@ -95,7 +105,6 @@ class EnzymeMap(AbstractDataset):
 
 
         dataset = []
-
         for rowid, reaction in tqdm(
             enumerate(self.metadata_json),
             desc="Building dataset",
@@ -254,7 +263,7 @@ class EnzymeMap(AbstractDataset):
             return item
 
         except Exception as e:
-            print(f"Could not load sample {sample['uniprot_id']} because of exception {e}")
+            print(f"Getitem enzymemap: Could not load sample {sample['uniprot_id']} because of exception {e}")
 
     def get_pesto_scores(self, uniprot):
         filepath = f"{self.args.pesto_scores_directory}/AF-{uniprot}-F1-model_v4.pt"
@@ -278,8 +287,8 @@ class EnzymeMap(AbstractDataset):
         np.random.seed(seed)
 
         # assign groups
-        if self.args.split_type in ["mmseqs", "sequence", "ec", "product"]:
-            if self.args.split_type == "mmseqs":
+        if self.args.split_type in ["mmseqs", "sequence", "ec", "product", "mmseqs_precomputed"]:
+            if self.args.split_type == "mmseqs" or self.args.split_type == "mmseqs_precomputed":
                 samples = list(self.uniprot2cluster.values())
 
             if self.args.split_type == "sequence":
@@ -332,8 +341,71 @@ class EnzymeMap(AbstractDataset):
                         )
                     }
                 )
+        elif self.args.split_type == "scaffold":
+            # split based on scaffold
+            self.scaffold_split(metadata_json, split_probs, seed)
         else:
             raise ValueError("Split type not supported")
+
+
+    def scaffold_split(self, meta: List[dict], split_probs: List[float], seed):
+        scaffold_to_indices = defaultdict(list)
+        for m_i, m in enumerate(meta):
+            scaffold = generate_scaffold(m["smiles"])
+            scaffold_to_indices[scaffold].append(m_i)
+
+        # Split
+        train_size, val_size, test_size = (
+            split_probs[0] * len(meta),
+            split_probs[1] * len(meta),
+            split_probs[2] * len(meta),
+        )
+        train, val, test = [], [], []
+        train_scaffold_count, val_scaffold_count, test_scaffold_count = 0, 0, 0
+
+        # Seed randomness
+        random = Random(seed)
+
+        if (
+            self.args.scaffold_balanced
+        ):  # Put stuff that's bigger than half the val/test size into train, rest just order randomly
+            index_sets = list(scaffold_to_indices.values())
+            big_index_sets = []
+            small_index_sets = []
+            for index_set in index_sets:
+                if len(index_set) > val_size / 2 or len(index_set) > test_size / 2:
+                    big_index_sets.append(index_set)
+                else:
+                    small_index_sets.append(index_set)
+            random.seed(seed)
+            random.shuffle(big_index_sets)
+            random.shuffle(small_index_sets)
+            index_sets = big_index_sets + small_index_sets
+        else:  # Sort from largest to smallest scaffold sets
+            index_sets = sorted(
+                list(scaffold_to_indices.values()),
+                key=lambda index_set: len(index_set),
+                reverse=True,
+            )
+
+        for index_set in index_sets:
+            if len(train) + len(index_set) <= train_size:
+                train += index_set
+                train_scaffold_count += 1
+            elif len(val) + len(index_set) <= val_size:
+                val += index_set
+                val_scaffold_count += 1
+            else:
+                test += index_set
+                test_scaffold_count += 1
+
+        for idx_list, split in [(train, "train"), (val, "dev"), (test, "test")]:
+            for idx in idx_list:
+                meta[idx]["split"] = split
+                if meta[idx]['smiles'] in self.to_split and self.to_split[meta[idx]['smiles']] != split:
+                    raise Exception("Smile exists in to_split but with different split")
+                self.to_split[meta[idx]['smiles']] = split
+
 
     def get_split_group_dataset(self, processed_dataset, split_group: Literal["train", "dev", "test"]) -> List[dict]:
         dataset = []
@@ -349,7 +421,9 @@ class EnzymeMap(AbstractDataset):
                 cluster = self.uniprot2cluster[sample["protein_id"]]
                 if self.to_split[cluster] != split_group:
                     continue
-
+            elif self.args.split_type == "mmseqs_precomputed" or self.args.split_type == "scaffold":
+                if sample['split'] != split_group:
+                    continue
             elif self.args.split_type in ["product"]:
                 products = ".".join(sample["products"])
                 if self.to_split[products] != split_group:
@@ -486,6 +560,12 @@ class EnzymeMap(AbstractDataset):
             default=False,
             help="split products into different samples"
         )
+        parser.add_argument(
+            "--scaffold_balanced",
+            action="store_true",
+            default=False,
+            help="balance the scaffold sets",
+        )
 
 
     @property
@@ -580,6 +660,745 @@ class EnzymeMapSingle(EnzymeMap):
 
 @register_object("enzymemap_substrate", "dataset")
 class EnzymeMapSubstrate(EnzymeMap):
+    def __init__(self, args, split_group) -> None:
+        esm_dir = "/Mounts/rbg-storage1/snapshots/metabolomics/esm2/checkpoints/esm2_t33_650M_UR50D.pt"
+        self.esm_dir = esm_dir
+        model, alphabet = pretrained.load_model_and_alphabet(esm_dir)
+        self.esm_model = model
+        self.alphabet = alphabet
+        self.batch_converter = alphabet.get_batch_converter()
+        super(EnzymeMapSubstrate, EnzymeMapSubstrate).__init__(self, args, split_group)
+
+    def create_dataset(self, split_group: Literal["train", "dev", "test"]) -> List[dict]:
+        # if removing top K
+        # if self.args.topk_byproducts_to_remove is not None:
+        #     raw_byproducts = Counter([r for d in self.metadata_json for r in d["products"]]).most_common(self.args.topk_byproducts_to_remove)
+        #     mapped_byproducts = Counter([r for d in self.metadata_json for r in d.get("mapped_products", []) ]).most_common(self.args.topk_byproducts_to_remove)
+        #     self.common_byproducts = {s[0]:True for byproducts in [raw_byproducts, mapped_byproducts] for s in byproducts}
+        self.mol2size = {}
+
+        if self.args.topk_substrates_to_remove is not None:
+            raw_substrates = Counter([r for d in self.metadata_json for r in d["reactants"]]).most_common(self.args.topk_substrates_to_remove)
+            self.common_substrates = set([s[0] for s in raw_substrates])
+
+        dataset = []
+        seen_before = set()
+        # self.metadata_json = self.metadata_json[:100] + self.metadata_json[-100:] + self.metadata_json[70711:70811]
+
+        for rowid, reaction in tqdm(
+            enumerate(self.metadata_json),
+            desc="Building dataset",
+            total=len(self.metadata_json),
+            ncols=100,
+        ):
+            self.mol2size = {}
+
+            ec = reaction["ec"]
+            reactants = sorted(reaction.get("mapped_reactants", []))  if self.args.use_mapped_reaction else sorted(reaction["reactants"])
+            products = sorted(reaction.get("mapped_products", [])) if self.args.use_mapped_reaction else sorted(reaction["products"])
+            products = [p for p in products if p not in reactants]
+
+            # if self.args.topk_byproducts_to_remove is not None:
+            #     products = [p for p in products if p not in self.common_byproducts]
+            if self.args.topk_substrates_to_remove is not None:
+                reactants = [s for s in reactants if s not in self.common_substrates]
+
+            valid_uniprots = set()
+            for r in reactants:
+                for uniprot in self.ec2uniprot.get(ec, []):
+                    temp_sample = {
+                        "smiles": r,
+                        "ec": ec,
+                        "protein_id": uniprot,
+                        "uniprot_id": uniprot,
+                        "sequence": self.uniprot2sequence[uniprot],
+                        "y": 1,
+                    }
+                    if self.skip_sample(temp_sample, split_group):
+                        continue
+
+                    valid_uniprots.add(uniprot)
+
+                if len(valid_uniprots) == 0:
+                    continue
+                
+                # whether or not to use all of the sequences
+                if self.args.use_all_sequences:
+                    for uniprot in valid_uniprots:
+                        sample = {
+                            "smiles": r,
+                            "ec": ec,
+                            "rowid": f"{uniprot}_{reaction['rxnid']}",
+                            "sample_id": f"{uniprot}_{reaction['rxnid']}",
+                            "uniprot_id": uniprot,
+                            "protein_id": uniprot,
+                            "y": 1,
+                        }
+                        # remove duplicate prot-substrate pairs
+                        if f"{uniprot}_{r}" in seen_before:
+                            continue
+                        seen_before.add(f"{uniprot}_{r}")
+                        # add reaction sample to dataset
+                        try:
+                            if self.args.use_protein_graphs:
+                                graph_path = os.path.join(self.args.protein_graphs_dir, "processed", f"{sample['uniprot_id']}_graph.pt")
+
+                                if not os.path.exists(graph_path):
+                                    data = self.create_protein_graph(sample)
+                                    torch.save(data, graph_path)
+                            dataset.append(sample)
+                        except Exception as e:
+                            print(f"Error processing {sample['sample_id']} because of {e}")
+                            continue
+                else:
+                    assert not self.args.add_neg_for_all_substrates, "Cannot use all sequences and add negative samples for all substrates"
+                    # TODO: can loop over the following k times if you want k sequences per sample
+                    # instead of adding one uniprot, store all uniprots and then sample in getitem
+                    for split in ["train", "dev", "test"]:
+                        valid_uniprots_split = [u for u in valid_uniprots if self.uniprot2split[u] == split]
+                        if len(valid_uniprots_split) == 0:
+                            continue
+                        # want to evaluate on full dev and test
+                        if split in ["dev", "test"] and self.args.eval_on_full_dev_test:
+                            for prot in valid_uniprots_split:
+                                if f"{prot}_{r}" in seen_before:
+                                    continue
+                                seen_before.add(f"{prot}_{r}")
+                                sample = {
+                                    "smiles": r,
+                                    "ec": ec,
+                                    "sample_id": f"{hashlib.sha256(r.encode('utf-8')).hexdigest()}_{hashlib.sha256(str(sorted(list([prot]))).encode('utf-8')).hexdigest()}",
+                                    "uniprot_ids": list([prot]),
+                                    "protein_ids": list([prot]),
+                                    "y": 1,
+                                    "split": split,
+                                }
+                                
+                                # add reaction sample to dataset
+                                try:
+                                    if self.args.use_protein_graphs:
+                                        for u_prot_id in sample["uniprot_ids"]:
+                                            graph_path = os.path.join(self.args.protein_graphs_dir, "processed", f"{u_prot_id}_graph.pt")
+
+                                            if not os.path.exists(graph_path):
+                                                data = self.create_protein_graph(sample)
+                                                torch.save(data, graph_path)
+                                    dataset.append(sample)
+                            
+                                except Exception as e:
+                                    print(f"Error processing {sample['sample_id']} because of {e}")
+                                    continue
+                        else:
+                            sample = {
+                                "smiles": r,
+                                "ec": ec,
+                                "sample_id": f"{hashlib.sha256(r.encode('utf-8')).hexdigest()}_{hashlib.sha256(str(sorted(list(valid_uniprots_split))).encode('utf-8')).hexdigest()}",
+                                "uniprot_ids": list(valid_uniprots_split),
+                                "protein_ids": list(valid_uniprots_split),
+                                "y": 1,
+                                "split": split,
+                            }
+                            # remove duplicate prot-substrate pairs
+                            skip_uniprots = []
+                            for uniprot in valid_uniprots_split:
+                                if f"{uniprot}_{r}" in seen_before:
+                                    skip_uniprots.append(uniprot)
+                                seen_before.add(f"{uniprot}_{r}")
+                            sample["uniprot_ids"] = [u for u in sample["uniprot_ids"] if u not in skip_uniprots]
+                            sample["protein_ids"] = [u for u in sample["protein_ids"] if u not in skip_uniprots]
+                            if len(sample['uniprot_ids']) == 0:
+                                continue
+                            
+                            # add reaction sample to dataset
+                            try:
+                                if self.args.use_protein_graphs:
+                                    for u_prot_id in sample["uniprot_ids"]:
+                                        graph_path = os.path.join(self.args.protein_graphs_dir, "processed", f"{u_prot_id}_graph.pt")
+
+                                        if not os.path.exists(graph_path):
+                                            data = self.create_protein_graph(sample)
+                                            torch.save(data, graph_path)
+                                dataset.append(sample)
+                        
+                            except Exception as e:
+                                print(f"Error processing {sample['sample_id']} because of {e}")
+                                continue
+
+                    # TODO: might be missing sequences from ECs...
+
+        # print("Randomly adding things to val set")
+        # for s in dataset:
+        #     if random.random() > 0.5:
+        #         s['split'] = 'dev'
+        # print("limiting to 0.01 of data")
+        # dataset = [s for s in dataset if random.random() >= 0.99]
+        return dataset
+
+
+    def __getitem__(self, index):
+        sample = self.dataset[index]
+
+        try:
+            if self.args.use_all_sequences:
+                # ec = sample["ec"]
+                uniprot_id = sample["uniprot_id"]
+
+                if len(self.prot_id_to_negatives[uniprot_id]) == 0:
+                    return None
+
+                sequence = self.uniprot2sequence[uniprot_id]
+                if sample['y'] == 0 and self.args.sample_negatives_on_get:
+                    # sample a negative substrate
+                    sample["smiles"] = list(self.prot_id_to_negatives[uniprot_id])[np.random.randint(0, len(self.prot_id_to_negatives[uniprot_id]))]
+                    
+            else:
+                uniprot_id = sample["uniprot_ids"][np.random.randint(0, len(sample["uniprot_ids"]))]
+                sequence = self.uniprot2sequence[uniprot_id]
+
+
+            smiles = sample["smiles"]
+
+            if self.args.use_random_smiles_representation:
+                try:
+                    smiles = randomize_smiles_rotated(smiles)
+                except:
+                    pass
+
+            sample_id = sample["sample_id"]
+            item = {
+                "sequence": sequence,
+                # "ec": ec,
+                # "organism": sample.get("organism", "none"),
+                "protein_id": uniprot_id,
+                "uniprot_id": uniprot_id,
+                "sample_id": sample_id,
+                "smiles": smiles,
+                "y": sample['y'],
+            }
+            if 'split' in sample or self.args.split_type == 'mmseqs_precomputed' or self.args.split_type == 'scaffold':
+                item['split'] = sample['split']
+
+            if self.args.use_pesto_scores:
+                scores = self.get_pesto_scores(item["protein_id"])
+                if (scores is None) or (scores.shape[0] != len(item["sequence"])):
+                    # make all zeros of length sequence
+                    scores = torch.zeros(len(item["sequence"]))
+                item["sequence_annotation"] = scores
+
+                if self.args.replace_seq_with_smiles:
+                    item['pesto_indices'] = np.where(item["sequence_annotation"] >= self.args.pesto_threshold)[0]
+                    if len(item['pesto_indices']) == 0:
+                        # if all pesto scores are low, just use the entire protein
+                        item['pesto_indices'] = np.where(item["sequence_annotation"] >= 0)[0]
+                    item["pesto_sequence"] = "".join([item["sequence"][i] for i in item['pesto_indices']])
+                    item['sequence_smiles'] = []
+                    for letter in item["pesto_sequence"]:
+                        item['sequence_smiles'].append(AA_TO_SMILES.get(letter, None))
+
+                    item['sequence_smiles'] = [from_smiles(s) for s in item['sequence_smiles'] if s is not None]
+                    item['sequence_smiles'] = Batch.from_data_list(item['sequence_smiles'])
+
+            if self.args.use_protein_graphs:
+                # load the protein graph
+                graph_path = os.path.join(self.args.protein_graphs_dir, "processed", f"{item['uniprot_id']}_graph.pt")
+                data = torch.load(graph_path)
+                if data is None:
+                    structure_path = os.path.join(self.args.protein_structures_dir, f"AF-{item['uniprot_id']}-F1-model_v4.cif")
+                    assert os.path.exists(structure_path), f"Structure path {graph_path} does not exist"
+                    print(f"Structure path does exist, but graph path does not exist {graph_path}")
+                    import pdb; pdb.set_trace()
+                    data = self.create_protein_graph(item)
+                    torch.save(data, graph_path)
+
+                data = self.add_additional_data_to_graph(data, item)
+                # TODO: remove in the future
+                # if not hasattr(data, "structure_sequence"):
+                #     protein_letters_3to1.update({k.upper(): v for k, v in protein_letters_3to1.items()})
+                #     AA_seq = ""
+                #     for char in data['receptor'].seq:
+                #         AA_seq += protein_letters_3to1[char]
+                #     data.structure_sequence = AA_seq
+                if hasattr(data, "x") and not hasattr(data["receptor"], "x"):
+                    data["receptor"].x = data.x
+
+                keep_keys = {"receptor", "mol_data", "sequence", "protein_id", "uniprot_id", "sample_id", "smiles", "y", ('receptor', 'contact', 'receptor')}
+                
+                data_keys = data.to_dict().keys()
+                for d_key in data_keys:
+                    if not d_key in keep_keys:
+                        delattr(data, d_key)
+
+                # if hasattr(data, "x"):
+                #     delattr(data, "x")
+                # if hasattr(data, "ec"):
+                #     delattr(data, "ec")
+                # if hasattr(data, "embedding_path"):
+                #     delattr(data, "embedding_path")
+                # if hasattr(data, "protein_path"):
+                #     delattr(data, "protein_path")
+                # if hasattr(data, "sample_hash"):
+                #     delattr(data, "sample_hash")
+                coors = data["receptor"].pos
+                feats = data["receptor"].x
+                edge_index = data["receptor", "contact", "receptor"].edge_index
+                assert coors.shape[0] == feats.shape[0], \
+                    f"Number of nodes do not match between coors ({coors.shape[0]}) and feats ({feats.shape[0]})"
+
+                assert max(edge_index[0]) < coors.shape[0] and max(edge_index[1]) < coors.shape[0], \
+                    "Edge index contains node indices not present in coors"
+
+                return data
+            else: # just the substrate, with the protein sequence in the Data object
+                reactant = from_smiles(sample["smiles"])
+                for key in item.keys():
+                    reactant[key] = item[key]
+                return reactant
+
+        except Exception as e:
+            import pdb; pdb.set_trace()
+            print(f"Getitem: Could not load sample: {sample['sample_id']} due to {e}")
+
+
+    def add_additional_data_to_graph(self, data, sample):
+        skipped_keys = set(["protein_path", "embedding_path"])
+        for key in sample.keys():
+            if not key in skipped_keys and key not in data.to_dict().keys():
+                data[key] = sample[key]
+        data["mol_data"] = from_smiles(sample["smiles"])
+        return data
+
+    def create_protein_graph(self, sample):
+        try:
+            raw_path = os.path.join(self.args.protein_structures_dir, f"AF-{sample['uniprot_id']}-F1-model_v4.cif")
+            sample_id = sample["sample_id"]
+            protein_parser = Bio.PDB.MMCIFParser()
+            protein_resolution = "residue"
+            graph_edge_args = {"knn_size": 10}
+            center_protein = True
+            esm_dir="/Mounts/rbg-storage1/snapshots/metabolomics/esm2/checkpoints/esm2_t33_650M_UR50D.pt"
+
+            # parse pdb
+            all_res, all_atom, all_pos = read_structure_file(
+                protein_parser, raw_path, sample_id
+            )
+            # filter resolution of protein (backbone, atomic, etc.)
+            atom_names, seq, pos = filter_resolution(
+                all_res,
+                all_atom,
+                all_pos,
+                protein_resolution=protein_resolution,
+            )
+            # generate graph
+            data = build_graph(atom_names, seq, pos, sample_id)
+            # kNN graph
+            data = compute_graph_edges(data, **graph_edge_args)
+            if center_protein:
+                center = data["receptor"].pos.mean(dim=0, keepdim=True)
+                data["receptor"].pos = data["receptor"].pos - center
+                data.center = center
+            uniprot_id = sample["uniprot_id"]
+            sequence = self.uniprot2sequence[uniprot_id]
+            data.structure_sequence = self.uniprot2sequence[uniprot_id]
+            node_embeddings_args = {"model": self.esm_model, "model_location": self.esm_dir, "alphabet": self.alphabet, "batch_converter": self.batch_converter}
+
+            embedding_path = os.path.join(self.args.protein_graphs_dir, "precomputed_node_embeddings", f"{sample['uniprot_id']}.pt")
+            if os.path.exists(embedding_path):
+                node_embedding = torch.load(
+                    sample["embedding_path"]
+                )
+            else:
+                node_embedding = compute_node_embedding(
+                    data, **node_embeddings_args
+                )
+            # Fix sequence length mismatches
+            if len(data["receptor"].seq) != node_embedding.shape[0]:
+                print("Computing seq embedding for mismatched seq length")
+                protein_letters_3to1.update({k.upper(): v for k, v in protein_letters_3to1.items()})
+                AA_seq = ""
+                for char in seq:
+                    AA_seq += protein_letters_3to1[char]
+                # sequences = get_sequences(
+                #     self.protein_parser,
+                #     [sample["sample_id"]],
+                #     [os.path.join(self.structures_dir, f"AF-{sample['uniprot_id']}-F1-model_v4.cif")],
+                # )
+                
+                data.structure_sequence = AA_seq
+                data["receptor"].x = compute_node_embedding(
+                    data, **node_embeddings_args
+                )
+            else:
+                data["receptor"].x = node_embedding
+            
+            if len(data["receptor"].seq) != node_embedding.shape[0]:
+                return None
+            
+            return data
+
+        except Exception as e:
+            import pdb; pdb.set_trace()
+            print(f"Create prot graph: Could not load sample {sample['uniprot_id']} because of the exception {e}")
+            return None
+
+    def post_process(self, args):
+        if args.sample_negatives:
+            self.dataset = self.add_negatives(self.dataset, split_group=self.split_group)
+
+    def add_negatives(self, dataset, split_group):
+        # # Uncomment to add ec
+        # uniprot2ec = {}
+        # for s in dataset:
+        #     uniprot2ec[s["uniprot_id"]] = s["ec"]
+        all_substrates = set(d["smiles"] for d in dataset)
+        all_substrates_list = list(all_substrates)
+        if self.args.use_all_sequences:
+            all_uniprots = set(d["protein_id"] for d in dataset)
+        else:
+            all_uniprots = set(uniprot for d in dataset for uniprot in d["uniprot_ids"])
+
+        # filter out negatives based on some metric (e.g. similarity)
+        if self.args.sample_negatives_range is not None:
+            min_sim, max_sim = self.args.sample_negatives_range
+
+            # get features of every smile
+            smiles2feature = {smile: get_rdkit_feature(mol=smile, method="morgan_binary") for smile in all_substrates}
+            # normalize and stack all feature vecs
+            smile_fps = np.array([smiles2feature[smile] / np.linalg.norm(smiles2feature[smile]) for smile in all_substrates])
+            # similarity matrix
+            smile_similarity = smile_fps @ smile_fps.T
+
+            # this is a dict of each molecule and the similar but different molecules in the range defined
+            smiles2negatives = defaultdict(set)
+            for smi_i, (smile, sim_row) in tqdm(
+                enumerate(zip(all_substrates_list, smile_similarity)), desc="Retrieving all negatives", total=len(all_substrates_list)
+                ):
+                # find where in the row of molecules which indices are above similarity threshold
+                valid_indices = np.where((sim_row > min_sim) & (sim_row < max_sim))[0]
+                # add to the dict
+                smiles2negatives[smile].update(all_substrates_list[j] for j in valid_indices)
+
+        # this dict holds each uniprot and the molecules that it is not a binder for in the similarity threshold
+        # note that it the second loop must run to remove positives
+        self.prot_id_to_negatives = defaultdict(set)
+        for sample in tqdm(dataset, desc="Sampling negatives"):
+            if self.args.use_all_sequences:
+                if self.args.sample_negatives_range is not None:
+                    prot_id = sample["protein_id"]
+                    self.prot_id_to_negatives[prot_id].update(smiles2negatives[sample["smiles"]])
+                else:
+                    self.prot_id_to_negatives.update(all_substrates_list)
+            else:
+                for uniprot in sample["uniprot_ids"]:
+                    if self.args.sample_negatives_range is not None:
+                        self.prot_id_to_negatives[uniprot].update(smiles2negatives[sample["smiles"]])
+                    else:
+                        self.prot_id_to_negatives[uniprot].update(all_substrates_list)
+
+        for sample in tqdm(dataset):
+            if self.args.use_all_sequences:
+                prot_id = sample["protein_id"]
+                # remove the current smile from the dict
+                self.prot_id_to_negatives[prot_id].discard(sample["smiles"])
+            else:
+                for uniprot in sample["uniprot_ids"]:
+                    self.prot_id_to_negatives[uniprot].discard(sample["smiles"])
+        
+
+        smile2negative_prot = defaultdict(set)
+        for prot, negatives in tqdm(self.prot_id_to_negatives.items(), desc="Computing negatives for all substrates"):
+            for smile in negatives:
+                smile2negative_prot[smile].add(prot)
+
+        rowid = len(dataset)
+        prot_id2positive_smiles = defaultdict(set) # this is for later to add missing negatives
+        prots_with_no_negatives = []
+        negatives_to_add = []
+        no_negatives = 0
+        # now that we have all of the negatives found, add them to the dataset
+        for sample in tqdm(dataset, desc="Processing negatives"):
+            if self.args.use_all_sequences:
+                negatives = self.prot_id_to_negatives[sample['protein_id']]
+                prot_id = sample['protein_id']
+                prot_id2positive_smiles[prot_id].add(sample['smiles'])
+                if len(negatives) == 0:
+                    no_negatives += 1
+                    prots_with_no_negatives.append(prot_id)
+                    continue
+
+                # sometimes we dont want to add all negative options, just pick k
+                if self.args.sample_k_negatives is not None:
+                    if len(negatives) < self.args.sample_k_negatives:
+                        new_negatives = list(negatives)
+                    else:
+                        new_negatives = random.sample(
+                            list(negatives), self.args.sample_k_negatives
+                        )
+                else:
+                    new_negatives = list(negatives)
+
+                for rid, reactant in enumerate(new_negatives):
+                    item = {
+                        # "ec": ec,
+                        "protein_id": prot_id,
+                        "uniprot_id": prot_id,
+                        "sample_id": prot_id + "_" + str(rowid + rid),
+                        "smiles": reactant,
+                        # "split": uniprot2split[prot_id],
+                        "y": 0,
+                    }
+                    if self.args.split_type == 'scaffold':
+                        item['split'] = self.to_split[item['smiles']]
+
+                    if self.skip_sample(item, split_group):
+                        continue
+
+                    negatives_to_add.append(item)
+                
+                rowid += len(new_negatives)
+            else:
+                negative_uniprots = smile2negative_prot[sample['smiles']]
+                for split in ["train", "dev", "test"]:
+                    if split in ["dev", "test"] and self.args.eval_on_full_dev_test:
+                        valid_uniprots_split = [u for u in negative_uniprots if self.uniprot2split[u] == split]
+                        if len(valid_uniprots_split) == 0:
+                            continue
+                        for prot in valid_uniprots_split:
+                            item = {
+                                # "ec": ec,
+                                "protein_ids": [prot],
+                                "uniprot_ids": [prot],
+                                "sample_id": f"{hashlib.sha256(smile.encode('utf-8')).hexdigest()}_{hashlib.sha256(str(sorted(list([prot]))).encode('utf-8')).hexdigest()}",
+                                "smiles": smile,
+                                "split": split,
+                                "y": 0,
+                            }
+                            if self.skip_sample(item, split_group):
+                                continue
+
+                            negatives_to_add.append(item)
+                    else:
+                        valid_uniprots_split = [u for u in negative_uniprots if self.uniprot2split[u] == split]
+                        if len(valid_uniprots_split) == 0:
+                                continue
+                        item = {
+                            # "ec": ec,
+                            "protein_ids": valid_uniprots_split,
+                            "uniprot_ids": valid_uniprots_split,
+                            "sample_id": f"{hashlib.sha256(smile.encode('utf-8')).hexdigest()}_{hashlib.sha256(str(sorted(list(valid_uniprots_split))).encode('utf-8')).hexdigest()}",
+                            "smiles": smile,
+                            "split": split,
+                            "y": 0,
+                        }
+                        if self.skip_sample(item, split_group):
+                            continue
+
+                        negatives_to_add.append(item)                        
+                        
+
+        if self.args.add_neg_for_all_substrates: # and protein
+            
+            missing_substrates = []
+            for mol in all_substrates:
+                if not mol in smile2negative_prot:
+                    missing_substrates.append(mol)
+                else:
+                    prot = random.sample(smile2negative_prot[mol], 1)[0]
+                    sample = {
+                        "protein_id": prot,
+                        "uniprot_id": prot,
+                        "sample_id": prot + "_" + str(rowid + rid),
+                        "smiles": mol,
+                        "y": 0,
+                    }
+                    if self.args.split_type == 'scaffold':
+                        sample['split'] = self.to_split[sample['smiles']]
+
+                    rid += 1
+                    negatives_to_add.append(sample)
+
+            for uniprot in prots_with_no_negatives:
+                mol = random.sample(all_substrates, 1)[0]
+                i = 0
+                # if you happened to pick a positive pair, try to get a negative one 20 times
+                while mol in prot_id2positive_smiles[uniprot] and i < 20:
+                    i += 1
+                    mol = random.sample(all_substrates, 1)[0]
+                if i == 20:
+                    continue # just skip this one 
+                sample = {
+                    "protein_id": prot,
+                    "uniprot_id": prot,
+                    "sample_id": prot + "_" + str(rowid + rid),
+                    "smiles": mol,
+                    "y": 0,
+                }
+                if self.args.split_type == 'scaffold':
+                    sample['split'] = self.to_split[sample['smiles']]
+                rid += 1
+                negatives_to_add.append(sample)
+
+            for substr in missing_substrates:
+                prot = random.sample(all_uniprots, 1)[0]
+                i = 0
+                # if you happened to pick a positive pair, try to get a negative one 20 times
+                while substr in prot_id2positive_smiles[prot] and i < 20:
+                    i += 1
+                    prot = random.sample(all_uniprots, 1)[0]
+                if i == 20:
+                    continue # just skip this one 
+                sample = {
+                    "protein_id": prot,
+                    "uniprot_id": prot,
+                    "sample_id": prot + "_" + str(rowid + rid),
+                    "smiles": substr,
+                    "y": 0,
+                }
+                if self.args.split_type == 'scaffold':
+                    sample['split'] = self.to_split[sample['smiles']]
+                rid += 1
+                negatives_to_add.append(sample)
+
+
+        print(f"[magenta] Adding {len(negatives_to_add)} negatives [/magenta]")
+        print(f"[magenta] Missing any negatives for {no_negatives} ECs [/magenta]")
+        print(f"[magenta] Total number of positive samples: {len(dataset)} [/magenta]")
+        dataset += negatives_to_add
+
+        return dataset
+
+    def skip_sample(self, sample, split_group) -> bool:
+        if "ec" in sample and "-" in sample["ec"]:
+            return True
+
+        if self.args.use_protein_graphs:
+            structures_dir = os.path.join(self.args.protein_structures_dir, f"AF-{sample['uniprot_id']}-F1-model_v4.cif")
+
+            if not os.path.exists(structures_dir):
+                return True
+
+        # if sequence is unknown
+        if "sequence" in sample:
+            if (sample["sequence"] is None) or (len(sample["sequence"]) == 0):
+                return True
+
+            if (self.args.max_protein_length is not None) and len(
+                sample["sequence"]
+            ) > self.args.max_protein_length:
+                return True
+        
+        mol = sample["smiles"]
+        if not (mol in self.mol2size):
+            self.mol2size[mol] = rdkit.Chem.MolFromSmiles(mol).GetNumAtoms()
+            
+        if self.args.max_reactant_size is not None:
+            if self.mol2size[mol] > self.args.max_reactant_size:
+                return True
+        
+        if self.mol2size[mol] < 2:
+            return True 
+
+        return False
+    
+    @staticmethod   
+    def add_args(parser) -> None:
+        """Add class specific args"""
+        super(EnzymeMapSubstrate, EnzymeMapSubstrate).add_args(parser)
+        parser.add_argument(
+            "--replace_seq_with_smiles",
+            action="store_true",
+            default=False,
+            help="whether to replace sequence with smiles",
+        )
+        parser.add_argument(
+            "--pesto_threshold",
+            type=float,
+            default=0.5,
+            help="threshold for pesto predictions",
+        )
+        parser.add_argument(
+            "--use_protein_graphs",
+            action="store_true",
+            default=False,
+            help="whether to use and generate protein graphs",
+        )
+        parser.add_argument(
+            "--protein_graphs_dir",
+            type=str,
+            default=None,
+            help="directory to load protein graphs from",
+        )
+        parser.add_argument(
+            "--protein_structures_dir",
+            type=str,
+            default=None,
+            help="directory to load protein graphs from",
+        )
+        parser.add_argument(
+            "--sample_negatives",
+            action="store_true",
+            default=False,
+            help="whether to sample negative substrates",
+        )
+        parser.add_argument(
+            "--topk_substrates_to_remove",
+            type=int,
+            default=None,
+            help="remove common substrates",
+        )
+        parser.add_argument(
+            "--sample_negatives_range",
+            type=float,
+            nargs=2,
+            default=None,
+            help="range of similarity to sample negatives from",
+        )
+        parser.add_argument(
+            "--precomputed_esm_features_dir",
+            type=str,
+            default=None,
+            help="directory with precomputed esm features for computation efficiency",
+        )
+        parser.add_argument(
+            "--sample_k_negatives",
+            type=int,
+            default=None,
+            help="number of negatives to sample from each ec",
+        )
+        parser.add_argument(
+            "--sample_negatives_on_get",
+            action="store_true",
+            default=False,
+            help="whether to sample negatives on get",
+        )
+        parser.add_argument(
+            "--add_neg_for_all_substrates",
+            action="store_true",
+            default=False,
+            help="whether to add negatives for all substrates",
+        )
+        parser.add_argument(
+            "--use_all_sequences",
+            action="store_true",
+            default=False,
+            help="whether to add a sample for every sequence or one sequence per substrate",
+        )
+        parser.add_argument(
+            "--eval_on_full_dev_test",
+            action="store_true",
+            default=False,
+            help="whether to evaluate on full (all proteins) dev and test sets",
+        )
+
+
+    @staticmethod
+    def set_args(args):
+        args.dataset_file_path = (
+            "/Mounts/rbg-storage1/datasets/Enzymes/EnzymeMap/enzymemap_brenda2023.json"
+        )
+
+
+@register_object("enzymemap_substrate_test", "dataset")
+class EnzymeMapSubstrateTest(EnzymeMap):
     def __init__(self, args, split_group) -> None:
         esm_dir = "/Mounts/rbg-storage1/snapshots/metabolomics/esm2/checkpoints/esm2_t33_650M_UR50D.pt"
         self.esm_dir = esm_dir
@@ -765,7 +1584,7 @@ class EnzymeMapSubstrate(EnzymeMap):
                 return reactant
 
         except Exception as e:
-            print(f"Could not load sample: {sample['sample_id']} due to {e}")
+            print(f"Prot graph: Could not load sample: {sample['sample_id']} due to {e}")
 
 
     def add_additional_data_to_graph(self, data, sample):
@@ -845,7 +1664,7 @@ class EnzymeMapSubstrate(EnzymeMap):
             return data
 
         except Exception as e:
-            print(f"Could not load sample {sample['uniprot_id']} because of the exception {e}")
+            print(f"Prot graph: Could not load sample {sample['uniprot_id']} because of the exception {e}")
             return None
 
     def post_process(self, args):
@@ -859,46 +1678,31 @@ class EnzymeMapSubstrate(EnzymeMap):
         #     uniprot2ec[s["uniprot_id"]] = s["ec"]
         all_substrates = set(d["smiles"] for d in dataset)
         all_substrates_list = list(all_substrates)
+        all_uniprots = set(d["protein_id"] for d in dataset)
 
         # filter out negatives based on some metric (e.g. similarity)
         if self.args.sample_negatives_range is not None:
             min_sim, max_sim = self.args.sample_negatives_range
 
+            # get features of every smile
             smiles2feature = {smile: get_rdkit_feature(mol=smile, method="morgan_binary") for smile in all_substrates}
+            # normalize and stack all feature vecs
             smile_fps = np.array([smiles2feature[smile] / np.linalg.norm(smiles2feature[smile]) for smile in all_substrates])
-
+            # similarity matrix
             smile_similarity = smile_fps @ smile_fps.T
-            
-            # similarity_idx = np.where(
-            #     (smile_similarity <= min_sim) | (smile_similarity >= max_sim)
-            # )
 
-            # smiles2similars = defaultdict(set)
-            # for smi_i, smile in tqdm(
-            #     enumerate(all_substrates_list), desc="Retrieving all negatives", total=len(all_substrates_list)
-            # ):
-            #     if smile not in smiles2similars:
-            #         smiles2similars[smile].update(
-            #             all_substrates_list[j]
-            #             for j in similarity_idx[1][similarity_idx[0] == smi_i]
-            #         )
-
-            # smiles2similars = defaultdict(set)
-
-            # for smi_i, (smile, sim_row) in tqdm(
-            #     enumerate(zip(all_substrates_list, smile_similarity)), desc="Retrieving all negatives", total=len(all_substrates_list)
-            #     ):
-            #     valid_indices = np.where((sim_row <= min_sim) | (sim_row >= max_sim))[0]
-            #     smiles2similars[smile].update(all_substrates_list[j] for j in valid_indices)
-
+            # this is a dict of each molecule and the similar but different molecules in the range defined
             smiles2negatives = defaultdict(set)
-
             for smi_i, (smile, sim_row) in tqdm(
                 enumerate(zip(all_substrates_list, smile_similarity)), desc="Retrieving all negatives", total=len(all_substrates_list)
                 ):
+                # find where in the row of molecules which indices are above similarity threshold
                 valid_indices = np.where((sim_row > min_sim) & (sim_row < max_sim))[0]
+                # add to the dict
                 smiles2negatives[smile].update(all_substrates_list[j] for j in valid_indices)
 
+        # this dict holds each uniprot and the molecules that it is not a binder for in the similarity threshold
+        # note that it the second loop must run to remove positives
         self.prot_id_to_negatives = defaultdict(set)
         for sample in tqdm(dataset, desc="Sampling negatives"):
             if self.args.sample_negatives_range is not None:
@@ -909,29 +1713,25 @@ class EnzymeMapSubstrate(EnzymeMap):
 
         for sample in tqdm(dataset):
             prot_id = sample["protein_id"]
+            # remove the current smile from the dict
             self.prot_id_to_negatives[prot_id].discard(sample["smiles"])
-
-        # prot_id_to_positives = defaultdict(set)
-        # for sample in tqdm(dataset, desc="Sampling negatives"):
-        #     prot_id = sample["protein_id"]
-        #     prot_id_to_positives[prot_id].add(sample["smiles"])
-
-        #     if self.args.sample_negatives_range is not None:
-        #         prot_id_to_positives[prot_id].update(smiles2similars[sample["smiles"]])
-
-        # self.prot_id_to_negatives = {k: all_substrates - v for k, v in prot_id_to_positives.items()}
         
         rowid = len(dataset)
+        prot_id2positive_smiles = defaultdict(set) # this is for later to add missing negatives
+        prots_with_no_negatives = []
         negatives_to_add = []
         no_negatives = 0
-        # for prot_id, negatives in tqdm(self.prot_id_to_negatives.items(), desc="Processing negatives"):
+        # now that we have all of the negatives found, add them to the dataset
         for sample in tqdm(dataset, desc="Processing negatives"):
             negatives = self.prot_id_to_negatives[sample['protein_id']]
             prot_id = sample['protein_id']
+            prot_id2positive_smiles[prot_id].add(sample['smiles'])
             if len(negatives) == 0:
                 no_negatives += 1
+                prots_with_no_negatives.append(prot_id)
                 continue
 
+            # sometimes we dont want to add all negative options, just pick k
             if self.args.sample_k_negatives is not None:
                 if len(negatives) < self.args.sample_k_negatives:
                     new_negatives = list(negatives)
@@ -943,10 +1743,8 @@ class EnzymeMapSubstrate(EnzymeMap):
                 new_negatives = list(negatives)
 
             for rid, reactant in enumerate(new_negatives):
-                hashed_molname = hashlib.md5(reactant.encode()).hexdigest()
                 sample = {
                     # "ec": ec,
-                    # "organism": sample.get("organism", "none"),
                     "protein_id": prot_id,
                     "uniprot_id": prot_id,
                     "rowid": prot_id + "_" + str(rowid + rid),
@@ -959,6 +1757,72 @@ class EnzymeMapSubstrate(EnzymeMap):
                     continue
 
                 negatives_to_add.append(sample)
+
+        rowid += len(new_negatives)
+
+        if self.args.add_neg_for_all_substrates: # and protein
+            smile2negative_prot = defaultdict(set)
+            for prot, negatives in tqdm(self.prot_id_to_negatives.items(), desc="Computing negatives for all substrates"):
+                for smile in negatives:
+                    smile2negative_prot[smile].add(prot)
+            
+            missing_substrates = []
+            for mol in all_substrates:
+                if not mol in smile2negative_prot:
+                    missing_substrates.append(mol)
+                else:
+                    prot = random.sample(smile2negative_prot[mol], 1)[0]
+                    sample = {
+                        "protein_id": prot,
+                        "uniprot_id": prot,
+                        "rowid": prot + "_" + str(rowid + rid),
+                        "sample_id": prot + "_" + str(rowid + rid),
+                        "smiles": mol,
+                        "y": 0,
+                    }
+                    rid += 1
+                    negatives_to_add.append(sample)
+
+            for uniprot in prots_with_no_negatives:
+                mol = random.sample(all_substrates, 1)[0]
+                i = 0
+                # if you happened to pick a positive pair, try to get a negative one 20 times
+                while mol in prot_id2positive_smiles[uniprot] and i < 20:
+                    i += 1
+                    mol = random.sample(all_substrates, 1)[0]
+                if i == 20:
+                    continue # just skip this one 
+                sample = {
+                    "protein_id": prot,
+                    "uniprot_id": prot,
+                    "rowid": prot + "_" + str(rowid + rid),
+                    "sample_id": prot + "_" + str(rowid + rid),
+                    "smiles": mol,
+                    "y": 0,
+                }
+                rid += 1
+                negatives_to_add.append(sample)
+
+            for substr in missing_substrates:
+                prot = random.sample(all_uniprots, 1)[0]
+                i = 0
+                # if you happened to pick a positive pair, try to get a negative one 20 times
+                while substr in prot_id2positive_smiles[prot] and i < 20:
+                    i += 1
+                    prot = random.sample(all_uniprots, 1)[0]
+                if i == 20:
+                    continue # just skip this one 
+                sample = {
+                    "protein_id": prot,
+                    "uniprot_id": prot,
+                    "rowid": prot + "_" + str(rowid + rid),
+                    "sample_id": prot + "_" + str(rowid + rid),
+                    "smiles": substr,
+                    "y": 0,
+                }
+                rid += 1
+                negatives_to_add.append(sample)
+
 
         print(f"[magenta] Adding {len(negatives_to_add)} negatives [/magenta]")
         print(f"[magenta] Missing any negatives for {no_negatives} ECs [/magenta]")
@@ -1059,12 +1923,19 @@ class EnzymeMapSubstrate(EnzymeMap):
             default=False,
             help="whether to sample negatives on get",
         )
+        parser.add_argument(
+            "--add_neg_for_all_substrates",
+            action="store_true",
+            default=False,
+            help="whether to add negatives for all substrates",
+        )
 
     @staticmethod
     def set_args(args):
         args.dataset_file_path = (
             "/Mounts/rbg-storage1/datasets/Enzymes/EnzymeMap/enzymemap_brenda2023.json"
         )
+
 
 
 @register_object("enzymemap_reaction_graph", "dataset")
