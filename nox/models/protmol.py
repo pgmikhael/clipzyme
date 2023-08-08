@@ -151,7 +151,7 @@ class ProtMolClassifier(AbstractModel):
             "--enzyme_encoder_name",
             type=str,
             action=set_nox_type("model"),
-            default="non_canon_net",
+            default="fair_esm2",
             help="Name of enzyme encoder to use",
         )
         parser.add_argument(
@@ -173,6 +173,50 @@ class ProtMolClassifier(AbstractModel):
             default=False,
             help="",
         )
+
+
+@register_object("aamol_classifier", "model")
+class AAMolClassifier(ProtMolClassifier):
+    def __init__(self, args):
+        super(AAMolClassifier, self).__init__(args)
+        self.enzyme_encoder = get_object(args.substrate_encoder_name, "model")(args)
+
+    # just overload this to return the AA Batch
+    def convert_batch_to_seq_list(self, batch):
+        x = batch.sequence_smiles
+        return x
+
+    def forward(self, batch):
+        # encode molecule
+        if self.args.freeze_substrate_encoder:
+            self.substrate_encoder.requires_grad_(False)
+            with torch.no_grad():
+                substrate_dict = self.substrate_encoder(batch)
+        else:
+            substrate_dict = self.substrate_encoder(batch)
+        # encode protein -> must have sequence attribute or key
+        x = self.convert_batch_to_seq_list(batch)
+        each_item_is_active_site = []
+        for data_batch in x:
+            if self.args.freeze_enzyme_encoder:
+                self.enzyme_encoder.requires_grad_(False)
+                with torch.no_grad():
+                    each_item_is_active_site.append(self.enzyme_encoder(data_batch)['hidden'])
+            else:
+                each_item_is_active_site.append(self.enzyme_encoder(data_batch)['hidden'])
+        
+        # aggregate batch of AA embeddings
+        batch_of_prots = [torch.mean(item, dim=0) for item in each_item_is_active_site]
+        enzyme_dict = {"hidden": torch.stack(batch_of_prots, dim=0)}
+        hidden = torch.cat((enzyme_dict["hidden"], substrate_dict["hidden"]), dim=1)
+        mlp_dict = self.mlp({"x": hidden})
+        output = {
+            "sequence_hidden": enzyme_dict["hidden"],
+            "substrate_hidden": substrate_dict["hidden"],
+        }
+        output.update(mlp_dict)
+        return output
+
 
 
 @register_object("protmol_noncanon_classifier", "model")
