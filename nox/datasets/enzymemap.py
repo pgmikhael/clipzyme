@@ -87,7 +87,7 @@ class EnzymeMap(AbstractDataset):
                 "rb",
             )
         )
-        if not self.args.use_all_sequences:
+        if not hasattr(self.args, "use_all_sequences") or not self.args.use_all_sequences:
             self.uniprot2split = pickle.load(
                 open(
                     "/Mounts/rbg-storage1/datasets/Enzymes/EnzymeMap/mmseq_splits_precomputed.p",
@@ -745,8 +745,11 @@ class EnzymeMapSubstrate(EnzymeMap):
 
                                 if not os.path.exists(graph_path):
                                     data = self.create_protein_graph(sample)
+                                    if data is None:
+                                        raise Exception("Could not generate protein graph")
                                     torch.save(data, graph_path)
                             dataset.append(sample)
+                        
                         except Exception as e:
                             print(f"Error processing {sample['sample_id']} because of {e}")
                             continue
@@ -782,6 +785,8 @@ class EnzymeMapSubstrate(EnzymeMap):
 
                                             if not os.path.exists(graph_path):
                                                 data = self.create_protein_graph(sample)
+                                                if data is None:
+                                                    raise Exception("Could not generate protein graph")
                                                 torch.save(data, graph_path)
                                     dataset.append(sample)
                             
@@ -817,6 +822,8 @@ class EnzymeMapSubstrate(EnzymeMap):
 
                                         if not os.path.exists(graph_path):
                                             data = self.create_protein_graph(sample)
+                                            if data is None:
+                                                raise Exception("Could not generate protein graph")
                                             torch.save(data, graph_path)
                                 dataset.append(sample)
                         
@@ -825,13 +832,7 @@ class EnzymeMapSubstrate(EnzymeMap):
                                 continue
 
                     # TODO: might be missing sequences from ECs...
-
-        # print("Randomly adding things to val set")
-        # for s in dataset:
-        #     if random.random() > 0.5:
-        #         s['split'] = 'dev'
-        # print("limiting to 0.01 of data")
-        # dataset = [s for s in dataset if random.random() >= 0.99]
+                 
         return dataset
 
 
@@ -842,13 +843,13 @@ class EnzymeMapSubstrate(EnzymeMap):
             if self.args.use_all_sequences:
                 # ec = sample["ec"]
                 uniprot_id = sample["uniprot_id"]
-
-                if len(self.prot_id_to_negatives[uniprot_id]) == 0:
-                    return None
-
                 sequence = self.uniprot2sequence[uniprot_id]
+
                 if sample['y'] == 0 and self.args.sample_negatives_on_get:
                     # sample a negative substrate
+                    if len(self.prot_id_to_negatives[uniprot_id]) == 0:
+                        print("This protein has no negatives")
+                        return None
                     sample["smiles"] = list(self.prot_id_to_negatives[uniprot_id])[np.random.randint(0, len(self.prot_id_to_negatives[uniprot_id]))]
                     
             else:
@@ -911,13 +912,6 @@ class EnzymeMapSubstrate(EnzymeMap):
                     torch.save(data, graph_path)
 
                 data = self.add_additional_data_to_graph(data, item)
-                # TODO: remove in the future
-                # if not hasattr(data, "structure_sequence"):
-                #     protein_letters_3to1.update({k.upper(): v for k, v in protein_letters_3to1.items()})
-                #     AA_seq = ""
-                #     for char in data['receptor'].seq:
-                #         AA_seq += protein_letters_3to1[char]
-                #     data.structure_sequence = AA_seq
                 if hasattr(data, "x") and not hasattr(data["receptor"], "x"):
                     data["receptor"].x = data.x
 
@@ -928,16 +922,6 @@ class EnzymeMapSubstrate(EnzymeMap):
                     if not d_key in keep_keys:
                         delattr(data, d_key)
 
-                # if hasattr(data, "x"):
-                #     delattr(data, "x")
-                # if hasattr(data, "ec"):
-                #     delattr(data, "ec")
-                # if hasattr(data, "embedding_path"):
-                #     delattr(data, "embedding_path")
-                # if hasattr(data, "protein_path"):
-                #     delattr(data, "protein_path")
-                # if hasattr(data, "sample_hash"):
-                #     delattr(data, "sample_hash")
                 coors = data["receptor"].pos
                 feats = data["receptor"].x
                 edge_index = data["receptor", "contact", "receptor"].edge_index
@@ -1266,6 +1250,11 @@ class EnzymeMapSubstrate(EnzymeMap):
 
         return dataset
 
+# [2225, 2226, 2227, 2228, 2229, 2230, 2231, 2232, 2233, 2234, 2235, 2236, 2237, 2238, 2239, 2240, 2241, 2242, 2243, 2244, 2245, 2246, 2247, 2248, 2249, 2250, 2251, 2252, 2253, 2254│1079940 itamarc    20   0  328G
+# , 2255, 2256, 2257, 2258, 2259, 2260, 2261, 2262, 22689, 22690, 36226, 36227, 36229, 36230, 36231, 36232, 36233, 36234, 36235, 36236, 36237, 36238, 36239, 36240, 36241, 36242, 362│1079941 itamarc    20   0  328G
+# 43, 36244, 36245, 36246, 36247, 36248, 36249, 36250, 36251, 36252, 36253, 36254, 36255, 36256, 36257, 36258, 36259, 36260, 36261, 36262, 36263, 36264, 36265, 36266, 36267, 36268, │1079942 itamarc    20   0  328G
+# 36269, 36270, 36271, 36272, 36273, 36274, 36275, 36276, 36277, 36278, 36279, 36280]
+
     def skip_sample(self, sample, split_group) -> bool:
         if "ec" in sample and "-" in sample["ec"]:
             return True
@@ -1398,7 +1387,7 @@ class EnzymeMapSubstrate(EnzymeMap):
 
 
 @register_object("enzymemap_substrate_test", "dataset")
-class EnzymeMapSubstrateTest(EnzymeMap):
+class EnzymeMapSubstrateTest(EnzymeMapSubstrate):
     def __init__(self, args, split_group) -> None:
         esm_dir = "/Mounts/rbg-storage1/snapshots/metabolomics/esm2/checkpoints/esm2_t33_650M_UR50D.pt"
         self.esm_dir = esm_dir
@@ -1584,7 +1573,7 @@ class EnzymeMapSubstrateTest(EnzymeMap):
                 return reactant
 
         except Exception as e:
-            print(f"Prot graph: Could not load sample: {sample['sample_id']} due to {e}")
+            print(f"Getitem: Could not load sample: {sample['sample_id']} due to {e}")
 
 
     def add_additional_data_to_graph(self, data, sample):

@@ -44,6 +44,7 @@ def train(args):
             args.strategy = 'ddp' # important for loading
         else:
             trainer_args["strategy"] = 'auto'
+            args.strategy = 'auto'
         trainer = pl.Trainer(**trainer_args)
     else:
     # Remove callbacks from args for safe pickling later

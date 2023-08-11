@@ -138,6 +138,7 @@ def get_train_dataset_loader(args: Namespace, split: Optional[str] = "train"):
                 replacement=True,
                 rank=args.global_rank,
                 num_replicas=args.world_size,
+                drop_last=True,
             )
         else:
             sampler = data.sampler.WeightedRandomSampler(
@@ -152,6 +153,7 @@ def get_train_dataset_loader(args: Namespace, split: Optional[str] = "train"):
                 shuffle=True,
                 rank=args.global_rank,
                 num_replicas=args.world_size,
+                drop_last=True,
             )
         else:
             sampler = data.sampler.RandomSampler(train_data)
@@ -163,6 +165,7 @@ def get_train_dataset_loader(args: Namespace, split: Optional[str] = "train"):
         pin_memory=True,
         batch_size=args.batch_size,
         collate_fn=ignore_None_collate,
+        drop_last=True,
     )
 
     return train_data_loader
