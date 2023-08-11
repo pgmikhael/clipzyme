@@ -23,7 +23,7 @@ from rxn.chemutils.reaction_smiles import (
     parse_any_reaction_smiles,
     to_reaction_smiles,
 )
-
+from descriptastorus.descriptors import rdDescriptors, rdNormalizedDescriptors
 
 # rdBase.DisableLog("rdApp.error")
 rdBase.DisableLog("rdApp.warning")
@@ -31,6 +31,35 @@ rdBase.DisableLog("rdApp.warning")
 Molecule = Union[str, Chem.Mol]
 SMI_REGEX_PATTERN = r"(\[[^\]]+]|Br?|Cl?|N|O|S|P|F|I|b|c|n|o|s|p|\(|\)|\.|=|#|-|\+|\\|\/|:|~|@|\?|>>?|\*|\$|\%[0-9]{2}|[0-9])"
 BAD_TOKS = ["[CLS]", "[SEP]"]  # Default Bad Tokens
+
+
+
+def rdkit_2d_features_generator(mol: Molecule) -> np.ndarray:
+    """
+    Generates RDKit 2D features for a molecule.
+
+    :param mol: A molecule (i.e., either a SMILES or an RDKit molecule).
+    :return: A 1D numpy array containing the RDKit 2D features.
+    """
+    smiles = Chem.MolToSmiles(mol, isomericSmiles=True) if type(mol) != str else mol
+    generator = rdDescriptors.RDKit2D()
+    features = generator.process(smiles)[1:]
+
+    return features
+
+
+def rdkit_2d_normalized_features_generator(mol: Molecule) -> np.ndarray:
+    """
+    Generates RDKit 2D normalized features for a molecule.
+
+    :param mol: A molecule (i.e., either a SMILES or an RDKit molecule).
+    :return: A 1D numpy array containing the RDKit 2D normalized features.
+    """
+    smiles = Chem.MolToSmiles(mol, isomericSmiles=True) if type(mol) != str else mol
+    generator = rdNormalizedDescriptors.RDKit2DNormalized()
+    features = generator.process(smiles)[1:]
+
+    return features
 
 
 def get_rdkit_feature(
@@ -45,7 +74,13 @@ def get_rdkit_feature(
         features_vec = AllChem.GetHashedMorganFingerprint(mol, radius, nBits=num_bits)
     elif method == "rdkit_fingerprint":
         features_vec = Chem.RDKFingerprint(mol)
-
+    elif method == "rdkit_2d":
+        return rdkit_2d_features_generator(mol)
+    elif method == "rdkit_2d_normalized":
+        return rdkit_2d_normalized_features_generator(mol)
+    else:
+        raise NotImplementedError
+        
     features = np.zeros((1,))
     DataStructs.ConvertToNumpyArray(features_vec, features)
 

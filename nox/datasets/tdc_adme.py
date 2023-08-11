@@ -47,9 +47,6 @@ class ADMEDataset(AbstractDataset):
     def create_dataset(self, split_group: Literal["train", "dev", "test"]) -> List[dict]:
         split = "valid" if split_group=="dev" else split_group
         dataset = self.metadata[split].to_dict('records')
-        for i in range(len(dataset)):
-            sample = dataset[i]
-            sample['y'] = sample['Y']
         return dataset
     
     @property
@@ -96,11 +93,18 @@ class ADMEDataset(AbstractDataset):
             choices=["CYP2C19_Veith", "CYP2D6_Veith",  "CYP3A4_Veith",  "CYP1A2_Veith", "CYP2C9_Veith", "CYP2C9_Substrate_CarbonMangels", "CYP2D6_Substrate_CarbonMangels",  "CYP3A4_Substrate_CarbonMangels"],
             help="name of TDC dataset",
         )
-
-    @staticmethod
-    def set_args(args):
-        args.dataset_file_path = "/Mounts/rbg-storage1/datasets/Metabo/TDC"
-
+        parser.add_argument(
+            "--rdkit_features_name",
+            type=str,
+            default="rdkit_fingerprint",
+            help="name of rdkit features to use",
+        )
+        parser.add_argument(
+            "--use_one_hot_mol_features",
+            action="store_true",
+            default=False,
+            help="encode node and edge features of molecule as one-hot"
+        )
 
     def __getitem__(self, index):
         sample = self.dataset[index]
@@ -119,16 +123,24 @@ class ADMEDataset(AbstractDataset):
             reaction = ".".join(reactants)
             
             reactants = assign_dummy_atom_maps(reaction)
-            reactants, atom_map2new_index = from_mapped_smiles(reactants, encode_no_edge=True)
+            reactants, atom_map2new_index = from_mapped_smiles(reactants, encode_no_edge=True, use_one_hot_encoding=self.args.use_one_hot_mol_features)
             reactants.bond_changes = []
+
+            rdkit_features = torch.tensor(
+                get_rdkit_feature(drug, method=self.args.rdkit_features_name)
+            ).unsqueeze(0)
+
+            reactants.rdkit_features = rdkit_features
             
             item = {
                 "reaction": reaction,
                 "reactants": reactants,
+                "products": reactants,
                 "sequence": sequence,
                 "protein_id": uniprot_id,
                 "sample_id": sample_id,
-                "y": y
+                "y": y,
+                "rdkit_features": rdkit_features,
             }
             return item
 
