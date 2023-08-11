@@ -2072,7 +2072,7 @@ class EnzymeMapSubstrateTest(EnzymeMapSubstrate):
                 new_negatives = list(negatives)
 
             for rid, reactant in enumerate(new_negatives):
-                sample = {
+                item = {
                     # "ec": ec,
                     "protein_id": prot_id,
                     "uniprot_id": prot_id,
@@ -2082,10 +2082,13 @@ class EnzymeMapSubstrateTest(EnzymeMapSubstrate):
                     # "split": uniprot2split[prot_id],
                     "y": 0,
                 }
-                if self.skip_sample(sample, split_group):
+                if self.skip_sample(item, split_group):
                     continue
 
-                negatives_to_add.append(sample)
+                if self.args.split_type == "scaffold":
+                    item["split"] = self.to_split[item["smiles"]]
+
+                negatives_to_add.append(item)
 
         rowid += len(new_negatives)
 
@@ -2104,7 +2107,7 @@ class EnzymeMapSubstrateTest(EnzymeMapSubstrate):
                     missing_substrates.append(mol)
                 else:
                     prot = random.sample(smile2negative_prot[mol], 1)[0]
-                    sample = {
+                    item = {
                         "protein_id": prot,
                         "uniprot_id": prot,
                         "rowid": prot + "_" + str(rowid + rid),
@@ -2113,7 +2116,11 @@ class EnzymeMapSubstrateTest(EnzymeMapSubstrate):
                         "y": 0,
                     }
                     rid += 1
-                    negatives_to_add.append(sample)
+
+                    if self.args.split_type == "scaffold":
+                        item["split"] = self.to_split[item["smiles"]]
+
+                    negatives_to_add.append(item)
 
             for uniprot in prots_with_no_negatives:
                 mol = random.sample(all_substrates, 1)[0]
@@ -2124,7 +2131,7 @@ class EnzymeMapSubstrateTest(EnzymeMapSubstrate):
                     mol = random.sample(all_substrates, 1)[0]
                 if i == 20:
                     continue  # just skip this one
-                sample = {
+                item = {
                     "protein_id": prot,
                     "uniprot_id": prot,
                     "rowid": prot + "_" + str(rowid + rid),
@@ -2133,7 +2140,9 @@ class EnzymeMapSubstrateTest(EnzymeMapSubstrate):
                     "y": 0,
                 }
                 rid += 1
-                negatives_to_add.append(sample)
+                if self.args.split_type == "scaffold":
+                    item["split"] = self.to_split[item["smiles"]]
+                negatives_to_add.append(item)
 
             for substr in missing_substrates:
                 prot = random.sample(all_uniprots, 1)[0]
@@ -2144,7 +2153,7 @@ class EnzymeMapSubstrateTest(EnzymeMapSubstrate):
                     prot = random.sample(all_uniprots, 1)[0]
                 if i == 20:
                     continue  # just skip this one
-                sample = {
+                item = {
                     "protein_id": prot,
                     "uniprot_id": prot,
                     "rowid": prot + "_" + str(rowid + rid),
@@ -2153,7 +2162,9 @@ class EnzymeMapSubstrateTest(EnzymeMapSubstrate):
                     "y": 0,
                 }
                 rid += 1
-                negatives_to_add.append(sample)
+                if self.args.split_type == "scaffold":
+                    item["split"] = self.to_split[item["smiles"]]
+                negatives_to_add.append(item)
 
         print(f"[magenta] Adding {len(negatives_to_add)} negatives [/magenta]")
         print(f"[magenta] Missing any negatives for {no_negatives} ECs [/magenta]")
