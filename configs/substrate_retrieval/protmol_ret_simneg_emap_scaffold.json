@@ -26,15 +26,14 @@
     "adam_betas": ["0.9 0.998"],
     "loss_names": ["cross_entropy"],
     "checkpoint_save_last": [false],
-    "monitor": ["loss"],
-    "num_workers": [5],
+    "monitor": ["val_roc_auc"],
     "optimizer_name": ["adamw"],
     "patience": [5],
     "train": [true],
     "dev": [false],
     "test": [false],
-    "limit_train_batches": [1.0],
-    "num_sanity_val_steps": [0],
+    "limit_train_batches": [0.01],
+    "num_sanity_val_steps": [1],
     "val_check_interval": [1.0],
     "ignore_warnings": [false],
     "dropout": [0],
@@ -49,6 +48,8 @@
     "chemprop_node_dim": [9],
     "chemprop_edge_dim": [3],
     "chemprop_num_layers": [5],
+    "task_type": ["binary"],
+    "metric_names": ["classification"],
     "sample_negatives": [true],
     "sample_negatives_range": ["0.75 1.0"],
     "class_bal": [false],
@@ -60,9 +61,8 @@
     "add_neg_for_all_substrates": [true],
     "use_all_sequences": [true],
     "gpus": [7],
-    "num_sanity_val_steps": [2],
     "eval_on_full_dev_test": [true],
-    "limit_val_batches": [0.0]
+    "num_workers": [0]
   },
-  "available_gpus": ["1,2,3,4,5,6,7"]
+  "available_gpus": ["0,2,3,4,5,6,7"]
 }
