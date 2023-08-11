@@ -23,7 +23,8 @@ from rxn.chemutils.reaction_smiles import (
     parse_any_reaction_smiles,
     to_reaction_smiles,
 )
-from descriptastorus.descriptors import rdDescriptors, rdNormalizedDescriptors
+
+# from descriptastorus.descriptors import rdDescriptors, rdNormalizedDescriptors
 
 # rdBase.DisableLog("rdApp.error")
 rdBase.DisableLog("rdApp.warning")
@@ -33,33 +34,32 @@ SMI_REGEX_PATTERN = r"(\[[^\]]+]|Br?|Cl?|N|O|S|P|F|I|b|c|n|o|s|p|\(|\)|\.|=|#|-|
 BAD_TOKS = ["[CLS]", "[SEP]"]  # Default Bad Tokens
 
 
+# def rdkit_2d_features_generator(mol: Molecule) -> np.ndarray:
+#     """
+#     Generates RDKit 2D features for a molecule.
 
-def rdkit_2d_features_generator(mol: Molecule) -> np.ndarray:
-    """
-    Generates RDKit 2D features for a molecule.
+#     :param mol: A molecule (i.e., either a SMILES or an RDKit molecule).
+#     :return: A 1D numpy array containing the RDKit 2D features.
+#     """
+#     smiles = Chem.MolToSmiles(mol, isomericSmiles=True) if type(mol) != str else mol
+#     generator = rdDescriptors.RDKit2D()
+#     features = generator.process(smiles)[1:]
 
-    :param mol: A molecule (i.e., either a SMILES or an RDKit molecule).
-    :return: A 1D numpy array containing the RDKit 2D features.
-    """
-    smiles = Chem.MolToSmiles(mol, isomericSmiles=True) if type(mol) != str else mol
-    generator = rdDescriptors.RDKit2D()
-    features = generator.process(smiles)[1:]
-
-    return features
+#     return features
 
 
-def rdkit_2d_normalized_features_generator(mol: Molecule) -> np.ndarray:
-    """
-    Generates RDKit 2D normalized features for a molecule.
+# def rdkit_2d_normalized_features_generator(mol: Molecule) -> np.ndarray:
+#     """
+#     Generates RDKit 2D normalized features for a molecule.
 
-    :param mol: A molecule (i.e., either a SMILES or an RDKit molecule).
-    :return: A 1D numpy array containing the RDKit 2D normalized features.
-    """
-    smiles = Chem.MolToSmiles(mol, isomericSmiles=True) if type(mol) != str else mol
-    generator = rdNormalizedDescriptors.RDKit2DNormalized()
-    features = generator.process(smiles)[1:]
+#     :param mol: A molecule (i.e., either a SMILES or an RDKit molecule).
+#     :return: A 1D numpy array containing the RDKit 2D normalized features.
+#     """
+#     smiles = Chem.MolToSmiles(mol, isomericSmiles=True) if type(mol) != str else mol
+#     generator = rdNormalizedDescriptors.RDKit2DNormalized()
+#     features = generator.process(smiles)[1:]
 
-    return features
+#     return features
 
 
 def get_rdkit_feature(
@@ -74,13 +74,13 @@ def get_rdkit_feature(
         features_vec = AllChem.GetHashedMorganFingerprint(mol, radius, nBits=num_bits)
     elif method == "rdkit_fingerprint":
         features_vec = Chem.RDKFingerprint(mol)
-    elif method == "rdkit_2d":
-        return rdkit_2d_features_generator(mol)
-    elif method == "rdkit_2d_normalized":
-        return rdkit_2d_normalized_features_generator(mol)
+    # elif method == "rdkit_2d":
+    #     return rdkit_2d_features_generator(mol)
+    # elif method == "rdkit_2d_normalized":
+    #     return rdkit_2d_normalized_features_generator(mol)
     else:
         raise NotImplementedError
-        
+
     features = np.zeros((1,))
     DataStructs.ConvertToNumpyArray(features_vec, features)
 
@@ -642,7 +642,6 @@ def process_reaction_with_product_maps_atoms(rxn, skip_if_not_in_precursors=Fals
     warnings_list = []
 
     for p_map in product_atom_maps:
-
         if skip_if_not_in_precursors and p_map not in precursors_atom_maps:
             products_maps.append(-1)
         elif int(p_map) == 0:
@@ -687,12 +686,14 @@ def standardize_reaction(reaction: str):
     # parsed_input = {k: v.to(self.device) for k, v in encoded_ids.items()}
     # return encoded_ids
 
+
 def remove_atom_maps(smiles: str, sanitize=True):
     """Remove atom maps from smiles string"""
     mol = Chem.MolFromSmiles(smiles, sanitize=sanitize)
     for atom in mol.GetAtoms():
         atom.SetAtomMapNum(0)
     return Chem.MolToSmiles(mol)
+
 
 def assign_dummy_atom_maps(smiles: str):
     """Assign atom numbers to smiles string for use in graph editing"""
