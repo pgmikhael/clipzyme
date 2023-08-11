@@ -1,8 +1,8 @@
 {
   "script": "main",
   "cartesian_hyperparams": {
-    "batch_size": [4],
-    "precision": ["bf16"],
+    "batch_size": [10],
+    "precision": ["16"],
     "accumulate_grad_batches": [1],
     "dataset_name": ["enzymemap_reaction_graph"],
     "split_multiproduct_samples": [true],
@@ -25,11 +25,11 @@
     "reactivity_model_path": ["/Mounts/rbg-storage1/snapshots/metabolomics/0ecc5b457127e2c81f756e94663b4c07/0ecc5b457127e2c81f756e94663b4c07epoch=36.ckpt"],
     "reactivity_net_type": ["ec_reaction_center_net"],
     "from_checkpoint": [true],
-    "checkpoint_path": ["/Mounts/rbg-storage1/snapshots/metabolomics/2176adbe70bb517f3af9a6b4f3cea794/2176adbe70bb517f3af9a6b4f3cea794epoch=9.ckpt"],
+    "checkpoint_path": ["/Mounts/rbg-storage1/snapshots/metabolomics/d0a6302a7b17deb9ac7633fc87740fc7"],
     "relax_checkpoint_matching": [false],
     "add_core_score": [true],
     "add_scores_features": [false],
-    "eval_all_real_bond_changes": [true],
+    "eval_all_real_bond_changes": [false],
     "max_num_change_combos_per_reaction": [150],
     "num_candidate_bond_changes": [16],
     "max_num_bond_changes": [5],
@@ -62,5 +62,5 @@
     "save_predictions": [false],
     "inference_dir": ["/Mounts/rbg-storage1/results/metabolomics/predictions"]
   },
-  "available_gpus": ["2"]
+  "available_gpus": ["3"]
 }

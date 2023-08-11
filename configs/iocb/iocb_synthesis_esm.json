@@ -25,7 +25,7 @@
     "num_classes": [465],
     "vocab_path": ["/Mounts/rbg-storage1/datasets/Enzymes/ECReact/uspto_ecreact_vocab.txt"],
     "from_checkpoint": [true],
-    "checkpoint_path": ["/Mounts/rbg-storage1/snapshots/metabolomics/311b41108ea1bf2aab1deda32c5957f1/311b41108ea1bf2aab1deda32c5957f1epoch=13.ckpt"],
+    "checkpoint_path": ["/Mounts/rbg-storage1/snapshots/metabolomics/3b9335bf559a58f67acdb7579df3ed19/3b9335bf559a58f67acdb7579df3ed19epoch=2.ckpt"],
     "relax_checkpoint_matching": [true],
     "max_seq_len": [2000],
     "callback_names": ["lr_monitor checkpointer"],

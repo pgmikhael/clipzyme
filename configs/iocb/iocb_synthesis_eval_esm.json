@@ -1,8 +1,8 @@
 {
   "script": "main",
-  "train_config": "configs/enzymes/reaction_synthesis_esm.json",
+  "train_config": "configs/iocb/iocb_synthesis_esm.json",
   "log_dir": "/Mounts/rbg-storage1/logs/metabo/",
-  "available_gpus": [3],
+  "available_gpus": [5],
   "eval_args": {
     "dataset_name": ["iocb_reactions"],
     "generation_renormalize_logits": [true],
@@ -15,8 +15,8 @@
     "metric_names_for_eval": ["topk_classification"],
     "topk_values": ["1 5 10"],
     "from_checkpoint": [true],
-    "checkpoint_path": ["/Mounts/rbg-storage1/snapshots/metabolomics/437186ac214b1033e182a6d36a3eef24/437186ac214b1033e182a6d36a3eef24epoch=2.ckpt"],
-    "save_predictions": [true],
+    "checkpoint_path": ["/Mounts/rbg-storage1/snapshots/metabolomics/dcaa0f320e7fd0ecc74767c7a3cdcdfa/dcaa0f320e7fd0ecc74767c7a3cdcdfaepoch=18.ckpt"],
+    "save_predictions": [false],
     "inference_dir": ["/Mounts/rbg-storage1/results/metabolomics/predictions"]
   }
 }

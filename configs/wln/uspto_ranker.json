@@ -9,12 +9,12 @@
     "dataset_file_path": ["/Mounts/rbg-storage1/datasets/ChemicalReactions/uspto44k_chem_reactions_dataset.json"],
     "num_classes": [5],
     "lightning_name": ["base"],
-    "model_name": ["chemprop_wldn"],
+    "model_name": ["chemprop_cgr"],
     "use_chemprop_encoder": [true],
     "chemprop_num_layers": [3],
     "chemprop_hidden_dim": [100],
-    "chemprop_node_dim": [9],
-    "chemprop_edge_dim": [3],
+    "chemprop_node_dim": [18],
+    "chemprop_edge_dim": [6],
     "chemprop_pool": ["none"],
     "compute_metrics_every_step": [true],
     "attn_type": ["pairwise_global_attn"],
@@ -48,9 +48,7 @@
     "logger_name": ["wandb"],
     "workspace": ["peteranditamar"],
     "project_name": ["enzymes"],
-    "logger_tags": ["wldn"],
-    "aggregate_over_edges": [true],
-    "add_scores_to_edge_attr": [true]
+    "logger_tags": ["wldn"]
   },
   "available_gpus": ["0,1,2,3,4,5,6,7"]
 }

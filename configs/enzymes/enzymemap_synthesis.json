@@ -5,7 +5,7 @@
     "precision": ["bf16"],
     "accumulate_grad_batches": [1],
     "dataset_name": ["enzymemap_reactions"],
-    "remove_stereochemistry": [false],
+    "remove_stereochemistry": [true],
     "max_reactant_size": [100],
     "assign_splits": [false],
     "split_seed": [2023],
@@ -26,7 +26,7 @@
     "protein_feature_dim": [480],
     "hidden_size": [480],
     "num_classes": [465],
-    "dataset_file_path": ["/Mounts/rbg-storage1/datasets/Enzymes/EnzymeMap/rbt_processed/enzymemap_brenda2023_mapped_for_wln.json"],
+    "dataset_file_path": ["/Mounts/rbg-storage1/datasets/Enzymes/EnzymeMap/rbt_processed_multiproduct/enzymemap_brenda2023_multiproduct_mapped_for_wln_remove_products.json"],
     "vocab_path": ["/Mounts/rbg-storage1/datasets/Enzymes/ECReact/uspto_ecreact_vocab.txt"],
     "from_checkpoint": [true],
     "checkpoint_path": ["/Mounts/rbg-storage1/snapshots/metabolomics/a0ed8a6f4eaa19900bfaeab59edc0e74/a0ed8a6f4eaa19900bfaeab59edc0e74epoch=14.ckpt"],
@@ -57,7 +57,7 @@
     "test": [false],
     "num_sanity_val_steps": [0],
     "val_check_interval": [0.5],
-    "gpus": [7],
+    "gpus": [8],
     "ignore_warnings": [false],
     "dropout": [0],
     "checkpoint_dir": ["/Mounts/rbg-storage1/snapshots/metabolomics"],
@@ -66,5 +66,5 @@
     "project_name": ["enzymes"],
     "logger_tags": ["enzyme-synthesis esm"]
   },
-  "available_gpus": ["1,2,3,4,5,6,7"]
+  "available_gpus": ["0,1,2,3,4,5,6,7"]
 }

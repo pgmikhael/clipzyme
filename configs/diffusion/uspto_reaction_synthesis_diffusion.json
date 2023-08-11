@@ -3,7 +3,7 @@
   "cartesian_hyperparams": {
     "batch_size": [48],
     "accumulate_grad_batches": [1],
-    "dataset_name": ["chemical_reactions_graph"],
+    "dataset_name": ["chemical_reactions_digress"],
     "dataset_file_path": ["/Mounts/rbg-storage1/datasets/ChemicalReactions/uspto44k_chem_reactions_dataset.json"],
     "extra_features_type": ["all"],
     "assign_splits": [false],

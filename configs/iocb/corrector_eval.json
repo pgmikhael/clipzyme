@@ -1,0 +1,28 @@
+{
+  "script": "main",
+  "train_config": "configs/iocb/corrector.json",
+  "log_dir": "/Mounts/rbg-storage1/logs/metabo/",
+  "available_gpus": [1,2,3,4],
+  "eval_args": {
+    "batch_size": [4],
+    "generation_renormalize_logits": [true],
+    "generation_max_new_tokens": [2000],
+    "generation_num_return_sequences": [1],
+    "generation_num_beams": [1],
+    "corrector_generation_num_return_sequences": [10],
+    "corrector_generation_num_beams": [10],
+    "corrector_generation_renormalize_logits": [true],
+    "corrector_generation_max_new_tokens": [2000],
+    "compute_metrics_every_step": [false],
+    "eval_on_train":[false],
+    "dev": [false],
+    "test": [true],
+    "predict": [true],
+    "metric_names_for_eval": ["topk_classification"],
+    "topk_values": ["1 5 10"],
+    "from_checkpoint": [false],
+    "corrector_model_path": ["/Mounts/rbg-storage1/snapshots/metabolomics/556e344f1dd681c999633f4ad271c963/556e344f1dd681c999633f4ad271c963epoch=26.ckpt"],
+    "save_predictions": [false],
+    "inference_dir": ["/Mounts/rbg-storage1/results/metabolomics/predictions"]
+  }
+}

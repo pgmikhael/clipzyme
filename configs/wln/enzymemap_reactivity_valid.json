@@ -1,7 +1,7 @@
 {
   "script": "main",
   "cartesian_hyperparams": {
-    "batch_size": [16],
+    "batch_size": [8],
     "precision": ["bf16"],
     "accumulate_grad_batches": [1],
     "dataset_name": ["enzymemap_reaction_graph"],
@@ -9,17 +9,21 @@
     "max_num_products": [4],
     "max_reactant_size": [100],
     "max_product_size": [100],
-    "dataset_file_path": ["/Mounts/rbg-storage1/datasets/Enzymes/EnzymeMap/rbt_processed_multiproduct/enzymemap_brenda2023_multiproduct_mapped_for_wln.json"],
+    "max_protein_length": [800],
+    "dataset_file_path": ["/Mounts/rbg-storage1/datasets/Enzymes/EnzymeMap/rbt_processed_multiproduct/enzymemap_brenda2023_multiproduct_mapped_for_wln_remove_products.json"],
     "num_classes": [5],
     "class_bal": [true],
-    "class_bal_key": ["ec"],
+    "class_bal_key": ["ec1"],
     "lightning_name": ["base"],
     "compute_metrics_every_step": [true],
+    "predict_ecs": [true],
+    "mlp_layer_configuration":  [128],
+    "mlp_input_dim": [480],
     "from_checkpoint": [true],
-    "checkpoint_path": ["/Mounts/rbg-storage1/snapshots/metabolomics/02f8fe81a8954147976b48288e52765c/02f8fe81a8954147976b48288e52765cepoch=3.ckpt"],
+    "checkpoint_path": ["/Mounts/rbg-storage1/snapshots/metabolomics/e07c419f807e782f3ce3976a2a941d52/e07c419f807e782f3ce3976a2a941d52epoch=2.ckpt"],
     "model_name": ["esm_reaction_center_net"],
     "esm_model_version": ["facebook/esm2_t12_35M_UR50D"],
-    "freeze_encoder": [true],
+    "freeze_encoder": [false],
     "num_heads": [4],
     "create_sample_per_sequence": [true],
     "gat_num_layers": [3],
@@ -56,7 +60,7 @@
     "logger_name": ["wandb"],
     "workspace": ["peteranditamar"],
     "project_name": ["enzymes"],
-    "logger_tags": ["wln"]
+    "logger_tags": ["wln esm"]
   },
-  "available_gpus": ["3"]
+  "available_gpus": ["4"]
 }

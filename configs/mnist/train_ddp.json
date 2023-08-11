@@ -26,16 +26,10 @@
       0.9
     ],
     "max_epochs": [
-      1
+      10
     ],
     "lr_decay": [
       0.1
-    ],
-    "limit_train_batches": [
-      10
-    ],
-    "limit_val_batches": [
-      10
     ],
     "lr": [
       1e-4
@@ -76,6 +70,7 @@
     "test": [
       true
     ],
+    "task_type": ["multiclass"],
     "callback_names": [
       "lr_monitor"
     ],
@@ -98,7 +93,7 @@
       "wandb"
     ],
     "gpus": [
-      2
+      8
     ],
     "val_check_interval": [
       1.0
@@ -114,6 +109,6 @@
     ]
   },
   "available_gpus": [
-    "0,1"
+    "0,1,2,3,4,5,6,7"
   ]
 }
