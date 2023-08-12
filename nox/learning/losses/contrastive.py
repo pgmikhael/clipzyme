@@ -298,22 +298,22 @@ class CLIPLoss(Nox):
         ) / 2
         logging_dict["clip_loss"] = loss.detach()
 
-        predictions["probs"] = F.softmax(logits_per_protein, dim=-1).detach()
-        predictions["preds"] = predictions["probs"].argmax(axis=-1).reshape(-1)
+        probs = F.softmax(logits_per_protein, dim=-1).detach()
+        predictions["preds"] = probs.argmax(axis=-1).reshape(-1)
         predictions["golds"] = labels
 
-        if predictions["probs"].shape[-1] != args.batch_size:
-            predictions["probs"] = torch.cat(
-                [
-                    predictions["probs"],
-                    torch.zeros(
-                        predictions["probs"].shape[0],
-                        args.batch_size - predictions["probs"].shape[1],
-                        device=logits_per_protein.device,
-                    ),
-                ],
-                dim=-1,
-            )
+        # if predictions["probs"].shape[-1] != args.batch_size:
+        #     predictions["probs"] = torch.cat(
+        #         [
+        #             predictions["probs"],
+        #             torch.zeros(
+        #                 predictions["probs"].shape[0],
+        #                 args.batch_size - predictions["probs"].shape[1],
+        #                 device=logits_per_protein.device,
+        #             ),
+        #         ],
+        #         dim=-1,
+        #     )
 
         # predictions["projection1"] = substrate_features.detach()
         # predictions["projection2"] = protein_features.detach()
