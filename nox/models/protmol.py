@@ -33,6 +33,9 @@ class ProteinMoleculeCLIP(AbstractModel):
         super(ProteinMoleculeCLIP, self).__init__()
         self.args = args
         self.substrate_encoder = get_object(args.substrate_encoder, "model")(args)
+        self.lin_layer = nn.Linear(
+            args.chemprop_hidden_dim * 2, args.chemprop_hidden_dim
+        )
         self.protein_encoder = get_object(args.protein_encoder, "model")(args)
         self.ln_final = nn.LayerNorm(
             args.chemprop_hidden_dim
@@ -51,18 +54,38 @@ class ProteinMoleculeCLIP(AbstractModel):
     def forward(self, batch) -> Dict:
         output = {}
         substrate_features_out = self.substrate_encoder(batch)
-        substrate_features = substrate_features_out["hidden"]
+        if (
+            hasattr(self.substrate_encoder, "pool_type")
+            and self.substrate_encoder.pool_type == "none"
+        ):
+            substrate_features = substrate_features_out["node_features"]
+            substrate_features, substrate_features_mask = to_dense_batch(
+                substrate_features, batch=batch.batch
+            )
+            substrate_features_max = torch.max(substrate_features, dim=1)[0]
 
-        protein_features = self.protein_encoder(
-            {"x": batch.sequence, "sequence": batch.sequence, "batch": batch}
-        )["hidden"]
-        # apply normalization
-        protein_features = self.ln_final(protein_features)
+            # calculate mean of substrate features, excluding locations where substrate_features_mask is False
+            substrate_features_mean = torch.sum(substrate_features, dim=1) / torch.sum(
+                substrate_features_mask, dim=1, keepdim=True
+            )
+            substrate_features = torch.cat(
+                [substrate_features_max, substrate_features_mean], dim=-1
+            )  # B x 2D
+            substrate_features = self.lin_layer(substrate_features)  # B x D
+        else:
+            substrate_features = substrate_features_out["hidden"]
 
         # normalized features
         substrate_features = substrate_features / substrate_features.norm(
             dim=1, keepdim=True
         )
+
+        protein_features = self.protein_encoder(
+            {"x": batch.sequence, "sequence": batch.sequence, "batch": batch}
+        )["hidden"]
+
+        # apply normalization
+        protein_features = self.ln_final(protein_features)
         protein_features = protein_features / protein_features.norm(dim=1, keepdim=True)
 
         output.update(
