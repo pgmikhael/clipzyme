@@ -32,7 +32,6 @@
     "train": [false],
     "dev": [false],
     "test": [true],
-    "limit_train_batches": [0.01],
     "num_sanity_val_steps": [1],
     "val_check_interval": [1.0],
     "ignore_warnings": [false],

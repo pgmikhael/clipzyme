@@ -1,7 +1,7 @@
 {
   "script": "main",
   "cartesian_hyperparams": {
-    "batch_size": [5],
+    "batch_size": [6],
     "esm_name": ["esm2_t12_35M_UR50D"],
     "chemprop_hidden_dim": [480],
     "mlp_input_dim": [960],
@@ -32,7 +32,8 @@
     "train": [true],
     "dev": [false],
     "test": [false],
-    "limit_train_batches": [0.01],
+    "limit_val_batches": [0.5],
+    "limit_train_batches": [0.1],
     "num_sanity_val_steps": [1],
     "val_check_interval": [1.0],
     "ignore_warnings": [false],
@@ -60,9 +61,9 @@
     "max_protein_length": [1024],
     "add_neg_for_all_substrates": [true],
     "use_all_sequences": [true],
-    "gpus": [7],
+    "gpus": [8],
     "eval_on_full_dev_test": [true],
     "num_workers": [0]
   },
-  "available_gpus": ["0,2,3,4,5,6,7"]
+  "available_gpus": ["0,1,2,3,4,5,6,7"]
 }
