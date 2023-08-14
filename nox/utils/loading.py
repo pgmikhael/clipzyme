@@ -9,6 +9,7 @@ import torch
 from torch.utils import data
 from nox.utils.sampler import DistributedWeightedSampler
 from nox.utils.augmentations import get_augmentations_by_split
+
 try:
     from pytorch_lightning.utilities.cloud_io import load as pl_load
 except:
@@ -32,7 +33,7 @@ def default_collate(batch):
     elem = batch[0]
     elem_type = type(elem)
     if isinstance(elem, Batch):
-        return batch 
+        return batch
     if isinstance(elem, (Data, HeteroData)):
         # optional args for more complex graphs (see pytorch geometric https://pytorch-geometric.readthedocs.io/en/latest/notes/batching.html)
         follow_batch = None
@@ -88,15 +89,24 @@ def default_collate(batch):
         it = iter(batch)
         elem_size = len(next(it))
         if all(all(isinstance(t, tuple) for t in elem) for elem in it):
-            return batch 
+            return batch
         if not all(len(elem) == elem_size for elem in it):
-            # if its a list of ints then append ints and return 
+            # if its a list of ints then append ints and return
             it = iter(batch)
             if all(all(isinstance(s, int_classes) for s in elem) for elem in it):
                 return batch
             # if its a list of strings then append lists and return
             it = iter(batch)
-            if all(all(isinstance(s, string_classes) for s in elem) for elem in it) or all(all(all(isinstance(s, string_classes) for s in t) and isinstance(t, tuple) for t in elem) for elem in it):
+            if all(
+                all(isinstance(s, string_classes) for s in elem) for elem in it
+            ) or all(
+                all(
+                    all(isinstance(s, string_classes) for s in t)
+                    and isinstance(t, tuple)
+                    for t in elem
+                )
+                for elem in it
+            ):
                 return batch
             raise RuntimeError("each element in list of batch should be of equal size")
         transposed = zip(*batch)
@@ -184,7 +194,8 @@ def get_eval_dataset_loader(
     Returns:
         data_loader: iterator that returns batches
     """
-
+    print("Val dataloader shuffle = True")
+    shuffle = True
     eval_data = get_object(args.dataset_name, "dataset")(args, split)
 
     if args.strategy == "ddp":
