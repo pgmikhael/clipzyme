@@ -6,6 +6,8 @@ from nox.utils.classes import Nox
 from collections import defaultdict 
 from nox.utils.wln_processing import get_product_smiles
 from rdkit import Chem
+from torch_geometric.utils import scatter
+import pickle 
 
 def get_pair_label(graph_edits, num_atoms):
     """Construct labels for each pair of atoms in reaction center prediction
@@ -179,3 +181,53 @@ class MultiCandidateLoss(Nox):
         predictions['real_bond_changes'] = batch_real_bond_changes # for topk metric
 
         return loss, logging_dict, predictions
+
+@register_object("hierarchical_ec_loss", "loss")
+class HierarchicalECLoss(Nox):
+    """ hierarchical / subclass loss for ec classification 
+    
+    assumes one class per protein (which is true for 95% of proteins)
+    """
+    def __init__(self) -> None:
+        super().__init__()
+        ec2uniprot = pickle.load(open("/Mounts/rbg-storage1/datasets/Enzymes/EnzymeMap/ec2uniprot.p","rb"))
+        self.uniprot2ec = defaultdict(set)
+        for ec, unis in ec2uniprot.items():
+            for uni in unis:
+                self.uniprot2ec[uni].add(ec)
+        self.ec_to_level = lambda ec, level: '.'.join(ec.split('.')[:int(level)])
+
+    def __call__(self, model_output, batch, model, args):
+        logging_dict, predictions = OrderedDict(), OrderedDict()
+        logits = model_output["ec_logits"]
+        probs = torch.softmax(logits, dim = -1)
+        batch_size, _  = logits.shape
+
+        level4_ecs = {i:c for c, i in args.ec_levels['4'].items()}
+        level4_ecs = [level4_ecs[i] for i in range(len(level4_ecs))] # ecs in order as they appear in logits
+
+        loss = 0
+        for level in sorted(args.ec_levels):
+            ec2index = args.ec_levels[level]
+            # target = logits.new_zeros((batch_size, len(ec2index)))
+            # for bi, protein_id in enumerate(batch['protein_id']):
+            #     ecs = [self.ec_to_level(ec, level) for ec in self.uniprot2ec[protein_id]]
+            #     for e in ecs: target[bi][ec2index[e]] = 1
+            
+            target_index = torch.tensor([args.ec_levels[level][self.ec_to_level(ec, level)] for ec in level4_ecs]).to(logits.device)
+            level_probs = scatter(probs, target_index, dim = 1, reduce="sum")
+            level_loss = F.cross_entropy(torch.log_softmax(level_probs, -1), batch[f"ec{level}"]) * args.hierarchical_ec_loss_lambdas[int(level)-1]
+            logging_dict[f"ec{level}_loss"] = level_loss.detach()
+            loss = level_loss + loss 
+    
+        return loss, logging_dict, predictions
+    
+    @staticmethod
+    def add_args(parser):
+        parser.add_argument(
+            "--hierarchical_ec_loss_lambdas",
+            nargs="*",
+            default = [1.0, 1.0, 1.0, 1.0],
+            type=float,
+            help="weight for each level"
+        )
