@@ -3,6 +3,7 @@ from rdkit import Chem, RDLogger
 from typing import List
 import torch
 from torch import Tensor
+import torch.nn.functional as F
 from torch_geometric.data import Data
 from torch_geometric.utils import degree
 from itertools import combinations
@@ -71,7 +72,7 @@ def unbatch(src: Tensor, batch: Tensor, dim: int = 0) -> List[Tensor]:
     return src.split(sizes, dim)
 
 
-def from_smiles(smiles: str, with_hydrogen: bool = False, kekulize: bool = False, return_atom_number=False):
+def from_smiles(smiles: str, with_hydrogen: bool = False, kekulize: bool = False, return_atom_number=False, use_one_hot_encoding=False):
     r"""Converts a SMILES string to a :class:`torch_geometric.data.Data`
     instance.
     Args:
@@ -140,13 +141,24 @@ def from_smiles(smiles: str, with_hydrogen: bool = False, kekulize: bool = False
         perm = (edge_index[0] * x.size(0) + edge_index[1]).argsort()
         edge_index, edge_attr = edge_index[:, perm], edge_attr[perm]
 
+    if use_one_hot_encoding:
+        one_hot_x = torch.hstack([F.one_hot(x[:,i], len(v)) for i, (k,v) in enumerate(x_map.items())])
+        if x.shape[-1] > len(x_map):
+            one_hot_x = torch.hstack([one_hot_x,x[:,len(x_map):]])
+        x = one_hot_x
+
+        one_hot_e = torch.hstack([F.one_hot(edge_attr[:,i], len(v)) for i, (k,v) in enumerate(e_map.items())])
+        if edge_attr.shape[-1] > len(e_map):
+            one_hot_e = torch.hstack([one_hot_e,x[:,len(e_map):]])
+        edge_attr = one_hot_e
+
     data = Data(x=x, edge_index=edge_index, edge_attr=edge_attr, smiles=smiles, x_ids=x_ids)
     if return_atom_number:
         data.atom_map_number = x_numbers # torch.tensor(x_numbers).view(-1)
     return data
 
 
-def from_mapped_smiles(smiles: str, with_hydrogen: bool = False, kekulize: bool = False, encode_no_edge=False, sanitize=True):
+def from_mapped_smiles(smiles: str, with_hydrogen: bool = False, kekulize: bool = False, encode_no_edge=False, sanitize=True, use_one_hot_encoding=False):
     r"""Converts a SMILES string to a :class:`torch_geometric.data.Data`
     instance.
     Args:
@@ -268,7 +280,23 @@ def from_mapped_smiles(smiles: str, with_hydrogen: bool = False, kekulize: bool 
         perm = (edge_index_complete[0] * x.size(0) + edge_index_complete[1]).argsort()
         edge_index_complete, edge_attr_complete = edge_index_complete[:, perm], edge_attr_complete[perm]
 
+    if use_one_hot_encoding:
+        one_hot_x = torch.hstack([F.one_hot(x[:,i], len(v)) for i, (k,v) in enumerate(x_map.items())])
+        if x.shape[-1] > len(x_map):
+            one_hot_x = torch.hstack([one_hot_x,x[:,len(x_map):]])
+        x = one_hot_x
+
+        one_hot_e = torch.hstack([F.one_hot(edge_attr[:,i], len(v)) for i, (k,v) in enumerate(e_map.items())])
+        if edge_attr.shape[-1] > len(e_map):
+            one_hot_e = torch.hstack([one_hot_e,x[:,len(e_map):]])
+        edge_attr = one_hot_e
+
     if encode_no_edge:
+        if use_one_hot_encoding:
+            one_hot_e = torch.hstack([F.one_hot(edge_attr_complete[:,(i+2)] , len(v) + 1) for i, (k,v) in enumerate(e_map.items())]) # start at i = 2 since first 2 are for encoding same or diff mol
+            one_hot_e = torch.hstack([edge_attr_complete[:,:2], one_hot_e])
+            edge_attr_complete = one_hot_e
+
         data = Data(x=x, edge_index=edge_index, edge_attr=edge_attr, smiles=smiles, x_ids=x_ids,edge_index_complete=edge_index_complete,edge_attr_complete=edge_attr_complete) 
     else:
         data = Data(x=x, edge_index=edge_index, edge_attr=edge_attr, smiles=smiles, x_ids=x_ids)
