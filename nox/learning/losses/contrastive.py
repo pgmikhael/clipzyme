@@ -4,7 +4,8 @@ import torch.nn.functional as F
 import torch.nn as nn
 from collections import OrderedDict
 from nox.utils.classes import Nox
-
+from nox.utils.loading import concat_all_gather
+import torch.distributed as dist
 EPSILON = 1e-6
 
 
@@ -285,17 +286,39 @@ class CLIPLoss(Nox):
 
         # cosine similarity as logits
         logit_scale = model.model.logit_scale.exp()
-        logits_per_substrate = logit_scale * substrate_features @ protein_features.t()
-        logits_per_protein = logits_per_substrate.t()
 
-        # labels
-        labels = torch.arange(logits_per_substrate.shape[0]).to(
-            logits_per_substrate.device
-        )
-        loss = (
-            F.cross_entropy(logits_per_substrate, labels)
-            + F.cross_entropy(logits_per_protein, labels)
-        ) / 2
+        if args.clip_loss_use_gather:
+            # gather 
+            substrate_features_all = concat_all_gather(substrate_features)
+            protein_features_all = concat_all_gather(protein_features) 
+            
+            # contrast against all molecules
+            logits_per_protein = logit_scale * protein_features @ substrate_features_all.t()
+            # contrast against all proteins
+            logits_per_substrate = logit_scale * substrate_features @ protein_features_all.t()
+
+            rank = dist.get_rank()
+            batch_size = substrate_features.size(0)
+            labels = torch.linspace(rank * batch_size, rank * batch_size + batch_size - 1, batch_size, dtype=int).to(substrate_features.device)                  
+            loss= (
+                    F.cross_entropy(logits_per_protein, labels, label_smoothing=args.clip_loss_label_smoothing)
+                    + F.cross_entropy(logits_per_substrate, labels, label_smoothing=args.clip_loss_label_smoothing)
+                ) / 2 
+        else:
+            logits_per_substrate = logit_scale * substrate_features @ protein_features.t()
+            logits_per_protein = logits_per_substrate.t()
+
+            # labels
+            labels = torch.arange(logits_per_substrate.shape[0]).to(
+                logits_per_substrate.device
+            )
+            loss = (
+                F.cross_entropy(logits_per_substrate, labels, label_smoothing=args.clip_loss_label_smoothing)
+                + F.cross_entropy(logits_per_protein, labels, label_smoothing=args.clip_loss_label_smoothing)
+            ) / 2
+
+        
+
         logging_dict["clip_loss"] = loss.detach()
 
         probs = F.softmax(logits_per_protein, dim=-1).detach()
@@ -319,6 +342,26 @@ class CLIPLoss(Nox):
         # predictions["projection2"] = protein_features.detach()
 
         return loss, logging_dict, predictions
+    
+    @staticmethod
+    def add_args(parser) -> None:
+        """Add class specific args
+
+        Args:
+            parser (argparse.ArgumentParser): argument parser
+        """
+        parser.add_argument(
+            "--clip_loss_use_gather",
+            action="store_true",
+            default=False,
+            help="whether to gather across gpus when computing loss.",
+        )
+        parser.add_argument(
+            "--clip_loss_label_smoothing",
+            type=float,
+            default=0.0,
+            help="label smoothing to use.",
+        )
 
 
 @register_object("supervised_clip_loss", "loss")

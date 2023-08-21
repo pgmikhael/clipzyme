@@ -63,6 +63,12 @@ def destringify_sets(x: str):
 @register_object("enzymemap_reactions", "dataset")
 class EnzymeMap(AbstractDataset):
     def __init__(self, args, split_group) -> None:
+        if args.use_protein_graphs:
+            self.esm_dir = args.esm_dir
+            model, alphabet = pretrained.load_model_and_alphabet(args.esm_dir)
+            self.esm_model = model
+            self.alphabet = alphabet
+            self.batch_converter = alphabet.get_batch_converter()
         super(EnzymeMap, EnzymeMap).__init__(self, args, split_group)
         self.metadata_json = None  # overwrite for memory
         if args.load_wln_cache_in_dataset:
@@ -551,6 +557,102 @@ class EnzymeMap(AbstractDataset):
             return True
         return False
 
+    def create_protein_graph(self, sample):
+        try:
+            raw_path = os.path.join(
+                self.args.protein_structures_dir,
+                f"AF-{sample['uniprot_id']}-F1-model_v4.cif",
+            )
+            protein_args = {
+                "sample_id": sample["sample_id"],
+                "protein_parser": Bio.PDB.MMCIFParser(),
+                "protein_resolution": "residue",
+                "graph_edge_args": {"knn_size": 10},
+                "center_protein": True,
+            }
+
+            sample_id = protein_args["sample_id"]
+            protein_parser = protein_args["protein_parser"]
+            protein_resolution = protein_args["protein_resolution"]
+            graph_edge_args = protein_args["graph_edge_args"]
+            center_protein = protein_args["center_protein"]
+
+            # parse pdb
+            all_res, all_atom, all_pos = read_structure_file(
+                protein_parser, raw_path, sample_id
+            )
+            # filter resolution of protein (backbone, atomic, etc.)
+            atom_names, seq, pos = filter_resolution(
+                all_res,
+                all_atom,
+                all_pos,
+                protein_resolution=protein_resolution,
+            )
+            # generate graph
+            data = build_graph(atom_names, seq, pos, sample_id)
+            # kNN graph
+            data = compute_graph_edges(data, **graph_edge_args)
+            if center_protein:
+                center = data["receptor"].pos.mean(dim=0, keepdim=True)
+                data["receptor"].pos = data["receptor"].pos - center
+                data.center = center
+            uniprot_id = sample["uniprot_id"]
+            sequence = self.uniprot2sequence[uniprot_id]
+            data.structure_sequence = self.uniprot2sequence[uniprot_id]
+
+            node_embeddings_args = {
+                "model": self.esm_model,
+                "model_location": self.esm_dir,
+                "alphabet": self.alphabet,
+                "batch_converter": self.batch_converter,
+            }
+
+            embedding_path = os.path.join(
+                self.args.protein_graphs_dir,
+                "precomputed_node_embeddings",
+                f"{sample['uniprot_id']}.pt",
+            )
+
+            if os.path.exists(embedding_path):
+                node_embedding = torch.load(sample["embedding_path"])
+            else:
+                node_embedding = compute_node_embedding(data, **node_embeddings_args)
+            # Fix sequence length mismatches
+            if len(data["receptor"].seq) != node_embedding.shape[0]:
+                print("Computing seq embedding for mismatched seq length")
+                protein_letters_3to1.update(
+                    {k.upper(): v for k, v in protein_letters_3to1.items()}
+                )
+                AA_seq = ""
+                for char in seq:
+                    AA_seq += protein_letters_3to1[char]
+                # sequences = get_sequences(
+                #     self.protein_parser,
+                #     [sample["sample_id"]],
+                #     [os.path.join(self.structures_dir, f"AF-{sample['uniprot_id']}-F1-model_v4.cif")],
+                # )
+
+                data.structure_sequence = AA_seq
+                data["receptor"].x = compute_node_embedding(
+                    data, **node_embeddings_args
+                )
+            else:
+                data["receptor"].x = node_embedding
+
+            if len(data["receptor"].seq) != node_embedding.shape[0]:
+                return None
+
+            return data
+
+        except Exception as e:
+            import pdb
+
+            pdb.set_trace()
+            print(
+                f"Create prot graph: Could not load sample {sample['uniprot_id']} because of the exception {e}"
+            )
+            return None
+
     @staticmethod
     def add_args(parser) -> None:
         """Add class specific args
@@ -559,6 +661,30 @@ class EnzymeMap(AbstractDataset):
             parser (argparse.ArgumentParser): argument parser
         """
         super(EnzymeMap, EnzymeMap).add_args(parser)
+        parser.add_argument(
+            "--esm_dir",
+            type=str,
+            default="/Mounts/rbg-storage1/snapshots/metabolomics/esm2/checkpoints/esm2_t33_650M_UR50D.pt",
+            help="directory to load esm model from",
+        )
+        parser.add_argument(
+            "--use_protein_graphs",
+            action="store_true",
+            default=False,
+            help="whether to use and generate protein graphs",
+        )
+        parser.add_argument(
+            "--protein_graphs_dir",
+            type=str,
+            default=None,
+            help="directory to load protein graphs from",
+        )
+        parser.add_argument(
+            "--protein_structures_dir",
+            type=str,
+            default=None,
+            help="directory to load protein graphs from",
+        )
         parser.add_argument(
             "--ec_level",
             type=int,
@@ -1556,24 +1682,7 @@ class EnzymeMapSubstrate(EnzymeMap):
             default=0.5,
             help="threshold for pesto predictions",
         )
-        parser.add_argument(
-            "--use_protein_graphs",
-            action="store_true",
-            default=False,
-            help="whether to use and generate protein graphs",
-        )
-        parser.add_argument(
-            "--protein_graphs_dir",
-            type=str,
-            default=None,
-            help="directory to load protein graphs from",
-        )
-        parser.add_argument(
-            "--protein_structures_dir",
-            type=str,
-            default=None,
-            help="directory to load protein graphs from",
-        )
+
         parser.add_argument(
             "--sample_negatives",
             action="store_true",
@@ -2214,24 +2323,6 @@ class EnzymeMapSubstrateTest(EnzymeMapSubstrate):
         """Add class specific args"""
         super(EnzymeMapSubstrate, EnzymeMapSubstrate).add_args(parser)
         parser.add_argument(
-            "--use_protein_graphs",
-            action="store_true",
-            default=False,
-            help="whether to use and generate protein graphs",
-        )
-        parser.add_argument(
-            "--protein_graphs_dir",
-            type=str,
-            default=None,
-            help="directory to load protein graphs from",
-        )
-        parser.add_argument(
-            "--protein_structures_dir",
-            type=str,
-            default=None,
-            help="directory to load protein graphs from",
-        )
-        parser.add_argument(
             "--sample_negatives",
             action="store_true",
             default=False,
@@ -2284,6 +2375,9 @@ class EnzymeMapSubstrateTest(EnzymeMapSubstrate):
 
 @register_object("enzymemap_reaction_graph", "dataset")
 class EnzymeMapGraph(EnzymeMap):
+    def __init__(self, args, split_group) -> None:
+        super(EnzymeMapGraph, EnzymeMapGraph).__init__(self, args, split_group)
+
     def post_process(self, args):
         # add all possible products
         reaction_to_products = defaultdict(set)
@@ -2405,6 +2499,31 @@ class EnzymeMapGraph(EnzymeMap):
                         sample[f"ec{ec_level+1}"] = ".".join(
                             ec.split(".")[: (ec_level + 1)]
                         )
+
+                    try:
+                        # make prot graph if missing
+                        if self.args.use_protein_graphs:
+                            graph_path = os.path.join(
+                                self.args.protein_graphs_dir,
+                                "processed",
+                                f"{sample['uniprot_id']}_graph.pt",
+                            )
+                            structure_path = os.path.join(
+                                self.args.protein_structures_dir,
+                                f"AF-{sample['uniprot_id']}-F1-model_v4.cif",
+                            )
+                            if not os.path.exists(structure_path):
+                                continue
+                            if not os.path.exists(graph_path):
+                                print("Generating none existent protein graph")
+                                data = self.create_protein_graph(sample)
+                                if data is None:
+                                    raise Exception("Could not generate protein graph")
+                                torch.save(data, graph_path)
+
+                    except Exception as e:
+                        print(f"Error processing {sample['sample_id']} because of {e}")
+                        continue
 
                     # add reaction sample to dataset
                     if self.args.split_multiproduct_samples:
@@ -2545,6 +2664,7 @@ class EnzymeMapGraph(EnzymeMap):
                 "ec": ec,
                 "organism": sample.get("organism", "none"),
                 "protein_id": uniprot_id,
+                "uniprot_id": uniprot_id,
                 "sample_id": sample_id,
                 "row_id": rowid,
                 "smiles": products,
@@ -2567,6 +2687,63 @@ class EnzymeMapGraph(EnzymeMap):
                     # make all zeros of length sequence
                     scores = torch.zeros(len(item["sequence"]))
                 item["sequence_annotation"] = scores
+
+            if self.args.use_protein_graphs:
+                # load the protein graph
+                graph_path = os.path.join(
+                    self.args.protein_graphs_dir,
+                    "processed",
+                    f"{item['uniprot_id']}_graph.pt",
+                )
+                data = torch.load(graph_path)
+                if data is None:
+                    structure_path = os.path.join(
+                        self.args.protein_structures_dir,
+                        f"AF-{item['uniprot_id']}-F1-model_v4.cif",
+                    )
+                    assert os.path.exists(
+                        structure_path
+                    ), f"Structure path {graph_path} does not exist"
+                    print(
+                        f"Structure path does exist, but graph path does not exist {graph_path} so making graph"
+                    )
+
+                    data = self.create_protein_graph(item)
+                    torch.save(data, graph_path)
+
+                if hasattr(data, "x") and not hasattr(data["receptor"], "x"):
+                    data["receptor"].x = data.x
+
+                keep_keys = {
+                    "receptor",
+                    # "mol_data",
+                    # "sequence",
+                    # "protein_id",
+                    # "uniprot_id",
+                    # "sample_id",
+                    # "smiles",
+                    # "y",
+                    ("receptor", "contact", "receptor"),
+                }
+
+                data_keys = data.to_dict().keys()
+                for d_key in data_keys:
+                    if not d_key in keep_keys:
+                        delattr(data, d_key)
+
+                coors = data["receptor"].pos
+                feats = data["receptor"].x
+                edge_index = data["receptor", "contact", "receptor"].edge_index
+                assert (
+                    coors.shape[0] == feats.shape[0]
+                ), f"Number of nodes do not match between coors ({coors.shape[0]}) and feats ({feats.shape[0]})"
+
+                assert (
+                    max(edge_index[0]) < coors.shape[0]
+                    and max(edge_index[1]) < coors.shape[0]
+                ), "Edge index contains node indices not present in coors"
+
+                item["graph"] = data
 
             return item
 
