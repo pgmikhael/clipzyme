@@ -33,6 +33,7 @@
       "max_epochs": [20],
       "lr_decay": [0.1],
       "lr": [1e-3, 5e-4, 1e-4],
+      "clip_loss_use_gather": [false, true],
       "weight_decay": [0, 0.05],
       "loss_names": ["clip_loss"],
       "metric_names": ["clip_classification"],
