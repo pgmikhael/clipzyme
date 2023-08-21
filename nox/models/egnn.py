@@ -29,6 +29,7 @@ from torch_geometric.utils.loop import add_remaining_self_loops
 
 import math
 
+
 def exists(val):
     return val is not None
 
@@ -44,6 +45,7 @@ class CoorsNorm(nn.Module):
         norm = coors.norm(dim=-1, keepdim=True)
         normed_coors = coors / norm.clamp(min=self.eps)
         return normed_coors * self.scale
+
 
 class SinusoidalEmbeddings(nn.Module):
     """A simple sinusoidal embedding layer. From Jeremy."""
@@ -65,7 +67,15 @@ class SinusoidalEmbeddings(nn.Module):
 
 class EGNN_Sparse(MessagePassing):
     """ """
-    propagate_type = {"x": Tensor, "edge_attr": Tensor, "coors": Tensor, "rel_coors": Tensor, "size": Size, "batch": Dict}
+
+    propagate_type = {
+        "x": Tensor,
+        "edge_attr": Tensor,
+        "coors": Tensor,
+        "rel_coors": Tensor,
+        "size": Size,
+        "batch": Dict,
+    }
 
     def __init__(self, args, **kwargs):
         self.args = args
@@ -98,9 +108,13 @@ class EGNN_Sparse(MessagePassing):
             self.edge_input_dim = self.edge_attr_dim + 1 + (self.feats_dim * 2)
         else:
             self.edge_input_dim = self.feats_dim * 3
-        self.dropout = nn.Dropout(self.args.dropout) if self.args.dropout > 0 else nn.Identity()
+        self.dropout = (
+            nn.Dropout(self.args.dropout) if self.args.dropout > 0 else nn.Identity()
+        )
 
-        dist_dim = self.args.protein_dim # can replace if using different distance embedding
+        dist_dim = (
+            self.args.protein_dim
+        )  # can replace if using different distance embedding
         if self.args.use_sinusoidal:
             self.dist_embedding = SinusoidalEmbeddings(dist_dim)
         else:
@@ -136,10 +150,10 @@ class EGNN_Sparse(MessagePassing):
         # \phi_h
         self.node_mlp = (
             nn.Sequential(
-                nn.Linear(self.feats_dim + self.m_dim, self.feats_dim * 2),
+                nn.Linear(self.feats_dim + self.m_dim, self.feat_proj_dim * 2),
                 self.dropout,
                 SiLU(),
-                nn.Linear(self.feats_dim * 2, self.feats_dim),
+                nn.Linear(self.feat_proj_dim * 2, self.feats_dim),
             )
             if self.update_feats
             else None
@@ -179,7 +193,7 @@ class EGNN_Sparse(MessagePassing):
         rel_coors = coors[edge_index[0]] - coors[edge_index[1]]
         # rel_dist = (rel_coors**2).sum(dim=-1, keepdim=True)
         rel_dist = torch.sqrt((rel_coors**2).sum(dim=-1, keepdim=True))
-        rel_dist = self.dist_embedding(rel_dist) 
+        rel_dist = self.dist_embedding(rel_dist)
         if rel_dist.shape[1] == 1:
             rel_dist = rel_dist.squeeze(1)
 
@@ -261,6 +275,7 @@ class EGNN_Sparse(MessagePassing):
             hidden_out = self.node_mlp(
                 torch.cat([hidden_feats, m_i], dim=-1)
             )  # graph_size / num_neighbours x feat_dim (esm)
+
             hidden_out = kwargs["x"] + hidden_out
         else:
             hidden_out = kwargs["x"]
@@ -268,7 +283,8 @@ class EGNN_Sparse(MessagePassing):
         return self.update((hidden_out, coors_out), **update_kwargs)
 
 
-class EGNN_Sparse_Network(nn.Module):
+@register_object("egnn_sparse_network", "model")
+class EGNN_Sparse_Network(AbstractModel):
     """ """
 
     def __init__(self, args):
@@ -282,16 +298,18 @@ class EGNN_Sparse_Network(nn.Module):
 
     def forward(self, batch):
         """ """
-        if hasattr(batch, "graph"):
+        if hasattr(batch, "graph") or "graph" in batch:
             coors = batch["graph"]["receptor"].pos
             feats = batch["graph"]["receptor"].x
             edge_index = batch["graph"]["receptor", "contact", "receptor"].edge_index
             batch_idx = batch["graph"]["receptor"].batch
-        else:
+        elif hasattr(batch, "receptor") or "receptor" in batch:
             coors = batch["receptor"].pos
             feats = batch["receptor"].x
             edge_index = batch["receptor", "contact", "receptor"].edge_index
             batch_idx = batch["receptor"].batch
+        else:
+            raise ValueError("batch must have a graph or receptor attribute")
 
         edge_attr = None
         bsize = batch_idx.max() + 1
@@ -300,6 +318,106 @@ class EGNN_Sparse_Network(nn.Module):
             coors, feats = egcl(feats, coors, edge_index, size=bsize, batch=batch_idx)
 
         return feats, coors
+
+    @staticmethod
+    def add_args(parser) -> None:
+        """Add class specific args
+
+        Args:
+            parser (argparse.ArgumentParser): argument parser
+        """
+        parser.add_argument(
+            "--pool_type",
+            type=str,
+            choices=["none", "sum", "mul", "mean", "min", "max"],
+            default="none",
+            help="Type of pooling to do to obtain graph features",
+        )
+        parser.add_argument(
+            "--neighbour_aggr",
+            type=str,
+            choices=["add", "sum", "mean", "max"],
+            default="sum",
+            help="Type of pooling to do to obtain graph features",
+        )
+        parser.add_argument(
+            "--edge_attr_dim",
+            type=int,
+            default=0,
+            help="",
+        )
+        parser.add_argument(
+            "--message_dim",
+            type=int,
+            default=16,
+            help="",
+        )
+        parser.add_argument(
+            "--soft_edge",
+            type=int,
+            default=0,
+            help="",
+        )
+        parser.add_argument(
+            "--norm_feats",
+            action="store_true",
+            default=False,
+            help="",
+        )
+        parser.add_argument(
+            "--norm_coors",
+            action="store_true",
+            default=False,
+            help="",
+        )
+        parser.add_argument(
+            "--update_feats",
+            action="store_true",
+            default=False,
+            help="",
+        )
+        parser.add_argument(
+            "--update_coors",
+            action="store_true",
+            default=False,
+            help="",
+        )
+        parser.add_argument(
+            "--norm_coors_scale_init",
+            type=float,
+            default=1e-2,
+            help="",
+        )
+        parser.add_argument(
+            "--coor_weights_clamp_value",
+            type=float,
+            default=None,
+            help="",
+        )
+        parser.add_argument(
+            "--egcl_layers",
+            type=int,
+            default=4,
+            help="",
+        )
+        parser.add_argument(
+            "--protein_dim",
+            type=int,
+            default=64,
+            help="",
+        )
+        parser.add_argument(
+            "--feat_proj_dim",
+            type=int,
+            default=1280,
+            help="dim that features are projected to upon being fed to phi_e",
+        )
+        parser.add_argument(
+            "--use_sinusoidal",
+            action="store_true",
+            default=False,
+            help="whether or not to use sinusoidal embeddings for distance",
+        )
 
 
 @register_object("egnn_classifier", "model")

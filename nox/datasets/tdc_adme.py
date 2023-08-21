@@ -220,6 +220,10 @@ class ADMESubstratesDataset(ADMEDataset):
             # reactants, atom_map2new_index = from_mapped_smiles(reactants, encode_no_edge=True)
             # reactants.bond_changes = []
 
+            rdkit_features = torch.tensor(
+                get_rdkit_feature(drug, method=self.args.rdkit_features_name)
+            ).unsqueeze(0)
+
             item = {
                 "reaction": reaction,
                 "smiles": drug,
@@ -229,6 +233,7 @@ class ADMESubstratesDataset(ADMEDataset):
                 "uniprot_id": uniprot_id,
                 "sample_id": sample_id,
                 "y": y,
+                "rdkit_features": rdkit_features,
             }
 
             if self.args.use_protein_graphs:

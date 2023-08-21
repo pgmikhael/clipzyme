@@ -31,6 +31,19 @@ from torch_scatter import scatter
 class ProteinMoleculeCLIP(AbstractModel):
     def __init__(self, args):
         super(ProteinMoleculeCLIP, self).__init__()
+
+        self.protmol_clip_path = copy.copy(args.protmol_clip_path)
+        self.use_as_protein_encoder = getattr(args, "use_as_protein_encoder", False)
+        self.use_as_mol_encoder = getattr(args, "use_as_mol_encoder", False)
+
+        if args.protmol_clip_path is not None:
+            state_dict = torch.load(args.protmol_clip_path)
+            state_dict_copy = {
+                k.replace("model.", "", 1): v
+                for k, v in state_dict["state_dict"].items()
+            }
+            args = state_dict["hyper_parameters"]["args"]
+
         self.args = args
         self.substrate_encoder = get_object(args.substrate_encoder, "model")(args)
         self.lin_layer = nn.Linear(
@@ -43,16 +56,45 @@ class ProteinMoleculeCLIP(AbstractModel):
         self.logit_scale = nn.Parameter(
             torch.ones([]) * torch.log(torch.tensor(1 / 0.07))
         )
-        if args.protmol_clip_model_path is not None:
-            state_dict = torch.load(args.protmol_clip_model_path)
-            state_dict_copy = {
-                k.replace("model.", "", 1): v
-                for k, v in state_dict["state_dict"].items()
-            }
+
+        if self.protmol_clip_path is not None:
             self.load_state_dict(state_dict_copy)
 
     def forward(self, batch) -> Dict:
         output = {}
+
+        # for test time, runs only one of the encoders
+        if self.use_as_protein_encoder:
+            protein_features = self.protein_encoder(
+                {"x": batch.sequence, "sequence": batch.sequence, "batch": batch}
+            )["hidden"]
+
+            # apply normalization
+            protein_features = self.ln_final(protein_features)
+            protein_features = protein_features / protein_features.norm(
+                dim=1, keepdim=True
+            )
+
+            output.update(
+                {
+                    "hidden": protein_features,
+                }
+            )
+            return output
+
+        if self.use_as_mol_encoder:
+            substrate_features = self.substrate_encoder(batch)["hidden"]
+            substrate_features = substrate_features / substrate_features.norm(
+                dim=1, keepdim=True
+            )
+
+            output.update(
+                {
+                    "hidden": substrate_features,
+                }
+            )
+            return output
+
         substrate_features_out = self.substrate_encoder(batch)
         if (
             hasattr(self.substrate_encoder, "pool_type")
@@ -113,10 +155,22 @@ class ProteinMoleculeCLIP(AbstractModel):
             help="Name of encoder to use",
         )
         parser.add_argument(
-            "--protmol_clip_model_path",
+            "--protmol_clip_path",
             type=str,
             default=None,
             help="path to saved model if loading from pretrained",
+        )
+        parser.add_argument(
+            "--use_as_protein_encoder",
+            action="store_true",
+            default=False,
+            help="to be used if you just want to use pretrained model as a protein encoder",
+        )
+        parser.add_argument(
+            "--use_as_mol_encoder",
+            action="store_true",
+            default=False,
+            help="to be used if you just want to use pretrained model as a mol encoder",
         )
 
 
