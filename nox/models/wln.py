@@ -11,6 +11,7 @@ from nox.utils.wln_processing import (
 )
 from nox.models.abstract import AbstractModel
 from torch_scatter import scatter, scatter_add
+from torch_geometric.data import HeteroData, Data, Batch
 from torch_geometric.utils import to_dense_batch, to_dense_adj, dense_to_sparse
 from collections import defaultdict
 from nox.models.gat import GAT
@@ -1101,6 +1102,8 @@ class ESMReactivityCenterNet(ReactivityCenterNet):
         return encoder_hidden_states, encoder_pooled_states, mask
 
     def forward(self, batch):
+        if all([isinstance(l, Data) for l in batch["reactants"]]):
+            batch["reactants"] = Batch.from_data_list(batch["reactants"])
         gat_output = self.gat_global_attention(
             batch["reactants"]
         )  # GAT + Global Attention over node features
@@ -1229,16 +1232,19 @@ class EGNNReactivityCenterNet(ESMReactivityCenterNet):
 
     def encode_sequence(self, batch):
         feats, coors = self.egnn(batch)
+        try:
+            batch_idxs = batch["graph"]["receptor"].batch
+        except:
+            batch_idxs = batch["receptor"].batch
+
         encoder_pooled_states = scatter(
             feats,
-            batch["graph"]["receptor"].batch,
+            batch_idxs,
             dim=0,
             reduce=self.args.pool_type,
         )
 
-        encoder_hidden_states, mask = to_dense_batch(
-            feats, batch["graph"]["receptor"].batch
-        )
+        encoder_hidden_states, mask = to_dense_batch(feats, batch_idxs)
 
         # if node dim in EGNN is not the same as the gat dim then project down
         # likely due to ESM versions

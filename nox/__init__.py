@@ -78,6 +78,7 @@ import nox.learning.metrics.wln
 # callbacks
 import nox.callbacks.basic
 import nox.callbacks.swa
+
 # import nox.callbacks.ema
 
 # models
@@ -100,6 +101,7 @@ import nox.models.esm_decoder
 import nox.models.protmol
 import nox.models.noncanonnet
 import nox.models.wln
+import nox.models.reaction_center_classifier
 
 # comet
 import nox.loggers.comet

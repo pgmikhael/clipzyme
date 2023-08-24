@@ -1,4 +1,4 @@
-import torch 
+import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from nox.utils.registry import get_object, register_object
@@ -8,10 +8,11 @@ from nox.models.abstract import AbstractModel
 from torch_scatter import scatter, scatter_add
 from torch_geometric.utils import to_dense_batch, to_dense_adj, dense_to_sparse
 from collections import defaultdict
-from rdkit import Chem 
-import copy 
-import os 
+from rdkit import Chem
+import copy
+import os
 from rich import print
+
 
 @register_object("pretrained_reaction_center_classifier", "model")
 class ReactionCenterClassifier(AbstractModel):
@@ -20,20 +21,31 @@ class ReactionCenterClassifier(AbstractModel):
         self.args = args
         try:
             state_dict = torch.load(args.reactivity_model_path)
-            self.reactivity_net = get_object(args.reactivity_net_type, "model")(state_dict['hyper_parameters']['args'])
-            self.reactivity_net.load_state_dict({k[len("model."):]: v for k,v in state_dict["state_dict"].items() if k.startswith("model")})
-            self.reactivity_net.requires_grad_(False)
+            self.reactivity_net = get_object(args.reactivity_net_type, "model")(
+                state_dict["hyper_parameters"]["args"]
+            )
+            self.reactivity_net.load_state_dict(
+                {
+                    k[len("model.") :]: v
+                    for k, v in state_dict["state_dict"].items()
+                    if k.startswith("model")
+                }
+            )
+            # self.reactivity_net.requires_grad_(False)
             print(f"[bold] Loaded checkpoint from {args.reactivity_model_path}")
         except:
-            self.reactivity_net = get_object(args.reactivity_net_type, "model")(args).requires_grad_(False)
+            self.reactivity_net = get_object(args.reactivity_net_type, "model")(
+                args
+            ).requires_grad_(False)
             print("Could not load pretrained model")
-        
+
         self.freeze_encoder = args.freeze_reaction_center
         if self.freeze_encoder:
             self.reactivity_net.requires_grad_(False)
 
+        if args.use_rdkit_features:
+            args.mlp_input_dim += args.rdkit_features_dim
         self.classifier = get_object(args.classifier, "model")(args)
-        
 
     def forward(self, batch):
         if self.freeze_encoder:
@@ -42,16 +54,16 @@ class ReactionCenterClassifier(AbstractModel):
                 reactivity_output = self.reactivity_net(batch)
         else:
             reactivity_output = self.reactivity_net(batch)
-        
+
         hidden = reactivity_output["c_final"]
         if getattr(self.args, "project_nodes", False):
             hidden = self.reactivity_net.M_a(hidden)
 
-        hidden = scatter(hidden, batch['reactants'].batch, dim=0, reduce="mean")
+        hidden = scatter(hidden, batch["reactants"].batch, dim=0, reduce="mean")
         if self.args.use_rdkit_features:
-            hidden = torch.hstack([hidden, batch['reactants'].rdkit_features]).float()
-        outputs = self.classifier({"x":hidden})
-        return outputs 
+            hidden = torch.hstack([hidden, batch["reactants"].rdkit_features]).float()
+        outputs = self.classifier({"x": hidden})
+        return outputs
 
     @staticmethod
     def add_args(parser) -> None:
@@ -66,19 +78,19 @@ class ReactionCenterClassifier(AbstractModel):
             type=str,
             action=set_nox_type("model"),
             default="reaction_center_net",
-            help="Type of reactivity net to use, mainly to init args"
+            help="Type of reactivity net to use, mainly to init args",
         )
         parser.add_argument(
             "--reactivity_model_path",
             type=str,
-            help="path to pretrained reaction center prediction model"
+            help="path to pretrained reaction center prediction model",
         )
         parser.add_argument(
             "--classifier",
             type=str,
             action=set_nox_type("model"),
             default="mlp_classifier",
-            help="mlp"
+            help="mlp",
         )
         parser.add_argument(
             "--freeze_reaction_center",
@@ -104,4 +116,3 @@ class ReactionCenterClassifier(AbstractModel):
             default=0,
             help="number of features",
         )
-        

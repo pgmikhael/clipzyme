@@ -216,18 +216,24 @@ class ADMESubstratesDataset(ADMEDataset):
             y = sample["Y"]
             reaction = ".".join(reactants)
 
-            # reactants = assign_dummy_atom_maps(reaction)
-            # reactants, atom_map2new_index = from_mapped_smiles(reactants, encode_no_edge=True)
-            # reactants.bond_changes = []
+            reactants = assign_dummy_atom_maps(reaction)
+            reactants, atom_map2new_index = from_mapped_smiles(
+                reactants,
+                encode_no_edge=True,
+                use_one_hot_encoding=self.args.use_one_hot_mol_features,
+            )
+            reactants.bond_changes = []
 
             rdkit_features = torch.tensor(
                 get_rdkit_feature(drug, method=self.args.rdkit_features_name)
             ).unsqueeze(0)
 
+            reactants.rdkit_features = rdkit_features
+
             item = {
                 "reaction": reaction,
                 "smiles": drug,
-                # "reactants": reactants,
+                "reactants": reactants,
                 "sequence": sequence,
                 "protein_id": uniprot_id,
                 "uniprot_id": uniprot_id,
@@ -265,12 +271,15 @@ class ADMESubstratesDataset(ADMEDataset):
                 keep_keys = {
                     "receptor",
                     "mol_data",
+                    "reactants",
                     "sequence",
                     "protein_id",
                     "uniprot_id",
                     "sample_id",
                     "smiles",
                     "y",
+                    "rdkit_features",
+                    "reaction",
                     ("receptor", "contact", "receptor"),
                 }
 

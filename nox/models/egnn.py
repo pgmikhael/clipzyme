@@ -22,7 +22,7 @@ from typing import Optional, List, Union, Tuple, Any, Dict
 import torch_geometric
 from torch_geometric.nn import MessagePassing
 from torch_geometric.typing import Adj, Size, OptTensor, Tensor
-from torch_geometric.data import Batch
+from torch_geometric.data import HeteroData, Data, Batch, Dataset
 from torch_scatter import scatter
 from torch_geometric.utils import to_dense_batch
 from torch_geometric.utils.loop import add_remaining_self_loops
@@ -298,12 +298,26 @@ class EGNN_Sparse_Network(AbstractModel):
 
     def forward(self, batch):
         """ """
-        if hasattr(batch, "graph") or "graph" in batch:
+        if (
+            hasattr(batch, "graph")
+            or "graph" in batch
+            or (
+                isinstance(batch, (Data, HeteroData))
+                and "graph" in batch.to_dict().keys()
+            )
+        ):
             coors = batch["graph"]["receptor"].pos
             feats = batch["graph"]["receptor"].x
             edge_index = batch["graph"]["receptor", "contact", "receptor"].edge_index
             batch_idx = batch["graph"]["receptor"].batch
-        elif hasattr(batch, "receptor") or "receptor" in batch:
+        elif (
+            hasattr(batch, "receptor")
+            or "receptor" in batch
+            or (
+                isinstance(batch, (Data, HeteroData))
+                and "receptor" in batch.to_dict().keys()
+            )
+        ):
             coors = batch["receptor"].pos
             feats = batch["receptor"].x
             edge_index = batch["receptor", "contact", "receptor"].edge_index
