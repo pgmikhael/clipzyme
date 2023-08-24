@@ -13,6 +13,7 @@ import rdkit
 import hashlib
 from nox.utils.pyg import from_smiles, from_mapped_smiles
 from nox.utils.smiles import get_rdkit_feature, remove_atom_maps, assign_dummy_atom_maps
+from nox.utils.wln_processing import get_bond_changes
 import copy 
 
 @register_object("iocb", "dataset")
@@ -267,6 +268,12 @@ class IOCB(AbstractDataset):
             default=False,
             help="use graph structure for inputs",
         )
+        parser.add_argument(
+            "--use_atom_maps",
+            action="store_true",
+            default=False,
+            help="use atom maps of reaction",
+        )
     
     @staticmethod
     def set_args(args) -> None:
@@ -486,6 +493,16 @@ class IOCBReactions(IOCB):
             
             sample["reactants"] = ".".join(sample["reactants"])
             sample["products"] = ".".join(sample["products"])
+
+            if self.args.use_atom_maps:
+                if (row["rxn_smiles"] == "") or (row["bond_changes"] == ""):
+                    continue 
+
+                reaction_smiles = row["rxn_smiles"]
+                reactants, products = reaction_smiles.split(">>")
+                sample["bond_changes"] = row["bond_changes"]
+                sample["reactants"] = reactants
+                sample["products"] = products
             
             dataset.append(sample)
 
@@ -528,6 +545,14 @@ class IOCBReactions(IOCB):
         * Number of proteins: {len(set(proteins))}
         """
         return statement
+    
+    @staticmethod
+    def set_args(args) -> None:
+        IOCB.set_args(args)
+        args.dataset_file_path = (
+            "/Mounts/rbg-storage1/datasets/Enzymes/IOCB/TPS-IOCB-with-mapped-rxn-fixedv1.json"
+        )
+
 
 
 @register_object("iocb_with_negatives", "dataset")
