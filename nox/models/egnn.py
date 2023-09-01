@@ -742,6 +742,10 @@ class EGNN_Mol_Classifier(AbstractModel):
         classifier_args.mlp_input_dim = (
             classifier_args.protein_dim + args.chemprop_hidden_dim
         )
+        if self.args.use_rdkit_features:
+            classifier_args.mlp_input_dim = (
+                args.graph_classifier_hidden_dim + args.rdkit_features_dim
+            )
         self.mlp = get_object(args.classifier_name, "model")(classifier_args)
 
     def forward(self, batch=None):
@@ -768,7 +772,9 @@ class EGNN_Mol_Classifier(AbstractModel):
                 "mol_data must be a list of Data/HeteroData objs or Batch object"
             )
         output["mol_features"] = mol_output["graph_features"]
-
+        if self.args.use_rdkit_features:
+            features = batch["rdkit_features"].view(batch_size, -1)
+            output["mol_features"] = torch.concat([output["mol_features"], features], dim=-1)
         # concatenate and classify
         output.update(
             self.mlp(
@@ -894,4 +900,16 @@ class EGNN_Mol_Classifier(AbstractModel):
             action="store_true",
             default=False,
             help="whether or not to use sinusoidal embeddings for distance",
+        )
+        parser.add_argument(
+            "--use_rdkit_features",
+            action="store_true",
+            default=False,
+            help="whether using graph-level features from rdkit",
+        )
+        parser.add_argument(
+            "--rdkit_features_dim",
+            type=int,
+            default=0,
+            help="number of features",
         )
