@@ -47,7 +47,7 @@
       "metric_names": ["classification"],
       "task_type": ["multiclass"],
       "monitor": ["val_pr_auc"],
-      "num_workers": [8],
+      "num_workers": [0],
       "optimizer_name": ["adam"],
       "patience": [5],
       "train": [true],

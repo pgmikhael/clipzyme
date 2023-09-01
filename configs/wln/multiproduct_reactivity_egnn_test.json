@@ -45,18 +45,18 @@
     "predict_ecs": [true],
     "loss_names": ["reactivity_loss hierarchical_ec_loss"],
     "metric_names": ["reactivity_exact_accuracy reactivity_topk"],
-    "topk_bonds": ["10 20"],
+    "topk_bonds": ["1 5"],
     "checkpoint_save_last": [false],
     "monitor": ["val_acc_top10"],
     "num_workers": [0],
     "optimizer_name": ["adam"],
     "patience": [5],
-    "train": [true],
+    "train": [false],
     "dev": [false],
     "test": [true],
     "num_sanity_val_steps": [0],
     "val_check_interval": [1.0],
-    "gpus": [8],
+    "gpus": [1],
     "ignore_warnings": [false],
     "dropout": [0],
     "checkpoint_dir": ["/Mounts/rbg-storage1/snapshots/metabolomics"],
@@ -73,9 +73,9 @@
     "update_coors": [false],
     "egcl_layers": [6],
     "from_checkpoint": [true],
-    "checkpoint_path": ["/Mounts/rbg-storage1/snapshots/metabolomics/cec6f1302635438262dbd979667ba993/cec6f1302635438262dbd979667ba993epoch=0.ckpt"],
+    "checkpoint_path": ["/Mounts/rbg-storage1/snapshots/metabolomics/21a317af45f2aab29c9c5e4ad647d708/21a317af45f2aab29c9c5e4ad647d708epoch=0.ckpt"],
     "protein_structures_dir": ["/Mounts/rbg-storage1/datasets/Metabo/AlphaFoldEnzymes/"],
     "protein_graphs_dir": ["/Mounts/rbg-storage1/datasets/Metabo/quickprot_caches/"]
   },
-  "available_gpus": ["0,1,2,3,4,5,6,7"]
+  "available_gpus": [0,1,2,3]
 }
