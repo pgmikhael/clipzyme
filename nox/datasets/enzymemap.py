@@ -863,13 +863,6 @@ class EnzymeMap(AbstractDataset):
 @register_object("enzymemap_substrate", "dataset")
 class EnzymeMapSubstrate(EnzymeMap):
     def __init__(self, args, split_group) -> None:
-        esm_dir = "/Mounts/rbg-storage1/snapshots/metabolomics/esm2/checkpoints/esm2_t33_650M_UR50D.pt"
-        if args.use_protein_graphs:
-            self.esm_dir = esm_dir
-            model, alphabet = pretrained.load_model_and_alphabet(esm_dir)
-            self.esm_model = model
-            self.alphabet = alphabet
-            self.batch_converter = alphabet.get_batch_converter()
         super(EnzymeMapSubstrate, EnzymeMapSubstrate).__init__(self, args, split_group)
 
     def create_dataset(
@@ -1239,90 +1232,6 @@ class EnzymeMapSubstrate(EnzymeMap):
         data["mol_data"] = from_smiles(sample["smiles"])
         return data
 
-    def create_protein_graph(self, sample):
-        try:
-            raw_path = os.path.join(
-                self.args.protein_structures_dir,
-                f"AF-{sample['uniprot_id']}-F1-model_v4.cif",
-            )
-            sample_id = sample["sample_id"]
-            protein_parser = Bio.PDB.MMCIFParser()
-            protein_resolution = "residue"
-            graph_edge_args = {"knn_size": 10}
-            center_protein = True
-            esm_dir = "/Mounts/rbg-storage1/snapshots/metabolomics/esm2/checkpoints/esm2_t33_650M_UR50D.pt"
-
-            # parse pdb
-            all_res, all_atom, all_pos = read_structure_file(
-                protein_parser, raw_path, sample_id
-            )
-            # filter resolution of protein (backbone, atomic, etc.)
-            atom_names, seq, pos = filter_resolution(
-                all_res,
-                all_atom,
-                all_pos,
-                protein_resolution=protein_resolution,
-            )
-            # generate graph
-            data = build_graph(atom_names, seq, pos, sample_id)
-            # kNN graph
-            data = compute_graph_edges(data, **graph_edge_args)
-            if center_protein:
-                center = data["receptor"].pos.mean(dim=0, keepdim=True)
-                data["receptor"].pos = data["receptor"].pos - center
-                data.center = center
-            uniprot_id = sample["uniprot_id"]
-            sequence = self.uniprot2sequence[uniprot_id]
-            data.structure_sequence = self.uniprot2sequence[uniprot_id]
-            node_embeddings_args = {
-                "model": self.esm_model,
-                "model_location": self.esm_dir,
-                "alphabet": self.alphabet,
-                "batch_converter": self.batch_converter,
-            }
-
-            embedding_path = os.path.join(
-                self.args.protein_graphs_dir,
-                "precomputed_node_embeddings",
-                f"{sample['uniprot_id']}.pt",
-            )
-            if os.path.exists(embedding_path):
-                node_embedding = torch.load(sample["embedding_path"])
-            else:
-                node_embedding = compute_node_embedding(data, **node_embeddings_args)
-            # Fix sequence length mismatches
-            if len(data["receptor"].seq) != node_embedding.shape[0]:
-                print("Computing seq embedding for mismatched seq length")
-                protein_letters_3to1.update(
-                    {k.upper(): v for k, v in protein_letters_3to1.items()}
-                )
-                AA_seq = ""
-                for char in seq:
-                    AA_seq += protein_letters_3to1[char]
-                # sequences = get_sequences(
-                #     self.protein_parser,
-                #     [sample["sample_id"]],
-                #     [os.path.join(self.structures_dir, f"AF-{sample['uniprot_id']}-F1-model_v4.cif")],
-                # )
-
-                data.structure_sequence = AA_seq
-                data["receptor"].x = compute_node_embedding(
-                    data, **node_embeddings_args
-                )
-            else:
-                data["receptor"].x = node_embedding
-
-            if len(data["receptor"].seq) != node_embedding.shape[0]:
-                return None
-
-            return data
-
-        except Exception as e:
-            print(
-                f"Create prot graph: Could not load sample {sample['uniprot_id']} because of the exception {e}"
-            )
-            return None
-
     def post_process(self, args):
         if args.sample_negatives:
             self.dataset = self.add_negatives(
@@ -1629,24 +1538,6 @@ class EnzymeMapSubstrate(EnzymeMap):
             help="threshold for pesto predictions",
         )
         parser.add_argument(
-            "--use_protein_graphs",
-            action="store_true",
-            default=False,
-            help="whether to use and generate protein graphs",
-        )
-        parser.add_argument(
-            "--protein_graphs_dir",
-            type=str,
-            default=None,
-            help="directory to load protein graphs from",
-        )
-        parser.add_argument(
-            "--protein_structures_dir",
-            type=str,
-            default=None,
-            help="directory to load protein graphs from",
-        )
-        parser.add_argument(
             "--sample_negatives",
             action="store_true",
             default=False,
@@ -1700,12 +1591,6 @@ class EnzymeMapSubstrate(EnzymeMap):
             action="store_true",
             default=False,
             help="whether to evaluate on full (all proteins) dev and test sets",
-        )
-
-    @staticmethod
-    def set_args(args):
-        args.dataset_file_path = (
-            "/Mounts/rbg-storage1/datasets/Enzymes/EnzymeMap/enzymemap_brenda2023.json"
         )
 
 
