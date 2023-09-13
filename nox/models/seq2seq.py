@@ -418,6 +418,12 @@ class EnzymaticReactionEncoder(ReactionEncoder):
         self.protein_representation_key = args.protein_representation_key
         if args.hidden_size != args.protein_feature_dim:
             self.protein_fc = nn.Linear(args.protein_feature_dim, args.hidden_size)
+        
+        self.predict_ecs = getattr(args, 'seq2seq_predict_ecs', False)
+        if self.predict_ecs:
+            ec_args = copy.deepcopy(args)
+            ec_args.num_classes = len(args.ec_levels['4'].values())
+            self.ec_classifier = get_object(args.seq2seq_ec_classifier, "model")(ec_args)
 
     def encode_sequence(self, batch):
         if self.args.enzyme_model is not None:
@@ -641,6 +647,9 @@ class EnzymaticReactionEncoder(ReactionEncoder):
         preds_mask[preds_mask == 0] = -100
         output["preds_mask"] = preds_mask
 
+
+        output["ec_logits"] = self.ec_classifier({'x': decoder_outputs.hidden_states[-1].sum(1) })['logit'] if self.predict_ecs else None
+
         return output
 
     def generate(self, batch):
@@ -729,6 +738,19 @@ class EnzymaticReactionEncoder(ReactionEncoder):
             type=int,
             default=480,
             help="size of protein residue features from ESM models",
+        )
+        parser.add_argument(
+            "--seq2seq_predict_ecs",
+            action="store_true",
+            default=False,
+            help="do ec classification.",
+        )
+        parser.add_argument(
+            "--seq2seq_ec_classifier",
+            type=str,
+            action=set_nox_type("model"),
+            default="mlp_classifier",
+            help="mlp"
         )
 
 

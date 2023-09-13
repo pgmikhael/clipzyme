@@ -4,12 +4,16 @@
     "batch_size": [8],
     "precision": ["bf16"],
     "accumulate_grad_batches": [1],
-    "dataset_name": ["ecreact_reactions_full"],
+    "dataset_name": ["enzymemap_reactions"],
     "max_reactant_size": [100],
-    "class_bal": [false],
-    "class_bal_key": ["ec"],
+    "max_product_size": [100],
+    "max_num_products": [4],
+    "dataset_file_path": ["/Mounts/rbg-storage1/datasets/Enzymes/EnzymeMap/version2/enzymemap_v2_brenda2_processed_multi_remove_products.json"],
+    "version": ["2"],
+    "remove_stereochemistry": [true],
+    "class_bal": [true],
+    "class_bal_key": ["ec1"],
     "assign_splits": [false],
-    "split_seed": [2023],
     "randomize_order_in_reaction": [false],
     "use_random_smiles_representation": [false],
     "lightning_name": ["base"],
@@ -45,7 +49,7 @@
     "mol_topk_gold_key": ["all_smiles"],
     "mol_topk_pred_key": ["pred_smiles"],
     "metric_names_for_eval": ["topk_classification"],
-    "log_predictions_to_table": [true],
+    "log_predictions_to_table": [false],
     "log_predictions_to_table_every": [1000],
     "checkpoint_save_last": [false],
     "monitor": ["val_top_1"],
@@ -64,7 +68,7 @@
     "logger_name": ["wandb"],
     "workspace": ["peteranditamar"],
     "project_name": ["enzymes"],
-    "logger_tags": ["iocb esm"]
+    "logger_tags": ["esm"]
   },
   "available_gpus": ["0,1,2,3,4,5,6,7"]
 }
