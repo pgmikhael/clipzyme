@@ -45,6 +45,16 @@ from rdkit import Chem
 from rdkit.Chem import AllChem as rdk
 
 
+ESM_MODEL2HIDDEN_DIM = {
+    "esm2_t48_15B_UR50D": 5120,
+    "esm2_t36_3B_UR50D": 2560,
+    "esm2_t33_650M_UR50D": 1280,
+    "esm2_t30_150M_UR50D": 640,
+    "esm2_t12_35M_UR50D": 480,
+    "esm2_t6_8M_UR50D": 320,
+}
+
+
 def stringify_sets(sets):
     final = []
     for i in sets:
@@ -100,8 +110,12 @@ class EnzymeMap(AbstractDataset):
             )
         )
         self.uniprot2cluster = pickle.load(
+            # open(
+            #     "/Mounts/rbg-storage1/datasets/Enzymes/EnzymeMap/mmseq_clusters.p",  # TODO
+            #     "rb",
+            # )
             open(
-                "/Mounts/rbg-storage1/datasets/Enzymes/EnzymeMap/mmseq_clusters.p",  # TODO
+                "/Mounts/rbg-storage1/datasets/Enzymes/EnzymeMap/mmseq_clusters_updated.p",
                 "rb",
             )
         )
@@ -956,6 +970,21 @@ class EnzymeMapSubstrate(EnzymeMap):
                                 )
 
                                 if not os.path.exists(graph_path):
+                                    data = self.create_protein_graph(sample)
+                                    if data is None:
+                                        raise Exception(
+                                            "Could not generate protein graph"
+                                        )
+                                    torch.save(data, graph_path)
+                                # data created
+                                # node embedding dimension is not the same as expected by the model
+                                elif (
+                                    data["receptor"].x.shape[1]
+                                    != ESM_MODEL2HIDDEN_DIM[self.esm_dir.split("/")[-1]]
+                                ):
+                                    print(
+                                        "Node embedding dimension is not the same as expected by the model"
+                                    )
                                     data = self.create_protein_graph(sample)
                                     if data is None:
                                         raise Exception(
