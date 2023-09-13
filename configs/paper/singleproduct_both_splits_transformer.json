@@ -18,7 +18,7 @@
     "max_product_size": [100],
     "max_protein_length": [800],
     "dataset_file_path": ["/Mounts/rbg-storage1/datasets/Enzymes/EnzymeMap/version2/enzymemap_v2_brenda2_processed_multi_remove_products.json"],
-    "version": ["1"],
+    "version": ["2"],
     "randomize_order_in_reaction": [true],
     "class_bal": [true],
     "class_bal_key": ["ec1"],

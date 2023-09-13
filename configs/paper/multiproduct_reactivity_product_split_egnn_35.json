@@ -1,7 +1,7 @@
 {
   "script": "main",
   "paired_hyperparams": {
-    "logger_tags": ["emap2 v1 mmseqs_split w_ec_loss egnn", "emap2 v1 mmseqs_split no_ec_loss egnn"],
+    "logger_tags": ["emap2 v1 w_ec_loss egnn product_split", "emap2 v1 no_ec_loss egnn product_split"],
     "loss_names": ["reactivity_loss hierarchical_ec_loss", "reactivity_loss"]
   },
   "cartesian_hyperparams": {
@@ -11,8 +11,7 @@
     "precision": ["bf16"],
     "accumulate_grad_batches": [1],
     "dataset_name": ["enzymemap_reaction_graph"],
-    "assign_splits": [true],
-    "split_type": ["mmseqs"],
+    "assign_splits": [false],
     "split_seed": [0],
     "split_probs": ["0.8 0.1 0.1"],
     "max_num_products": [4],
@@ -28,7 +27,7 @@
     "compute_metrics_every_step": [true],
     "mlp_layer_configuration":  [128],
     "mlp_input_dim": [480],
-    "esm_model_version": ["facebook/esm2_t33_650M_UR50D"],
+    "esm_model_version": ["facebook/esm2_t12_35M_UR50D"],
     "freeze_encoder": [false],
     "use_protein_graphs": [true],
     "use_sinusoidal": [true],
@@ -44,7 +43,7 @@
     "gat_complete_edge_dim": [5],
     "gat_pool": ["none"],
     "attn_type": ["pairwise_global_attn"],
-    "protein_dim": [1280],
+    "protein_dim": [480],
     "callback_names": ["lr_monitor checkpointer"],
     "max_epochs": [5],
     "lr_decay": [0.1],
@@ -79,7 +78,7 @@
     "update_coors": [false],
     "egcl_layers": [6],
     "protein_structures_dir": ["/Mounts/rbg-storage1/datasets/Metabo/AlphaFoldEnzymes/"],
-    "protein_graphs_dir": ["/Mounts/rbg-storage1/datasets/Metabo/quickprot_caches/"]
+    "protein_graphs_dir": ["/Mounts/rbg-storage1/datasets/Metabo/quickprot_caches_35M/"]
   },
-  "available_gpus": ["0,1,2,3,4,5,6,7"]
+  "available_gpus": ["1,2,3,4,6,7"]
 }
