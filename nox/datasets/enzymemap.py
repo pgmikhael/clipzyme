@@ -252,6 +252,11 @@ class EnzymeMap(AbstractDataset):
                 # add reaction sample to dataset
                 dataset.append(sample)
 
+                for ec_level, _ in enumerate(ec.split(".")):
+                    sample[f"ec{ec_level+1}"] = ".".join(
+                        ec.split(".")[: (ec_level + 1)]
+                    )
+
         return dataset
 
     def skip_sample(self, sample, split_group) -> bool:
