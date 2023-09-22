@@ -1,4 +1,3 @@
-
 # -*- coding: utf-8 -*-
 #
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
@@ -31,26 +30,36 @@ from functools import partial
 import torch
 
 from sklearn.neighbors import NearestNeighbors
+
 try:
     from molvs import Standardizer
 except ImportError as e:
-    print('MolVS is not installed, which is required for candidate ranking')
+    print("MolVS is not installed, which is required for candidate ranking")
 
 
-BOND_TYPE = {1: Chem.rdchem.BondType.SINGLE, 2: Chem.rdchem.BondType.DOUBLE, 3: Chem.rdchem.BondType.TRIPLE, 1.5: Chem.rdchem.BondType.AROMATIC}
+BOND_TYPE = {
+    1: Chem.rdchem.BondType.SINGLE,
+    2: Chem.rdchem.BondType.DOUBLE,
+    3: Chem.rdchem.BondType.TRIPLE,
+    1.5: Chem.rdchem.BondType.AROMATIC,
+}
 
 clean_rxns_postsani = [
     # two adjacent aromatic nitrogens should allow for H shift
-    Chem.AllChem.ReactionFromSmarts('[n;H1;+0:1]:[n;H0;+1:2]>>[n;H0;+0:1]:[n;H0;+0:2]'),
+    Chem.AllChem.ReactionFromSmarts("[n;H1;+0:1]:[n;H0;+1:2]>>[n;H0;+0:1]:[n;H0;+0:2]"),
     # two aromatic nitrogens separated by one should allow for H shift
-    Chem.AllChem.ReactionFromSmarts('[n;H1;+0:1]:[c:3]:[n;H0;+1:2]>>[n;H0;+0:1]:[*:3]:[n;H0;+0:2]'),
-    Chem.AllChem.ReactionFromSmarts('[#7;H0;+:1]-[O;H1;+0:2]>>[#7;H0;+:1]-[O;H0;-:2]'),
+    Chem.AllChem.ReactionFromSmarts(
+        "[n;H1;+0:1]:[c:3]:[n;H0;+1:2]>>[n;H0;+0:1]:[*:3]:[n;H0;+0:2]"
+    ),
+    Chem.AllChem.ReactionFromSmarts("[#7;H0;+:1]-[O;H1;+0:2]>>[#7;H0;+:1]-[O;H0;-:2]"),
     # neutralize C(=O)[O-]
-    Chem.AllChem.ReactionFromSmarts('[C;H0;+0:1](=[O;H0;+0:2])[O;H0;-1:3]>>[C;H0;+0:1](=[O;H0;+0:2])[O;H1;+0:3]'),
+    Chem.AllChem.ReactionFromSmarts(
+        "[C;H0;+0:1](=[O;H0;+0:2])[O;H0;-1:3]>>[C;H0;+0:1](=[O;H0;+0:2])[O;H1;+0:3]"
+    ),
     # turn neutral halogens into anions EXCEPT HCl
-    Chem.AllChem.ReactionFromSmarts('[I,Br,F;H1;D0;+0:1]>>[*;H0;-1:1]'),
+    Chem.AllChem.ReactionFromSmarts("[I,Br,F;H1;D0;+0:1]>>[*;H0;-1:1]"),
     # inexplicable nitrogen anion in reactants gets fixed in prods
-    Chem.AllChem.ReactionFromSmarts('[N;H0;-1:1]([C:2])[C:3]>>[N;H1;+0:1]([*:2])[*:3]'),
+    Chem.AllChem.ReactionFromSmarts("[N;H0;-1:1]([C:2])[C:3]>>[N;H1;+0:1]([*:2])[*:3]"),
 ]
 
 
@@ -75,11 +84,17 @@ def robust_edit_mol(rmol, edits):
     # edits are indices, so we need to replace the atom map number with the index
     old_index2atom_number = {}
     for atom in rmol.GetAtoms():
-        old_index2atom_number[atom.GetIdx()] = int(atom.GetProp("molAtomMapNumber"))  # Update mapping dictionary
+        old_index2atom_number[atom.GetIdx()] = int(
+            atom.GetProp("molAtomMapNumber")
+        )  # Update mapping dictionary
 
-    order = sorted(old_index2atom_number.items(), key=lambda x: x[1]) # sort by atom number because k,v = atom_idx, atom_map_number
+    order = sorted(
+        old_index2atom_number.items(), key=lambda x: x[1]
+    )  # sort by atom number because k,v = atom_idx, atom_map_number
     # old_index2new_index = {old_idx: new_idx for new_idx, (old_idx, _) in enumerate(order)}
-    atom_map_number2new_index = {atom_map_number: new_idx for new_idx, (_, atom_map_number) in enumerate(order)}
+    atom_map_number2new_index = {
+        atom_map_number: new_idx for new_idx, (_, atom_map_number) in enumerate(order)
+    }
     ######################################################################
     new_mol = Chem.RWMol(rmol)
 
@@ -88,29 +103,40 @@ def robust_edit_mol(rmol, edits):
     aromatic_carbonyl_adj_to_aromatic_nH = {}
     aromatic_carbondeg3_adj_to_aromatic_nH0 = {}
     for a in new_mol.GetAtoms():
-        if a.GetIsAromatic() and a.GetSymbol() == 'N':
+        if a.GetIsAromatic() and a.GetSymbol() == "N":
             aromatic_nitrogen_idx.add(a.GetIdx())
             for nbr in a.GetNeighbors():
-                if a.GetNumExplicitHs() == 1 and nbr.GetSymbol() == 'C' and nbr.GetIsAromatic() and any(b.GetBondTypeAsDouble() == 2 for b in nbr.GetBonds()):
+                if (
+                    a.GetNumExplicitHs() == 1
+                    and nbr.GetSymbol() == "C"
+                    and nbr.GetIsAromatic()
+                    and any(b.GetBondTypeAsDouble() == 2 for b in nbr.GetBonds())
+                ):
                     aromatic_carbonyl_adj_to_aromatic_nH[nbr.GetIdx()] = a.GetIdx()
-                elif a.GetNumExplicitHs() == 0 and nbr.GetSymbol() == 'C' and nbr.GetIsAromatic() and len(nbr.GetBonds()) == 3:
+                elif (
+                    a.GetNumExplicitHs() == 0
+                    and nbr.GetSymbol() == "C"
+                    and nbr.GetIsAromatic()
+                    and len(nbr.GetBonds()) == 3
+                ):
                     aromatic_carbondeg3_adj_to_aromatic_nH0[nbr.GetIdx()] = a.GetIdx()
         else:
             a.SetNumExplicitHs(0)
     new_mol.UpdatePropertyCache()
 
-
     amap = {}
     for atom in rmol.GetAtoms():
-        amap[atom_map_number2new_index[atom.GetIntProp('molAtomMapNumber')]] = atom.GetIdx()
+        amap[
+            atom_map_number2new_index[atom.GetIntProp("molAtomMapNumber")]
+        ] = atom.GetIdx()
 
     # Apply the edits as predicted
-    for x,y,t in edits:
-        bond = new_mol.GetBondBetweenAtoms(amap[x],amap[y])
+    for x, y, t in edits:
+        bond = new_mol.GetBondBetweenAtoms(amap[x], amap[y])
         a1 = new_mol.GetAtomWithIdx(amap[x])
         a2 = new_mol.GetAtomWithIdx(amap[y])
         if bond is not None:
-            new_mol.RemoveBond(amap[x],amap[y])
+            new_mol.RemoveBond(amap[x], amap[y])
 
             # Are we losing a bond on an aromatic nitrogen?
             if bond.GetBondTypeAsDouble() == 1.0:
@@ -128,12 +154,16 @@ def robust_edit_mol(rmol, edits):
             # Are we losing a c=O bond on an aromatic ring? If so, remove H from adjacent nH if appropriate
             if bond.GetBondTypeAsDouble() == 2.0:
                 if amap[x] in aromatic_carbonyl_adj_to_aromatic_nH:
-                    new_mol.GetAtomWithIdx(aromatic_carbonyl_adj_to_aromatic_nH[amap[x]]).SetNumExplicitHs(0)
+                    new_mol.GetAtomWithIdx(
+                        aromatic_carbonyl_adj_to_aromatic_nH[amap[x]]
+                    ).SetNumExplicitHs(0)
                 elif amap[y] in aromatic_carbonyl_adj_to_aromatic_nH:
-                    new_mol.GetAtomWithIdx(aromatic_carbonyl_adj_to_aromatic_nH[amap[y]]).SetNumExplicitHs(0)
+                    new_mol.GetAtomWithIdx(
+                        aromatic_carbonyl_adj_to_aromatic_nH[amap[y]]
+                    ).SetNumExplicitHs(0)
 
         if t > 0:
-            new_mol.AddBond(amap[x],amap[y],BOND_TYPE[t])
+            new_mol.AddBond(amap[x], amap[y], BOND_TYPE[t])
 
             # Special alkylation case?
             if t == 1:
@@ -151,70 +181,86 @@ def robust_edit_mol(rmol, edits):
             # Are we getting a c=O bond on an aromatic ring? If so, add H to adjacent nH0 if appropriate
             if t == 2:
                 if amap[x] in aromatic_carbondeg3_adj_to_aromatic_nH0:
-                    new_mol.GetAtomWithIdx(aromatic_carbondeg3_adj_to_aromatic_nH0[amap[x]]).SetNumExplicitHs(1)
+                    new_mol.GetAtomWithIdx(
+                        aromatic_carbondeg3_adj_to_aromatic_nH0[amap[x]]
+                    ).SetNumExplicitHs(1)
                 elif amap[y] in aromatic_carbondeg3_adj_to_aromatic_nH0:
-                    new_mol.GetAtomWithIdx(aromatic_carbondeg3_adj_to_aromatic_nH0[amap[y]]).SetNumExplicitHs(1)
+                    new_mol.GetAtomWithIdx(
+                        aromatic_carbondeg3_adj_to_aromatic_nH0[amap[y]]
+                    ).SetNumExplicitHs(1)
 
     pred_mol = new_mol.GetMol()
 
     # Clear formal charges to make molecules valid
     # Note: because S and P (among others) can change valence, be more flexible
     for atom in pred_mol.GetAtoms():
-        atom.ClearProp('molAtomMapNumber')
-        if atom.GetSymbol() == 'N' and atom.GetFormalCharge() == 1: # exclude negatively-charged azide
+        atom.ClearProp("molAtomMapNumber")
+        if (
+            atom.GetSymbol() == "N" and atom.GetFormalCharge() == 1
+        ):  # exclude negatively-charged azide
             bond_vals = sum([bond.GetBondTypeAsDouble() for bond in atom.GetBonds()])
             if bond_vals <= 3:
                 atom.SetFormalCharge(0)
-        elif atom.GetSymbol() == 'N' and atom.GetFormalCharge() == -1: # handle negatively-charged azide addition
+        elif (
+            atom.GetSymbol() == "N" and atom.GetFormalCharge() == -1
+        ):  # handle negatively-charged azide addition
             bond_vals = sum([bond.GetBondTypeAsDouble() for bond in atom.GetBonds()])
-            if bond_vals == 3 and any([nbr.GetSymbol() == 'N' for nbr in atom.GetNeighbors()]):
+            if bond_vals == 3 and any(
+                [nbr.GetSymbol() == "N" for nbr in atom.GetNeighbors()]
+            ):
                 atom.SetFormalCharge(0)
-        elif atom.GetSymbol() == 'N':
+        elif atom.GetSymbol() == "N":
             bond_vals = sum([bond.GetBondTypeAsDouble() for bond in atom.GetBonds()])
-            if bond_vals == 4 and not atom.GetIsAromatic(): # and atom.IsInRingSize(5)):
+            if (
+                bond_vals == 4 and not atom.GetIsAromatic()
+            ):  # and atom.IsInRingSize(5)):
                 atom.SetFormalCharge(1)
-        elif atom.GetSymbol() == 'C' and atom.GetFormalCharge() != 0:
+        elif atom.GetSymbol() == "C" and atom.GetFormalCharge() != 0:
             atom.SetFormalCharge(0)
-        elif atom.GetSymbol() == 'O' and atom.GetFormalCharge() != 0:
-            bond_vals = sum([bond.GetBondTypeAsDouble() for bond in atom.GetBonds()]) + atom.GetNumExplicitHs()
+        elif atom.GetSymbol() == "O" and atom.GetFormalCharge() != 0:
+            bond_vals = (
+                sum([bond.GetBondTypeAsDouble() for bond in atom.GetBonds()])
+                + atom.GetNumExplicitHs()
+            )
             if bond_vals == 2:
                 atom.SetFormalCharge(0)
-        elif atom.GetSymbol() in ['Cl', 'Br', 'I', 'F'] and atom.GetFormalCharge() != 0:
+        elif atom.GetSymbol() in ["Cl", "Br", "I", "F"] and atom.GetFormalCharge() != 0:
             bond_vals = sum([bond.GetBondTypeAsDouble() for bond in atom.GetBonds()])
             if bond_vals == 1:
                 atom.SetFormalCharge(0)
-        elif atom.GetSymbol() == 'S' and atom.GetFormalCharge() != 0:
+        elif atom.GetSymbol() == "S" and atom.GetFormalCharge() != 0:
             bond_vals = sum([bond.GetBondTypeAsDouble() for bond in atom.GetBonds()])
             if bond_vals in [2, 4, 6]:
                 atom.SetFormalCharge(0)
-        elif atom.GetSymbol() == 'P': # quartenary phosphorous should be pos. charge with 0 H
+        elif (
+            atom.GetSymbol() == "P"
+        ):  # quartenary phosphorous should be pos. charge with 0 H
             bond_vals = [bond.GetBondTypeAsDouble() for bond in atom.GetBonds()]
             if sum(bond_vals) == 4 and len(bond_vals) == 4:
                 atom.SetFormalCharge(1)
                 atom.SetNumExplicitHs(0)
-            elif sum(bond_vals) == 3 and len(bond_vals) == 3: # make sure neutral
+            elif sum(bond_vals) == 3 and len(bond_vals) == 3:  # make sure neutral
                 atom.SetFormalCharge(0)
-        elif atom.GetSymbol() == 'B': # quartenary boron should be neg. charge with 0 H
+        elif atom.GetSymbol() == "B":  # quartenary boron should be neg. charge with 0 H
             bond_vals = [bond.GetBondTypeAsDouble() for bond in atom.GetBonds()]
             if sum(bond_vals) == 4 and len(bond_vals) == 4:
                 atom.SetFormalCharge(-1)
                 atom.SetNumExplicitHs(0)
-        elif atom.GetSymbol() in ['Mg', 'Zn']:
+        elif atom.GetSymbol() in ["Mg", "Zn"]:
             bond_vals = [bond.GetBondTypeAsDouble() for bond in atom.GetBonds()]
             if sum(bond_vals) == 1 and len(bond_vals) == 1:
                 atom.SetFormalCharge(1)
-        elif atom.GetSymbol() == 'Si':
+        elif atom.GetSymbol() == "Si":
             bond_vals = [bond.GetBondTypeAsDouble() for bond in atom.GetBonds()]
             if sum(bond_vals) == len(bond_vals):
                 atom.SetNumExplicitHs(max(0, 4 - len(bond_vals)))
 
     # Bounce to/from SMILES to try to sanitize
     pred_smiles = Chem.MolToSmiles(pred_mol)
-    pred_list = pred_smiles.split('.')
+    pred_list = pred_smiles.split(".")
     pred_mols = [Chem.MolFromSmiles(pred_smiles) for pred_smiles in pred_list]
 
     for i, mol in enumerate(pred_mols):
-
         # Check if we failed/succeeded in previous step
         if mol is None:
             # print('##### Unparseable mol: {}'.format(pred_list[i]))
@@ -231,11 +277,13 @@ def robust_edit_mol(rmol, edits):
                     Chem.SanitizeMol(out[0][0])
                     pred_mols[i] = Chem.MolFromSmiles(Chem.MolToSmiles(out[0][0]))
                 except Exception as e:
-                    pass 
+                    pass
                     # print(e)
                     # print('Could not sanitize postsani reaction product: {}'.format(Chem.MolToSmiles(out[0][0])))
                     # print('Original molecule was: {}'.format(Chem.MolToSmiles(mol)))
-    pred_smiles = [Chem.MolToSmiles(pred_mol) for pred_mol in pred_mols if pred_mol is not None]
+    pred_smiles = [
+        Chem.MolToSmiles(pred_mol) for pred_mol in pred_mols if pred_mol is not None
+    ]
 
     return pred_smiles
 
@@ -258,47 +306,57 @@ def get_bond_changes(reaction):
         There are 5 possible values for change type. 0 for losing the bond, and 1, 2, 3, 1.5
         separately for forming a single, double, triple or aromatic bond.
     """
-    reactants = Chem.MolFromSmiles(reaction.split('>')[0])
-    products  = Chem.MolFromSmiles(reaction.split('>')[2])
+    reactants = Chem.MolFromSmiles(reaction.split(">")[0])
+    products = Chem.MolFromSmiles(reaction.split(">")[2])
 
     conserved_maps = [
-        a.GetProp('molAtomMapNumber')
-        for a in products.GetAtoms() if a.HasProp('molAtomMapNumber')]
-    bond_changes = set() # keep track of bond changes
+        a.GetProp("molAtomMapNumber")
+        for a in products.GetAtoms()
+        if a.HasProp("molAtomMapNumber")
+    ]
+    bond_changes = set()  # keep track of bond changes
 
     # Look at changed bonds
     bonds_prev = {}
     for bond in reactants.GetBonds():
         nums = sorted(
-            [bond.GetBeginAtom().GetProp('molAtomMapNumber'),
-             bond.GetEndAtom().GetProp('molAtomMapNumber')])
+            [
+                bond.GetBeginAtom().GetProp("molAtomMapNumber"),
+                bond.GetEndAtom().GetProp("molAtomMapNumber"),
+            ]
+        )
         if (nums[0] not in conserved_maps) and (nums[1] not in conserved_maps):
             continue
-        bonds_prev['{}~{}'.format(nums[0], nums[1])] = bond.GetBondTypeAsDouble()
+        bonds_prev["{}~{}".format(nums[0], nums[1])] = bond.GetBondTypeAsDouble()
     bonds_new = {}
     for bond in products.GetBonds():
         nums = sorted(
-            [bond.GetBeginAtom().GetProp('molAtomMapNumber'),
-             bond.GetEndAtom().GetProp('molAtomMapNumber')])
-        bonds_new['{}~{}'.format(nums[0], nums[1])] = bond.GetBondTypeAsDouble()
+            [
+                bond.GetBeginAtom().GetProp("molAtomMapNumber"),
+                bond.GetEndAtom().GetProp("molAtomMapNumber"),
+            ]
+        )
+        bonds_new["{}~{}".format(nums[0], nums[1])] = bond.GetBondTypeAsDouble()
 
     for bond in bonds_prev:
         if bond not in bonds_new:
             # lost bond
-            bond_changes.add((bond.split('~')[0], bond.split('~')[1], 0.0))
+            bond_changes.add((bond.split("~")[0], bond.split("~")[1], 0.0))
         else:
             if bonds_prev[bond] != bonds_new[bond]:
                 # changed bond
-                bond_changes.add((bond.split('~')[0], bond.split('~')[1], bonds_new[bond]))
+                bond_changes.add(
+                    (bond.split("~")[0], bond.split("~")[1], bonds_new[bond])
+                )
     for bond in bonds_new:
         if bond not in bonds_prev:
             # new bond
-            bond_changes.add((bond.split('~')[0], bond.split('~')[1], bonds_new[bond]))
+            bond_changes.add((bond.split("~")[0], bond.split("~")[1], bonds_new[bond]))
 
     return bond_changes
-    
 
-def edit_mol(reactant_mols, edits, product_info, mode="train", return_full_mol = False):
+
+def edit_mol(reactant_mols, edits, product_info, mode="train", return_full_mol=False):
     """Simulate reaction via graph editing
 
     Parameters
@@ -324,16 +382,30 @@ def edit_mol(reactant_mols, edits, product_info, mode="train", return_full_mol =
     ################ for switching IDXes ###########################
     old_index2atom_number = {}
     for atom in reactant_mols.GetAtoms():
-        old_index2atom_number[atom.GetIdx()] = int(atom.GetProp("molAtomMapNumber"))  # Update mapping dictionary
+        old_index2atom_number[atom.GetIdx()] = int(
+            atom.GetProp("molAtomMapNumber")
+        )  # Update mapping dictionary
 
-    order = sorted(old_index2atom_number.items(), key=lambda x: x[1]) # sort by atom number because k,v = atom_idx, atom_map_number
-    old_index2new_index = {old_idx: new_idx for new_idx, (old_idx, _) in enumerate(order)}
-    new_index2old_index = {new_idx: old_idx for new_idx, (old_idx, _) in enumerate(order)}
-    atom_map_number2new_index = {atom_map_number: new_idx for new_idx, (_, atom_map_number) in enumerate(order)}
+    order = sorted(
+        old_index2atom_number.items(), key=lambda x: x[1]
+    )  # sort by atom number because k,v = atom_idx, atom_map_number
+    old_index2new_index = {
+        old_idx: new_idx for new_idx, (old_idx, _) in enumerate(order)
+    }
+    new_index2old_index = {
+        new_idx: old_idx for new_idx, (old_idx, _) in enumerate(order)
+    }
+    atom_map_number2new_index = {
+        atom_map_number: new_idx for new_idx, (_, atom_map_number) in enumerate(order)
+    }
     ######################################################################
 
-    bond_change_to_type = {1: Chem.rdchem.BondType.SINGLE, 2: Chem.rdchem.BondType.DOUBLE,
-                           3: Chem.rdchem.BondType.TRIPLE, 1.5: Chem.rdchem.BondType.AROMATIC}
+    bond_change_to_type = {
+        1: Chem.rdchem.BondType.SINGLE,
+        2: Chem.rdchem.BondType.DOUBLE,
+        3: Chem.rdchem.BondType.TRIPLE,
+        1.5: Chem.rdchem.BondType.AROMATIC,
+    }
 
     new_mol = Chem.RWMol(reactant_mols)
     [atom.SetNumExplicitHs(0) for atom in new_mol.GetAtoms()]
@@ -348,29 +420,35 @@ def edit_mol(reactant_mols, edits, product_info, mode="train", return_full_mol =
 
     pred_mol = new_mol.GetMol()
     pred_smiles = Chem.MolToSmiles(pred_mol)
-    
+
     if return_full_mol:
         return pred_smiles
 
-    pred_list = pred_smiles.split('.')
+    pred_list = pred_smiles.split(".")
     pred_mols = []
     for pred_smiles in pred_list:
         mol = Chem.MolFromSmiles(pred_smiles)
         if mol is None:
             continue
-        atom_set = set([atom_map_number2new_index[atom.GetAtomMapNum()] for atom in mol.GetAtoms()])
+        atom_set = set(
+            [atom_map_number2new_index[atom.GetAtomMapNum()] for atom in mol.GetAtoms()]
+        )
 
         if mode == "train":
-            if len(atom_set & product_info['atoms']) == 0: # no overlap with gold product atoms
+            if (
+                len(atom_set & product_info["atoms"]) == 0
+            ):  # no overlap with gold product atoms
                 continue
         for atom in mol.GetAtoms():
             atom.SetAtomMapNum(0)
         pred_mols.append(mol)
 
-    return '.'.join(sorted([Chem.MolToSmiles(mol) for mol in pred_mols]))
+    return ".".join(sorted([Chem.MolToSmiles(mol) for mol in pred_mols]))
 
 
-def get_product_smiles(reactant_mols, edits, product_info, mode="train", return_full_mol=False):
+def get_product_smiles(
+    reactant_mols, edits, product_info, mode="train", return_full_mol=False
+):
     """Get the product smiles of the reaction
 
     Parameters
@@ -421,11 +499,13 @@ def is_connected_change_combo(combo_ids, cand_change_adj):
     if len(combo_ids) == 1:
         return True
     multi_hop_adj = np.linalg.matrix_power(
-        cand_change_adj[combo_ids, :][:, combo_ids], len(combo_ids) - 1)
+        cand_change_adj[combo_ids, :][:, combo_ids], len(combo_ids) - 1
+    )
     # The combo is connected if the distance between
     # any pair of bond changes is within len(combo) - 1
 
     return np.all(multi_hop_adj)
+
 
 def is_valid_combo(combo_changes, reactant_info):
     """Whether the combo of bond changes is chemically valid.
@@ -443,12 +523,12 @@ def is_valid_combo(combo_changes, reactant_info):
     bool
         Whether the combo of bond changes is chemically valid.
     """
-    num_atoms = len(reactant_info['free_val'])
+    num_atoms = len(reactant_info["free_val"])
     force_even_parity = np.zeros((num_atoms,), dtype=bool)
     force_odd_parity = np.zeros((num_atoms,), dtype=bool)
     pair_seen = defaultdict(bool)
-    free_val_tmp = reactant_info['free_val'].copy()
-    for (atom1, atom2, change_type, score) in combo_changes:
+    free_val_tmp = reactant_info["free_val"].copy()
+    for atom1, atom2, change_type, score in combo_changes:
         if pair_seen[(atom1, atom2)]:
             # A pair of atoms cannot have two types of changes. Even if we
             # randomly pick one, that will be reduced to a combo of less changes
@@ -459,40 +539,40 @@ def is_valid_combo(combo_changes, reactant_info):
         atom1_type_val = atom2_type_val = change_type
         if change_type == 2:
             # to form a double bond
-            if reactant_info['is_o'][atom1]:
-                if reactant_info['is_c2_of_pyridine'][atom2]:
-                    atom2_type_val = 1.
-                elif reactant_info['is_p'][atom2]:
+            if reactant_info["is_o"][atom1]:
+                if reactant_info["is_c2_of_pyridine"][atom2]:
+                    atom2_type_val = 1.0
+                elif reactant_info["is_p"][atom2]:
                     # don't count information of =o toward valence
                     # but require odd valence parity
-                    atom2_type_val = 0.
+                    atom2_type_val = 0.0
                     force_odd_parity[atom2] = True
-                elif reactant_info['is_s'][atom2]:
-                    atom2_type_val = 0.
+                elif reactant_info["is_s"][atom2]:
+                    atom2_type_val = 0.0
                     force_even_parity[atom2] = True
-            elif reactant_info['is_o'][atom2]:
-                if reactant_info['is_c2_of_pyridine'][atom1]:
-                    atom1_type_val = 1.
-                elif reactant_info['is_p'][atom1]:
-                    atom1_type_val = 0.
+            elif reactant_info["is_o"][atom2]:
+                if reactant_info["is_c2_of_pyridine"][atom1]:
+                    atom1_type_val = 1.0
+                elif reactant_info["is_p"][atom1]:
+                    atom1_type_val = 0.0
                     force_odd_parity[atom1] = True
-                elif reactant_info['is_s'][atom1]:
-                    atom1_type_val = 0.
+                elif reactant_info["is_s"][atom1]:
+                    atom1_type_val = 0.0
                     force_even_parity[atom1] = True
-            elif reactant_info['is_n'][atom1] and reactant_info['is_p'][atom2]:
-                atom2_type_val = 0.
+            elif reactant_info["is_n"][atom1] and reactant_info["is_p"][atom2]:
+                atom2_type_val = 0.0
                 force_odd_parity[atom2] = True
-            elif reactant_info['is_n'][atom2] and reactant_info['is_p'][atom1]:
-                atom1_type_val = 0.
+            elif reactant_info["is_n"][atom2] and reactant_info["is_p"][atom1]:
+                atom1_type_val = 0.0
                 force_odd_parity[atom1] = True
-            elif reactant_info['is_p'][atom1] and reactant_info['is_c'][atom2]:
-                atom1_type_val = 0.
+            elif reactant_info["is_p"][atom1] and reactant_info["is_c"][atom2]:
+                atom1_type_val = 0.0
                 force_odd_parity[atom1] = True
-            elif reactant_info['is_p'][atom2] and reactant_info['is_c'][atom1]:
-                atom2_type_val = 0.
+            elif reactant_info["is_p"][atom2] and reactant_info["is_c"][atom1]:
+                atom2_type_val = 0.0
                 force_odd_parity[atom2] = True
 
-        reactant_pair_val = reactant_info['pair_to_bond_val'].get((atom1, atom2), None)
+        reactant_pair_val = reactant_info["pair_to_bond_val"].get((atom1, atom2), None)
         if reactant_pair_val is not None:
             free_val_tmp[atom1] += reactant_pair_val - atom1_type_val
             free_val_tmp[atom2] += reactant_pair_val - atom2_type_val
@@ -500,19 +580,22 @@ def is_valid_combo(combo_changes, reactant_info):
             free_val_tmp[atom1] -= atom1_type_val
             free_val_tmp[atom2] -= atom2_type_val
 
-    
-    free_val_tmp = np.array([l.item() if isinstance(l, torch.Tensor) else l for l in free_val_tmp])
-    
-    
+    free_val_tmp = np.array(
+        [l.item() if isinstance(l, torch.Tensor) else l for l in free_val_tmp]
+    )
+
     # False if 1) too many connections 2) sulfur valence not even
     # 3) phosphorous valence not odd
-    if any(free_val_tmp < 0) or \
-            any(aval % 2 != 0 for aval in free_val_tmp[force_even_parity]) or \
-            any(aval % 2 != 1 for aval in free_val_tmp[force_odd_parity]):
+    if (
+        any(free_val_tmp < 0)
+        or any(aval % 2 != 0 for aval in free_val_tmp[force_even_parity])
+        or any(aval % 2 != 1 for aval in free_val_tmp[force_odd_parity])
+    ):
         return False
     return True
 
-def bookkeep_reactant(mol): #, candidate_pairs):
+
+def bookkeep_reactant(mol):  # , candidate_pairs):
     """Bookkeep reaction-related information of reactants.
 
     Parameters
@@ -533,74 +616,81 @@ def bookkeep_reactant(mol): #, candidate_pairs):
     # edits are indices, so we need to replace the atom map number with the index
     old_index2atom_number = {}
     for atom in mol.GetAtoms():
-        old_index2atom_number[atom.GetIdx()] = int(atom.GetProp("molAtomMapNumber"))  # Update mapping dictionary
+        old_index2atom_number[atom.GetIdx()] = int(
+            atom.GetProp("molAtomMapNumber")
+        )  # Update mapping dictionary
 
-    order = sorted(old_index2atom_number.items(), key=lambda x: x[1]) # sort by atom number because k,v = atom_idx, atom_map_number
-    old_index2new_index = {old_idx: new_idx for new_idx, (old_idx, _) in enumerate(order)}
+    order = sorted(
+        old_index2atom_number.items(), key=lambda x: x[1]
+    )  # sort by atom number because k,v = atom_idx, atom_map_number
+    old_index2new_index = {
+        old_idx: new_idx for new_idx, (old_idx, _) in enumerate(order)
+    }
     # atom_map_number2new_index = {atom_map_number: new_idx for new_idx, (_, atom_map_number) in enumerate(order)}
     ######################################################################
 
     num_atoms = mol.GetNumAtoms()
     info = {
         # free valence of atoms
-        'free_val': [0 for _ in range(num_atoms)],
+        "free_val": [0 for _ in range(num_atoms)],
         # Whether it is a carbon atom
-        'is_c': [False for _ in range(num_atoms)],
+        "is_c": [False for _ in range(num_atoms)],
         # Whether it is a carbon atom connected to a nitrogen atom in pyridine
-        'is_c2_of_pyridine': [False for _ in range(num_atoms)],
+        "is_c2_of_pyridine": [False for _ in range(num_atoms)],
         # Whether it is a phosphorous atom
-        'is_p': [False for _ in range(num_atoms)],
+        "is_p": [False for _ in range(num_atoms)],
         # Whether it is a sulfur atom
-        'is_s': [False for _ in range(num_atoms)],
+        "is_s": [False for _ in range(num_atoms)],
         # Whether it is an oxygen atom
-        'is_o': [False for _ in range(num_atoms)],
+        "is_o": [False for _ in range(num_atoms)],
         # Whether it is a nitrogen atom
-        'is_n': [False for _ in range(num_atoms)],
-        'pair_to_bond_val': dict(),
-        'ring_bonds': set()
+        "is_n": [False for _ in range(num_atoms)],
+        "pair_to_bond_val": dict(),
+        "ring_bonds": set(),
     }
 
     # bookkeep atoms
     for j, atom in enumerate(mol.GetAtoms()):
         j = old_index2new_index[j]
-        info['free_val'][j] += atom.GetTotalNumHs() + abs(atom.GetFormalCharge())
+        info["free_val"][j] += atom.GetTotalNumHs() + abs(atom.GetFormalCharge())
         # An aromatic carbon atom next to an aromatic nitrogen atom can get a
         # carbonyl b/c of bookkeeping of hydroxypyridines
-        if atom.GetSymbol() == 'C':
-            info['is_c'][j] = True
+        if atom.GetSymbol() == "C":
+            info["is_c"][j] = True
             if atom.GetIsAromatic():
                 for nbr in atom.GetNeighbors():
-                    if nbr.GetSymbol() == 'N' and nbr.GetDegree() == 2:
-                        info['is_c2_of_pyridine'][j] = True
+                    if nbr.GetSymbol() == "N" and nbr.GetDegree() == 2:
+                        info["is_c2_of_pyridine"][j] = True
                         break
         # A nitrogen atom should be allowed to become positively charged
-        elif atom.GetSymbol() == 'N':
-            info['free_val'][j] += 1 - atom.GetFormalCharge()
-            info['is_n'][j] = True
+        elif atom.GetSymbol() == "N":
+            info["free_val"][j] += 1 - atom.GetFormalCharge()
+            info["is_n"][j] = True
         # Phosphorous atoms can form a phosphonium
-        elif atom.GetSymbol() == 'P':
-            info['free_val'][j] += 1 - atom.GetFormalCharge()
-            info['is_p'][j] = True
-        elif atom.GetSymbol() == 'O':
-            info['is_o'][j] = True
-        elif atom.GetSymbol() == 'S':
-            info['is_s'][j] = True
+        elif atom.GetSymbol() == "P":
+            info["free_val"][j] += 1 - atom.GetFormalCharge()
+            info["is_p"][j] = True
+        elif atom.GetSymbol() == "O":
+            info["is_o"][j] = True
+        elif atom.GetSymbol() == "S":
+            info["is_s"][j] = True
 
     # bookkeep bonds
     for bond in mol.GetBonds():
         atom1, atom2 = bond.GetBeginAtomIdx(), bond.GetEndAtomIdx()
-        
+
         atom1, atom2 = old_index2new_index[atom1], old_index2new_index[atom2]
         atom1, atom2 = min(atom1, atom2), max(atom1, atom2)
         type_val = bond.GetBondTypeAsDouble()
-        info['pair_to_bond_val'][(atom1, atom2)] = type_val
+        info["pair_to_bond_val"][(atom1, atom2)] = type_val
         # if (atom1, atom2) in candidate_pairs:
         #     info['free_val'][atom1] += type_val
         #     info['free_val'][atom2] += type_val
         if bond.IsInRing():
-            info['ring_bonds'].add((atom1, atom2))
+            info["ring_bonds"].add((atom1, atom2))
 
     return info
+
 
 def bookkeep_product(mol):
     """Bookkeep reaction-related information of atoms/bonds in products
@@ -618,23 +708,30 @@ def bookkeep_product(mol):
     ################ for switching IDXes ###########################
     old_index2atom_number = {}
     for atom in mol.GetAtoms():
-        old_index2atom_number[atom.GetIdx()] = int(atom.GetProp("molAtomMapNumber"))  # Update mapping dictionary
+        old_index2atom_number[atom.GetIdx()] = int(
+            atom.GetProp("molAtomMapNumber")
+        )  # Update mapping dictionary
 
-    order = sorted(old_index2atom_number.items(), key=lambda x: x[1]) # sort by atom number because k,v = atom_idx, atom_map_number
-    old_index2new_index = {old_idx: new_idx for new_idx, (old_idx, _) in enumerate(order)}
-    atom_map_number2new_index = {atom_map_number: new_idx for new_idx, (_, atom_map_number) in enumerate(order)}
-    ######################################################################
-    info = {
-        'atoms': set()
+    order = sorted(
+        old_index2atom_number.items(), key=lambda x: x[1]
+    )  # sort by atom number because k,v = atom_idx, atom_map_number
+    old_index2new_index = {
+        old_idx: new_idx for new_idx, (old_idx, _) in enumerate(order)
     }
+    atom_map_number2new_index = {
+        atom_map_number: new_idx for new_idx, (_, atom_map_number) in enumerate(order)
+    }
+    ######################################################################
+    info = {"atoms": set()}
     for atom in mol.GetAtoms():
-        info['atoms'].add(atom_map_number2new_index[atom.GetAtomMapNum()])
+        info["atoms"].add(atom_map_number2new_index[atom.GetAtomMapNum()])
 
     return info
 
 
-def pre_process_one_reaction(info, num_candidate_bond_changes, max_num_bond_changes,
-                             max_num_change_combos, mode):
+def pre_process_one_reaction(
+    info, num_candidate_bond_changes, max_num_bond_changes, max_num_change_combos, mode
+):
     """Pre-process one reaction for candidate ranking.
 
     Parameters
@@ -667,19 +764,27 @@ def pre_process_one_reaction(info, num_candidate_bond_changes, max_num_bond_chan
     reactant_info : dict
         Reaction-related information of reactants.
     """
-    assert mode in ['train', 'val', 'test'], \
-        "Expect mode to be 'train' or 'val' or 'test', got {}".format(mode)
+    assert mode in [
+        "train",
+        "val",
+        "test",
+    ], "Expect mode to be 'train' or 'val' or 'test', got {}".format(mode)
     candidate_bond_changes_, real_bond_changes, reactant_mol, product_mol = info
     # candidate_pairs = [(atom1, atom2) for (atom1, atom2, _, _) in candidate_bond_changes_]
-    reactant_info = bookkeep_reactant(reactant_mol) #, candidate_pairs)
-    if mode == 'train':
+    reactant_info = bookkeep_reactant(reactant_mol)  # , candidate_pairs)
+    if mode == "train":
         product_info = bookkeep_product(product_mol)
 
     # Filter out candidate new bonds already in reactants
     candidate_bond_changes = []
     count = 0
-    for (atom1, atom2, change_type, score) in candidate_bond_changes_:
-        if ((atom1, atom2) not in reactant_info['pair_to_bond_val'] and change_type > 0) or ((atom1, atom2) in reactant_info['pair_to_bond_val'] and reactant_info['pair_to_bond_val'][(atom1, atom2)] != change_type):
+    for atom1, atom2, change_type, score in candidate_bond_changes_:
+        if (
+            (atom1, atom2) not in reactant_info["pair_to_bond_val"] and change_type > 0
+        ) or (
+            (atom1, atom2) in reactant_info["pair_to_bond_val"]
+            and reactant_info["pair_to_bond_val"][(atom1, atom2)] != change_type
+        ):
             candidate_bond_changes.append((atom1, atom2, change_type, score))
             count += 1
             if count == num_candidate_bond_changes:
@@ -691,8 +796,12 @@ def pre_process_one_reaction(info, num_candidate_bond_changes, max_num_bond_chan
         atom1_1, atom1_2, _, _ = candidate_bond_changes[i]
         for j in range(i + 1, len(candidate_bond_changes)):
             atom2_1, atom2_2, _, _ = candidate_bond_changes[j]
-            if atom1_1 == atom2_1 or atom1_1 == atom2_2 or \
-                    atom1_2 == atom2_1 or atom1_2 == atom2_2:
+            if (
+                atom1_1 == atom2_1
+                or atom1_1 == atom2_2
+                or atom1_2 == atom2_1
+                or atom1_2 == atom2_2
+            ):
                 cand_change_adj[i, j] = cand_change_adj[j, i] = True
 
     # Enumerate combinations of k candidate bond changes and record
@@ -709,30 +818,38 @@ def pre_process_one_reaction(info, num_candidate_bond_changes, max_num_bond_chan
             if is_valid_combo(combo_changes, reactant_info):
                 valid_candidate_combos.append(combo_changes)
 
-    if mode == 'train':
+    if mode == "train":
         random.shuffle(valid_candidate_combos)
         # Index for the combo of candidate bond changes
         # that is equivalent to the gold combo
         real_combo_id = -1
         for j, combo_changes in enumerate(valid_candidate_combos):
-            if set([(atom1, atom2, change_type) for
-                    (atom1, atom2, change_type, score) in combo_changes]) == \
-                    set(real_bond_changes):
+            if set(
+                [
+                    (atom1, atom2, change_type)
+                    for (atom1, atom2, change_type, score) in combo_changes
+                ]
+            ) == set(real_bond_changes):
                 real_combo_id = j
                 break
 
         # If we fail to find the real combo, make it the first entry
         if real_combo_id == -1:
-            valid_candidate_combos = \
-                [[(atom1, atom2, change_type, 0.0)
-                  for (atom1, atom2, change_type) in real_bond_changes]] + \
-                valid_candidate_combos
+            valid_candidate_combos = [
+                [
+                    (atom1, atom2, change_type, 0.0)
+                    for (atom1, atom2, change_type) in real_bond_changes
+                ]
+            ] + valid_candidate_combos
         else:
-            valid_candidate_combos[0], valid_candidate_combos[real_combo_id] = \
-                valid_candidate_combos[real_combo_id], valid_candidate_combos[0]
+            valid_candidate_combos[0], valid_candidate_combos[real_combo_id] = (
+                valid_candidate_combos[real_combo_id],
+                valid_candidate_combos[0],
+            )
 
         product_smiles = get_product_smiles(
-            reactant_mol, valid_candidate_combos[0], product_info, mode)
+            reactant_mol, valid_candidate_combos[0], product_info, mode
+        )
         if len(product_smiles) > 0:
             # Remove combos yielding duplicate products
             product_smiles = set([product_smiles])
@@ -751,9 +868,18 @@ def pre_process_one_reaction(info, num_candidate_bond_changes, max_num_bond_chan
             valid_candidate_combos = new_candidate_combos
     valid_candidate_combos = valid_candidate_combos[:max_num_change_combos]
 
-    candidate_smiles = [get_product_smiles(reactant_mol, combo, None, mode="test", return_full_mol=True) for combo in valid_candidate_combos]
+    candidate_smiles = [
+        get_product_smiles(reactant_mol, combo, None, mode="test", return_full_mol=True)
+        for combo in valid_candidate_combos
+    ]
 
-    return valid_candidate_combos, candidate_bond_changes, reactant_info, candidate_smiles
+    return (
+        valid_candidate_combos,
+        candidate_bond_changes,
+        reactant_info,
+        candidate_smiles,
+    )
+
 
 def get_batch_candidate_bonds(reaction_strings, preds, batch_ids):
     all_candidates = []
@@ -762,7 +888,9 @@ def get_batch_candidate_bonds(reaction_strings, preds, batch_ids):
 
     for idx, reaction in enumerate(reaction_strings):
         num_nodes = batch_sizes[idx]
-        graph_preds = preds[node_offset : node_offset + num_nodes, node_offset : node_offset + num_nodes]
+        graph_preds = preds[
+            node_offset : node_offset + num_nodes, node_offset : node_offset + num_nodes
+        ]
         candidates = tensor_to_tuples(graph_preds)
         all_candidates.append(candidates)
         node_offset += num_nodes  # Move the offset to the start of the next graph
@@ -773,14 +901,17 @@ def get_batch_candidate_bonds(reaction_strings, preds, batch_ids):
 def tensor_to_tuples(t):
     N = t.shape[0]
     K = t.shape[2]
-    
+
     # Get indices of the original tensor
-    indices = torch.triu_indices(N, N, offset=1).T # upper triangular indices
-    maxes, arg_maxes = torch.max(t, dim=2) # (N, N)
+    indices = torch.triu_indices(N, N, offset=1).T  # upper triangular indices
+    maxes, arg_maxes = torch.max(t, dim=2)  # (N, N)
 
     # Convert to a list of tuples
-    tuples = [(int(row), int(col), arg_maxes[row, col].item(), maxes[row, col].item()) for row, col in indices]
-    tuples =  sorted(tuples, key = lambda x: x[-1], reverse=True)
+    tuples = [
+        (int(row), int(col), arg_maxes[row, col].item(), maxes[row, col].item())
+        for row, col in indices
+    ]
+    tuples = sorted(tuples, key=lambda x: x[-1], reverse=True)
     return tuples
 
 
@@ -802,11 +933,19 @@ def get_atom_pair_to_bond(mol):
     ################ for switching IDXes ###########################
     old_index2atom_number = {}
     for atom in mol.GetAtoms():
-        old_index2atom_number[atom.GetIdx()] = int(atom.GetProp("molAtomMapNumber"))  # Update mapping dictionary
+        old_index2atom_number[atom.GetIdx()] = int(
+            atom.GetProp("molAtomMapNumber")
+        )  # Update mapping dictionary
 
-    order = sorted(old_index2atom_number.items(), key=lambda x: x[1]) # sort by atom number because k,v = atom_idx, atom_map_number
-    old_index2new_index = {old_idx: new_idx for new_idx, (old_idx, _) in enumerate(order)}
-    atom_map_number2new_index = {atom_map_number: new_idx for new_idx, (_, atom_map_number) in enumerate(order)}
+    order = sorted(
+        old_index2atom_number.items(), key=lambda x: x[1]
+    )  # sort by atom number because k,v = atom_idx, atom_map_number
+    old_index2new_index = {
+        old_idx: new_idx for new_idx, (old_idx, _) in enumerate(order)
+    }
+    atom_map_number2new_index = {
+        atom_map_number: new_idx for new_idx, (_, atom_map_number) in enumerate(order)
+    }
     ######################################################################
 
     pair_to_bond_type = dict()
@@ -819,7 +958,8 @@ def get_atom_pair_to_bond(mol):
 
     return pair_to_bond_type
 
-def generate_candidates_from_scores(model_output, batch, args, mode = "train"):
+
+def generate_candidates_from_scores(model_output, batch, args, mode="train"):
     """Generate candidate products from predicted changes
 
     Parameters
@@ -828,7 +968,7 @@ def generate_candidates_from_scores(model_output, batch, args, mode = "train"):
         Predictions from reactivity center model.
     args : Namespace
         global arguments.
-    batch : dict 
+    batch : dict
         Dataset mini batch of reaction samples.
     mode : str
         Whether ground truth products are known (training) or not (inference)
@@ -839,50 +979,77 @@ def generate_candidates_from_scores(model_output, batch, args, mode = "train"):
         list of DataBatch of candidate products for each reaction in the batch
     valid_candidate_combos:
         list of valid candidate combinations for each reaction in the batch
-    """    
-    num_candidate_bond_changes = args.num_candidate_bond_changes # core size 20
-    max_num_bond_changes = args.max_num_bond_changes # combinations 5
-    max_num_change_combos_per_reaction = args.max_num_change_combos_per_reaction # cutoff 500
-    
+    """
+    num_candidate_bond_changes = args.num_candidate_bond_changes  # core size 20
+    max_num_bond_changes = args.max_num_bond_changes  # combinations 5
+    max_num_change_combos_per_reaction = (
+        args.max_num_change_combos_per_reaction
+    )  # cutoff 500
+
     # returns a list of list of tuples
-    candidate_bond_changes = get_batch_candidate_bonds(batch["reaction"], model_output['s_uv'], batch['reactants'].batch)
+    candidate_bond_changes = get_batch_candidate_bonds(
+        batch["reaction"], model_output["s_uv"], batch["reactants"].batch
+    )
     # make bonds that are "4" -> "1.5"
     for i in range(len(candidate_bond_changes)):
-        candidate_bond_changes[i] = [(elem[0], elem[1], 1.5, elem[3]) if elem[2] == 4 else elem for elem in candidate_bond_changes[i]]
+        candidate_bond_changes[i] = [
+            (elem[0], elem[1], 1.5, elem[3]) if elem[2] == 4 else elem
+            for elem in candidate_bond_changes[i]
+        ]
 
     # Get valid candidate products, candidate bond changes considered and reactant info
     candidate_smiles = []
     valid_candidate_combos = []
     # valid_candidate_combos, candidate_bond_changes_many, reactant_info,  = [], [], []
     for i in range(len(candidate_bond_changes)):
-        real_bond_changes = [tuple(elem) for elem in batch['reactants']['bond_changes'][i]]
-        reactant_mol =  Chem.MolFromSmiles(batch['reactants']['smiles'][i])
-        if mode == 'train':
-            product_mol = Chem.MolFromSmiles(batch['products']['smiles'][i])
+        real_bond_changes = [
+            tuple(elem) for elem in batch["reactants"]["bond_changes"][i]
+        ]
+        reactant_mol = Chem.MolFromSmiles(batch["reactants"]["smiles"][i])
+        if mode == "train":
+            product_mol = Chem.MolFromSmiles(batch["products"]["smiles"][i])
         else:
             product_mol = None
 
         info = (candidate_bond_changes[i], real_bond_changes, reactant_mol, product_mol)
-        valid_candidate_combos_one, candidate_bond_changes_one, reactant_info_one, candidate_smiles_one = pre_process_one_reaction(info, num_candidate_bond_changes, max_num_bond_changes, max_num_change_combos_per_reaction, mode)
+        (
+            valid_candidate_combos_one,
+            candidate_bond_changes_one,
+            reactant_info_one,
+            candidate_smiles_one,
+        ) = pre_process_one_reaction(
+            info,
+            num_candidate_bond_changes,
+            max_num_bond_changes,
+            max_num_change_combos_per_reaction,
+            mode,
+        )
         valid_candidate_combos.append(valid_candidate_combos_one)
         # candidate_bond_changes_many.append(candidate_bond_changes_one)
         # reactant_info.append(reactant_info_one)
         # real_bond_changes_fake_scores = [(elem[0], elem[1], elem[2], 1000) for elem in real_bond_changes]
         candidate_smiles.append(candidate_smiles_one)
-    
+
     list_of_data_batches = []
     for i, list_of_candidates in enumerate(candidate_smiles):
         data_batch = []
         for j, candidate in enumerate(list_of_candidates):
-            data, _ = from_mapped_smiles(candidate, encode_no_edge=False, sanitize= mode!="train" )
+            data, _ = from_mapped_smiles(
+                candidate, encode_no_edge=False, sanitize=mode != "train"
+            )
             # fail to convert to rdkit mol
             if (data is None) or (len(data.x) == 0):
-                continue 
-            data.candidate_bond_change = valid_candidate_combos[i][j] # add the bond change tuple to the Data object
+                continue
+            data.candidate_bond_change = valid_candidate_combos[i][
+                j
+            ]  # add the bond change tuple to the Data object
             data_batch.append(data)
+        if len(data_batch) == 0:
+            continue
         list_of_data_batches.append(Batch.from_data_list(data_batch))
 
     return list_of_data_batches
+
 
 def sanitize_smiles_molvs(smiles, largest_fragment=False):
     """Sanitize a SMILES with MolVS
@@ -909,14 +1076,18 @@ def sanitize_smiles_molvs(smiles, largest_fragment=False):
     try:
         mol = standardizer.standardize(mol)  # standardize functional group reps
         if largest_fragment:
-            mol = standardizer.largest_fragment(mol) # remove product counterions/salts/etc.
+            mol = standardizer.largest_fragment(
+                mol
+            )  # remove product counterions/salts/etc.
         mol = standardizer.uncharge(mol)  # neutralize, e.g., carboxylic acids
     except Exception:
         pass
     return Chem.MolToSmiles(mol)
 
 
-def examine_topk_candidate_product(topks, topk_combos, reactant_mol, real_bond_changes, product_mol):
+def examine_topk_candidate_product(
+    topks, topk_combos, reactant_mol, real_bond_changes, product_mol
+):
     """Perform topk evaluation for predicting the product of a reaction
 
     Parameters
@@ -954,10 +1125,12 @@ def examine_topk_candidate_product(topks, topk_combos, reactant_mol, real_bond_c
     product_mol = deepcopy(product_mol)
 
     for atom in product_mol.GetAtoms():
-        atom.ClearProp('molAtomMapNumber')
+        atom.ClearProp("molAtomMapNumber")
     product_smiles = Chem.MolToSmiles(product_mol)
-    product_smiles_sanitized = set(sanitize_smiles_molvs(product_smiles, True).split('.'))
-    product_smiles = set(product_smiles.split('.'))
+    product_smiles_sanitized = set(
+        sanitize_smiles_molvs(product_smiles, True).split(".")
+    )
+    product_smiles = set(product_smiles.split("."))
 
     ########### Use *true* edits to try to recover product
     # Generate product by modifying reactants with graph edits
@@ -972,12 +1145,12 @@ def examine_topk_candidate_product(topks, topk_combos, reactant_mol, real_bond_c
         pred_smiles_kek = set(pred_smiles_kek)
         if not product_smiles <= pred_smiles_kek:
             if product_smiles_sanitized <= pred_smiles_sanitized:
-                #print('\nwarn: mismatch, but only due to standardization')
-                found_info['ground_sanitized'] = True
+                # print('\nwarn: mismatch, but only due to standardization')
+                found_info["ground_sanitized"] = True
             else:
-                pass 
-                #print('\nwarn: could not regenerate product {}'.format(product_smiles))
-                #print('sani product: {}'.format(product_smiles_sanitized))
+                pass
+                # print('\nwarn: could not regenerate product {}'.format(product_smiles))
+                # print('sani product: {}'.format(product_smiles_sanitized))
                 # print(Chem.MolToSmiles(reactant_mol))
                 # print(Chem.MolToSmiles(product_mol))
                 # print(real_bond_changes)
@@ -985,11 +1158,11 @@ def examine_topk_candidate_product(topks, topk_combos, reactant_mol, real_bond_c
                 # print('pred_smiles_kek: {}'.format(pred_smiles_kek))
                 # print('pred_smiles_sani: {}'.format(pred_smiles_sanitized))
         else:
-            found_info['ground'] = True
-            found_info['ground_sanitized'] = True
+            found_info["ground"] = True
+            found_info["ground_sanitized"] = True
     else:
-        found_info['ground'] = True
-        found_info['ground_sanitized'] = True
+        found_info["ground"] = True
+        found_info["ground_sanitized"] = True
 
     ########### Now use candidate edits to try to recover product
     max_topk = max(topks)
@@ -1005,8 +1178,9 @@ def examine_topk_candidate_product(topks, topk_combos, reactant_mol, real_bond_c
         # Generate products by modifying reactants with predicted edits.
         candidate_smiles = robust_edit_mol(reactant_mol, combo)
         candidate_smiles = set(candidate_smiles)
-        candidate_smiles_sanitized = set(sanitize_smiles_molvs(smiles)
-                                         for smiles in candidate_smiles)
+        candidate_smiles_sanitized = set(
+            sanitize_smiles_molvs(smiles) for smiles in candidate_smiles
+        )
 
         if product_smiles_sanitized <= candidate_smiles_sanitized:
             sanitized_correct_rank = min(sanitized_correct_rank, current_rank + 1)
@@ -1014,8 +1188,8 @@ def examine_topk_candidate_product(topks, topk_combos, reactant_mol, real_bond_c
             correct_rank = min(correct_rank, current_rank + 1)
 
         # Record unkekulized form
-        candidate_smiles_list.append('.'.join(candidate_smiles))
-        candidate_smiles_sanitized_list.append('.'.join(candidate_smiles_sanitized))
+        candidate_smiles_list.append(".".join(candidate_smiles))
+        candidate_smiles_sanitized_list.append(".".join(candidate_smiles_sanitized))
 
         # Edit molecules with reactants kekulized. Sometimes previous editing fails due to
         # RDKit sanitization error (edited molecule cannot be kekulized)
@@ -1026,8 +1200,9 @@ def examine_topk_candidate_product(topks, topk_combos, reactant_mol, real_bond_c
 
         candidate_smiles = robust_edit_mol(reactant_mol, combo)
         candidate_smiles = set(candidate_smiles)
-        candidate_smiles_sanitized = set(sanitize_smiles_molvs(smiles)
-                                         for smiles in candidate_smiles)
+        candidate_smiles_sanitized = set(
+            sanitize_smiles_molvs(smiles) for smiles in candidate_smiles
+        )
         if product_smiles_sanitized <= candidate_smiles_sanitized:
             sanitized_correct_rank = min(sanitized_correct_rank, current_rank + 1)
         if product_smiles <= candidate_smiles:
@@ -1042,9 +1217,8 @@ def examine_topk_candidate_product(topks, topk_combos, reactant_mol, real_bond_c
 
     for k in topks:
         if correct_rank <= k:
-            found_info['top_{:d}'.format(k)] = True
+            found_info["top_{:d}".format(k)] = True
         if sanitized_correct_rank <= k:
-            found_info['top_{:d}_sanitized'.format(k)] = True
+            found_info["top_{:d}_sanitized".format(k)] = True
 
     return found_info
-
