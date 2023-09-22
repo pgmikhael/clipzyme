@@ -54,7 +54,7 @@
     "metric_names": ["reactivity_exact_accuracy reactivity_topk"],
     "checkpoint_save_last": [false],
     "monitor": ["val_acc_top10"],
-    "num_workers": [0],
+    "num_workers": [8],
     "optimizer_name": ["adam"],
     "patience": [5],
     "train": [true],
@@ -62,7 +62,7 @@
     "test": [true],
     "num_sanity_val_steps": [0],
     "val_check_interval": [1.0],
-    "gpus": [8],
+    "gpus": [1],
     "ignore_warnings": [false],
     "dropout": [0],
     "checkpoint_dir": ["/Mounts/rbg-storage1/snapshots/metabolomics"],
@@ -80,5 +80,5 @@
     "protein_structures_dir": ["/Mounts/rbg-storage1/datasets/Metabo/AlphaFoldEnzymes/"],
     "protein_graphs_dir": ["/Mounts/rbg-storage1/datasets/Metabo/quickprot_caches_35M/"]
   },
-  "available_gpus": ["1,2,3,4,6,7"]
+  "available_gpus": ["0","1","2","3"]
 }
