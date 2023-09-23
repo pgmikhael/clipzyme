@@ -268,6 +268,6 @@ class AbstractDataset(data.Dataset, Nox):
             "--input_loader_name",
             type=str,
             action=set_nox_type("input_loader"),
-            default="cv_loader",
+            default=None,
             help="input loader",
         )
