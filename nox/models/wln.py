@@ -303,7 +303,10 @@ class WLDN(AbstractModel):
         elif args.use_chemprop_encoder:
             self.wln = DMPNNEncoder(args)  # WLN for mol representation
             wln_diff_args = copy.deepcopy(args)
-            wln_diff_args.chemprop_edge_dim = args.chemprop_hidden_dim + 1
+            if args.model_name == 'wldn':
+                wln_diff_args.chemprop_node_dim = args.chemprop_hidden_dim
+            else:
+                wln_diff_args.chemprop_edge_dim = args.chemprop_hidden_dim + 1
             wln_diff_args.chemprop_num_layers = 1
             self.wln_diff = DMPNNEncoder(wln_diff_args)
             self.final_transform = nn.Sequential(
@@ -313,7 +316,7 @@ class WLDN(AbstractModel):
                     else args.chemprop_hidden_dim,
                     args.chemprop_hidden_dim,
                 ),
-                nn.BatchNorm1d(args.chemprop_hidden_dim),
+                # nn.BatchNorm1d(args.chemprop_hidden_dim),
                 nn.ReLU(),
                 nn.Linear(args.chemprop_hidden_dim, 1),
             )
@@ -573,6 +576,12 @@ class WLDN(AbstractModel):
             action="store_true",
             default=False,
             help="use mask to zero out scores for certain reactants.",
+        )
+        parser.add_argument(
+            "--add_scores_to_edge_attr",
+            action="store_true",
+            default=False,
+            help="use gat implementation.",
         )
 
 
