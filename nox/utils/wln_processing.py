@@ -1046,7 +1046,9 @@ def generate_candidates_from_scores(model_output, batch, args, mode="train"):
             data_batch.append(data)
         if len(data_batch) == 0:
             continue
-        list_of_data_batches.append(Batch.from_data_list(data_batch))
+        data_batch = Batch.from_data_list(data_batch)
+        data_batch.index_in_batch = i 
+        list_of_data_batches.append(data_batch)
 
     return list_of_data_batches
 
