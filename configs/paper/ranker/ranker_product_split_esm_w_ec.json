@@ -62,7 +62,9 @@
         "logger_name": ["wandb"],
         "workspace": ["peteranditamar"],
         "project_name": ["enzymes"],
-        "logger_tags": ["esm ranker multiproduct"]
+        "logger_tags": ["IMPROVED w_ec esm ranker singleproduct"],
+        "from_checkpoint": [true],
+        "checkpoint_path": ["/Mounts/rbg-storage1/snapshots/metabolomics/32843c4d3dc328294bd1ba77d23b86c2/32843c4d3dc328294bd1ba77d23b86c2epoch=3.ckpt"]
     },
     "available_gpus": ["0,1,2,3,4,5,6,7"]
   }
