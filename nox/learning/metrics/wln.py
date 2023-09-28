@@ -178,14 +178,30 @@ class CandidateTopK(Metric, Nox):
         product_smiles = predictions_dict["product_smiles"]
         all_product_smiles = predictions_dict["all_product_smiles"]
 
-        for reaction_idx, reaction_pred in enumerate(candidate_probs):
+        # deal with mismatch due to samples having no candidates
+        product_candidates_list_  = [None] * len(batch_real_bond_changes)
+        candidate_probs_ = [None] * len(batch_real_bond_changes)
+        for idx, cand in enumerate(product_candidates_list):
+            product_candidates_list_[ cand.index_in_batch ] = cand 
+            candidate_probs_[ cand.index_in_batch ] = candidate_probs[idx] 
+        product_candidates_list = product_candidates_list_
+        candidate_probs = candidate_probs_
+
+
+        for reaction_idx, real_bond_changes in enumerate(batch_real_bond_changes):
+
+            if product_candidates_list[reaction_idx] is None:
+                self.total += 1
+                continue 
+
+            reaction_pred = candidate_probs[reaction_idx]
             valid_candidate_combos = product_candidates_list[
                 reaction_idx
             ].candidate_bond_change  # B x list of combos
             num_candidate_products = len(valid_candidate_combos)
             reactant_mol = Chem.MolFromSmiles(reactant_smiles[reaction_idx])
             product_mol = Chem.MolFromSmiles(product_smiles[reaction_idx])
-            real_bond_changes = batch_real_bond_changes[reaction_idx]
+            
 
             # assuming that reaction pred in loop above gives the preds for this reaction
             # reaction_pred = pred[product_graph_start:product_graph_end, :]

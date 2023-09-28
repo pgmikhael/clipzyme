@@ -1,13 +1,8 @@
 {
   "script": "main",
-  "paired_hyperparams": {
-    "logger_tags": ["emap2 w_ec_loss product_split esm", "emap2 no_ec_loss product_split esm"],
-    "loss_names": ["reactivity_loss hierarchical_ec_loss", "reactivity_loss"]
-  },
   "cartesian_hyperparams": {
-    "batch_size": [4],
-    "model_name": ["esm_reaction_center_net"],
-    "topk_bonds": ["1 5 10"],
+    "batch_size": [8],
+    "model_name": ["reaction_center_net"],
     "precision": ["bf16"],
     "accumulate_grad_batches": [1],
     "dataset_name": ["enzymemap_reaction_graph"],
@@ -25,11 +20,6 @@
     "class_bal_key": ["ec1"],
     "lightning_name": ["base"],
     "compute_metrics_every_step": [true],
-    "mlp_layer_configuration":  [128],
-    "mlp_input_dim": [1280],
-    "esm_model_version": ["facebook/esm2_t33_650M_UR50D"],
-    "freeze_encoder": [false],
-    "num_heads": [4],
     "create_sample_per_sequence": [true],
     "gat_num_layers": [3],
     "gat_hidden_dim": [1280],
@@ -46,7 +36,7 @@
     "lr": [1e-4],
     "limit_train_batches": [1.0],
     "weight_decay": [0],
-    "predict_ecs": [true],
+    "topk_bonds": ["1 5 10 20"],
     "metric_names": ["reactivity_exact_accuracy reactivity_topk"],
     "checkpoint_save_last": [false],
     "monitor": ["val_acc_top10"],
@@ -64,7 +54,9 @@
     "checkpoint_dir": ["/Mounts/rbg-storage1/snapshots/metabolomics"],
     "logger_name": ["wandb"],
     "workspace": ["peteranditamar"],
-    "project_name": ["enzymes"]
+    "project_name": ["enzymes"],
+    "logger_tags": ["emap2 product_split wln"],
+    "loss_names": ["reactivity_loss"]
   },
   "available_gpus": ["0,1,2,3,4,5,6,7"]
 }
