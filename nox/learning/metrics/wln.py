@@ -179,20 +179,18 @@ class CandidateTopK(Metric, Nox):
         all_product_smiles = predictions_dict["all_product_smiles"]
 
         # deal with mismatch due to samples having no candidates
-        product_candidates_list_  = [None] * len(batch_real_bond_changes)
+        product_candidates_list_ = [None] * len(batch_real_bond_changes)
         candidate_probs_ = [None] * len(batch_real_bond_changes)
         for idx, cand in enumerate(product_candidates_list):
-            product_candidates_list_[ cand.index_in_batch ] = cand 
-            candidate_probs_[ cand.index_in_batch ] = candidate_probs[idx] 
+            product_candidates_list_[cand.index_in_batch] = cand
+            candidate_probs_[cand.index_in_batch] = candidate_probs[idx]
         product_candidates_list = product_candidates_list_
         candidate_probs = candidate_probs_
 
-
         for reaction_idx, real_bond_changes in enumerate(batch_real_bond_changes):
-
             if product_candidates_list[reaction_idx] is None:
                 self.total += 1
-                continue 
+                continue
 
             reaction_pred = candidate_probs[reaction_idx]
             valid_candidate_combos = product_candidates_list[
@@ -201,7 +199,6 @@ class CandidateTopK(Metric, Nox):
             num_candidate_products = len(valid_candidate_combos)
             reactant_mol = Chem.MolFromSmiles(reactant_smiles[reaction_idx])
             product_mol = Chem.MolFromSmiles(product_smiles[reaction_idx])
-            
 
             # assuming that reaction pred in loop above gives the preds for this reaction
             # reaction_pred = pred[product_graph_start:product_graph_end, :]
@@ -240,7 +237,8 @@ class CandidateTopK(Metric, Nox):
                         reactant_mol,
                         bond_change,
                         product_mol_for_change,
-                    )  # , remove_stereochemistry=True)
+                        remove_stereochemistry=True,
+                    )
                     if any(
                         nonstereo_batch_found_info[f"top_{k}_sanitized"]
                         for k in args.candidate_topk_values
@@ -280,7 +278,8 @@ class CandidateTopK(Metric, Nox):
                 reactant_mol,
                 real_bond_changes,
                 product_mol,
-            )  # , remove_stereochemistry=True)
+                remove_stereochemistry=True,
+            )
 
             for k, v in batch_found_info.items():
                 current = getattr(self, k)

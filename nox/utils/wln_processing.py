@@ -128,7 +128,7 @@ def robust_edit_mol(rmol, edits):
     for atom in rmol.GetAtoms():
         amap[
             atom_map_number2new_index[atom.GetIntProp("molAtomMapNumber")]
-        ] = atom.GetIdx()
+        ] = atom.GetIdx()  # new index to old index
 
     # Apply the edits as predicted
     for x, y, t in edits:
@@ -1035,7 +1035,7 @@ def generate_candidates_from_scores(model_output, batch, args, mode="train"):
         data_batch = []
         for j, candidate in enumerate(list_of_candidates):
             data, _ = from_mapped_smiles(
-                candidate, encode_no_edge=False, sanitize=mode != "train"
+                candidate, encode_no_edge=False, sanitize=False
             )
             # fail to convert to rdkit mol
             if (data is None) or (len(data.x) == 0):
@@ -1047,7 +1047,7 @@ def generate_candidates_from_scores(model_output, batch, args, mode="train"):
         if len(data_batch) == 0:
             continue
         data_batch = Batch.from_data_list(data_batch)
-        data_batch.index_in_batch = i 
+        data_batch.index_in_batch = i
         list_of_data_batches.append(data_batch)
 
     return list_of_data_batches
@@ -1088,7 +1088,12 @@ def sanitize_smiles_molvs(smiles, largest_fragment=False):
 
 
 def examine_topk_candidate_product(
-    topks, topk_combos, reactant_mol, real_bond_changes, product_mol
+    topks,
+    topk_combos,
+    reactant_mol,
+    real_bond_changes,
+    product_mol,
+    remove_stereochemistry=False,
 ):
     """Perform topk evaluation for predicting the product of a reaction
 
@@ -1120,6 +1125,10 @@ def examine_topk_candidate_product(
         Binary values indicating whether we can recover the product from the ground truth
         graph edits or top-k predicted edits
     """
+    if remove_stereochemistry:
+        Chem.RemoveStereochemistry(reactant_mol)
+        Chem.RemoveStereochemistry(product_mol)
+
     found_info = defaultdict(bool)
 
     # Avoid corrupting the RDKit molecule instances in the dataset
