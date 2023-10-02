@@ -86,7 +86,7 @@ class TopK(Metric, Nox):
             for k in self.topk_values
         })
         stats_dict.update({
-            f"top_{k}": getattr(self, f"num_nonstereo_correct_top{k}").float()
+            f"nonstereo_top_{k}": getattr(self, f"num_nonstereo_correct_top{k}").float()
             / getattr(self, f"total_top{k}")
             for k in self.topk_values
         })
