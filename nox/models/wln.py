@@ -303,7 +303,7 @@ class WLDN(AbstractModel):
         elif args.use_chemprop_encoder:
             self.wln = DMPNNEncoder(args)  # WLN for mol representation
             wln_diff_args = copy.deepcopy(args)
-            if args.model_name == 'wldn':
+            if args.model_name == "wldn":
                 wln_diff_args.chemprop_node_dim = args.chemprop_hidden_dim
             else:
                 wln_diff_args.chemprop_edge_dim = args.chemprop_hidden_dim + 1
@@ -346,6 +346,30 @@ class WLDN(AbstractModel):
             self.cache = WLDN_Cache(os.path.join(args.cache_path), "pt")
         if self.args.test:
             assert not self.args.train
+
+        if args.ranker_model_path:
+            state_dict = torch.load(args.ranker_model_path)
+            self.wln.load_state_dict(
+                {
+                    k[len("model.wln.") :]: v
+                    for k, v in state_dict["state_dict"].items()
+                    if k.startswith("model.wln.")
+                }
+            )
+            self.wln_diff.load_state_dict(
+                {
+                    k[len("model.wln_diff.") :]: v
+                    for k, v in state_dict["state_dict"].items()
+                    if k.startswith("model.wln_diff.")
+                }
+            )
+            self.final_transform.load_state_dict(
+                {
+                    k[len("model.final_transform.") :]: v
+                    for k, v in state_dict["state_dict"].items()
+                    if k.startswith("model.final_transform.")
+                }
+            )
 
     def predict(self, batch, product_candidates_list, candidate_scores):
         predictions = []
@@ -582,6 +606,11 @@ class WLDN(AbstractModel):
             action="store_true",
             default=False,
             help="use gat implementation.",
+        )
+        parser.add_argument(
+            "--ranker_model_path",
+            type=str,
+            help="path to pretrained ranker model if loading each model separately",
         )
 
 
