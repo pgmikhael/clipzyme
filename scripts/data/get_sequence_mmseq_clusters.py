@@ -8,7 +8,7 @@ import shutil
 import json
 import argparse
 import subprocess
-import pickle
+import pickle 
 
 from Bio import SeqIO
 from Bio.Seq import Seq
@@ -16,12 +16,13 @@ from Bio.SeqRecord import SeqRecord
 
 TEMP_FOLDER = "temp"
 
-
 def parse_args():
     parser = argparse.ArgumentParser(
         description="Script args for splitting sequences using mmseqs",
     )
-    parser.add_argument("--file", "-f", type=str, required=True, help="Path to file")
+    parser.add_argument(
+        "--file", "-f", type=str, required=True, help="Path to file"
+    )
     parser.add_argument(
         "--output-file", "-o", type=str, required=True, help="Path to output file"
     )
@@ -55,27 +56,15 @@ def json_to_fasta(file: str, output_fasta: str) -> None:
     with open(output_fasta, "w") as output_fasta:
         SeqIO.write(fasta_seqs, output_fasta, "fasta")
 
-
 def pickle_to_fasta(file: str, output_fasta: str) -> None:
-    data = pickle.load(open(file, "rb"))
+    data = pickle.load(open(file, 'rb'))
 
     fasta_seqs = []
     for id, sequence in data.items():
-        if sequence is None:
-            print(f"Skipping {id} as sequence is None")
-            continue
-        elif len(sequence) == 0:
-            print(f"Skipping {id} as sequence is empty")
-            continue
-        elif not isinstance(sequence, str):
-            print(f"Skipping {id} as sequence is not a string")
-            continue
-
         fasta_seqs.append(SeqRecord(Seq(sequence), id=id))
 
     with open(output_fasta, "w") as output_fasta:
         SeqIO.write(fasta_seqs, output_fasta, "fasta")
-
 
 def run_mmseqs(
     input_fasta: str, temp_folder: str, min_seq_id: float, similarity: float
@@ -85,18 +74,16 @@ def run_mmseqs(
     subprocess.run(cmd, shell=True, check=True)
     return output_file + "_cluster.tsv"
 
-
 def convert_tsv_to_pickle(tsv_file: str, output_file: str):
     proteinid_to_cluster = {}
     with open(tsv_file, "r") as f:
         for row in f.read().splitlines():
             cluster, item = row.split()
             proteinid_to_cluster[item] = cluster
-
+    
     clusters = list(proteinid_to_cluster.values())
     print(f"Num Cluters: {len(set(clusters))}")
-    pickle.dump(proteinid_to_cluster, open(output_file, "wb"))
-
+    pickle.dump(proteinid_to_cluster, open(output_file, 'wb'))
 
 def main():
     args = parse_args()
