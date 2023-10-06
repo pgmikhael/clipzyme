@@ -39,7 +39,7 @@
         "num_candidate_bond_changes": [16],
         "max_num_bond_changes": [5],
         "callback_names": ["lr_monitor checkpointer"],
-        "max_epochs": [5],
+        "max_epochs": [10],
         "lr_decay": [0.1],
         "lr": [1e-4],
         "weight_decay": [0],
@@ -62,9 +62,9 @@
         "logger_name": ["wandb"],
         "workspace": ["peteranditamar"],
         "project_name": ["enzymes"],
-        "logger_tags": ["IMPROVED w_ec esm ranker singleproduct"],
+        "logger_tags": ["IMPROVED2 w_ec esm ranker singleproduct"],
         "from_checkpoint": [true],
-        "checkpoint_path": ["/Mounts/rbg-storage1/snapshots/metabolomics/32843c4d3dc328294bd1ba77d23b86c2/32843c4d3dc328294bd1ba77d23b86c2epoch=3.ckpt"]
+        "checkpoint_path": ["/Mounts/rbg-storage1/snapshots/metabolomics/c34c37dd2d9261cf9b84d33374cf703b/c34c37dd2d9261cf9b84d33374cf703bepoch=3.ckpt"]
     },
     "available_gpus": ["0,1,2,3,4,5,6,7"]
   }

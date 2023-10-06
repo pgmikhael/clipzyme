@@ -25,8 +25,8 @@
     "compute_metrics_every_step": [true],
     "freeze_encoder": [false],
     "esm_model_version": ["facebook/esm2_t12_35M_UR50D"],
-    "protein_representation_key": ["last_hidden_state"],
-    "append_enzyme_to_hiddens": [false],
+    "protein_representation_key": ["pooler_output"],
+    "append_enzyme_to_hiddens": [true],
     "use_cls_token": [true],
     "num_hidden_layers": [6],
     "num_heads": [16],
@@ -40,7 +40,7 @@
     "callback_names": ["lr_monitor checkpointer"],
     "max_epochs": [50],
     "lr_decay": [0.1],
-    "lr": [5e-4],
+    "lr": [2e-4],
     "weight_decay": [0],
     "loss_names": ["cross_entropy"],
     "precomputed_loss": [true],
@@ -69,9 +69,7 @@
     "checkpoint_dir": ["/Mounts/rbg-storage1/snapshots/metabolomics"],
     "logger_name": ["wandb"],
     "workspace": ["peteranditamar"],
-    "project_name": ["enzymes"],
-    "from_checkpoint": [true],
-    "checkpoint_path": ["/Mounts/rbg-storage1/snapshots/metabolomics/49118ce358191dead18c01a3943f0bc7/49118ce358191dead18c01a3943f0bc7epoch=49.ckpt"]
+    "project_name": ["enzymes"]
   },
   "available_gpus": ["0,1,2,3,4,5,6,7"]
 }
