@@ -115,7 +115,7 @@ class EnzymeMap(AbstractDataset):
             #     "rb",
             # )
             open(
-                "/Mounts/rbg-storage1/datasets/Enzymes/EnzymeMap/mmseq_clusters_updated.p",
+                args.uniprot2cluster_path,
                 "rb",
             )
         )
@@ -417,6 +417,7 @@ class EnzymeMap(AbstractDataset):
             "ec",
             "product",
             "mmseqs_precomputed",
+            "ec_hold_out",
         ]:
             if (
                 self.args.split_type == "mmseqs"
@@ -461,6 +462,29 @@ class EnzymeMap(AbstractDataset):
                         for sample in samples[split_indices[i] : split_indices[i + 1]]
                     }
                 )
+        elif self.args.split_type == "ec_hold_out":
+            unique_products = set(
+                [
+                    ".".join(sample["products"])
+                    for sample in self.metadata_json
+                    if sample["ec"].split(".")[0] != str(self.args.held_out_ec_num)
+                ]
+            )
+            dev_probs = split_probs[1] / (split_probs[0] + split_probs[1])
+            train_probs = split_probs[0] / (split_probs[0] + split_probs[1])
+            products2split = {
+                p: np.random.choice(["train", "dev"], p=[train_probs, dev_probs])
+                for p in unique_products
+            }
+
+            for sample in self.metadata_json:
+                ec = sample["ec"].split(".")[0]
+                if str(self.args.held_out_ec_num) == ec:
+                    self.to_split[sample["hash_sample_id"]] = "test"
+                else:
+                    self.to_split[sample["hash_sample_id"]] = products2split[
+                        ".".join(sample["products"])
+                    ]
 
         # random splitting
         elif self.args.split_type == "random":
@@ -572,6 +596,11 @@ class EnzymeMap(AbstractDataset):
             elif self.args.split_type == "sequence":
                 uniprot = sample["protein_id"]
                 if self.to_split[uniprot] != split_group:
+                    continue
+
+            elif self.args.split_type == "ec_hold_out":
+                sample_id = sample["hash_sample_id"]
+                if self.to_split[sample_id] != split_group:
                     continue
 
             elif sample["split"] is not None:
@@ -708,6 +737,18 @@ class EnzymeMap(AbstractDataset):
             parser (argparse.ArgumentParser): argument parser
         """
         super(EnzymeMap, EnzymeMap).add_args(parser)
+        parser.add_argument(
+            "--held_out_ec_num",
+            type=int,
+            default=None,
+            help="EC number to hold out",
+        )
+        parser.add_argument(
+            "--uniprot2cluster_path",
+            type=str,
+            default="/Mounts/rbg-storage1/datasets/Enzymes/EnzymeMap/mmseq_clusters_updated.p",
+            help="path to uniprot2cluster pickle",
+        )
         parser.add_argument(
             "--esm_dir",
             type=str,
@@ -1761,6 +1802,14 @@ class EnzymeMapGraph(EnzymeMap):
                         "split": reaction["split"],
                         "organism": reaction.get("organism", ""),
                     }
+                    unique_sample_content = (
+                        f"{reaction_string}{uniprot}{reaction.get('organism', '')}"
+                    )
+                    hashed_sample_content = hashlib.sha256(
+                        unique_sample_content.encode("utf-8")
+                    ).hexdigest()
+                    sample["hash_sample_id"] = hashed_sample_content
+
                     for ec_level, _ in enumerate(ec.split(".")):
                         sample[f"ec{ec_level+1}"] = ".".join(
                             ec.split(".")[: (ec_level + 1)]
@@ -1816,6 +1865,13 @@ class EnzymeMapGraph(EnzymeMap):
                     "split": reaction["split"],
                     "protein_refs": protein_refs,
                 }
+
+                unique_sample_content = f"{reaction_string}"
+                hashed_sample_content = hashlib.sha256(
+                    unique_sample_content.encode("utf-8")
+                ).hexdigest()
+                sample["hash_sample_id"] = hashed_sample_content
+
                 for ec_level, _ in enumerate(ec.split(".")):
                     sample[f"ec{ec_level+1}"] = ".".join(
                         ec.split(".")[: (ec_level + 1)]
