@@ -152,13 +152,32 @@ class Base(pl.LightningModule, Nox):
         ):
             self.log_image(model_output, batch)
 
-        if (self.args.log_predictions_to_table) and (self.global_step % self.args.log_predictions_to_table_every == 0):
-            table_columns=["sample", "gold mol", "gold smiles", "pred", "step", "phase"]
-            data_types=["str", "smiles", "str", "str", "str", "str"]
-            table_data=[batch["sample_id"], batch["smiles"], batch["smiles"], model_output["pred_smiles"], [self.current_epoch] * len(batch["smiles"]), [self.phase] * len(batch["smiles"])]
+        if (self.args.log_predictions_to_table) and (
+            self.global_step % self.args.log_predictions_to_table_every == 0
+        ):
+            table_columns = [
+                "sample",
+                "gold mol",
+                "gold smiles",
+                "pred",
+                "step",
+                "phase",
+            ]
+            data_types = ["str", "smiles", "str", "str", "str", "str"]
+            table_data = [
+                batch["sample_id"],
+                batch["smiles"],
+                batch["smiles"],
+                model_output["pred_smiles"],
+                [self.current_epoch] * len(batch["smiles"]),
+                [self.phase] * len(batch["smiles"]),
+            ]
             self.logger.log_table(
-                table_columns, table_data, data_types, table_name=f"{self.phase}_samples"
-                )
+                table_columns,
+                table_data,
+                data_types,
+                table_name=f"{self.phase}_samples",
+            )
 
         return logged_output
 
@@ -188,7 +207,7 @@ class Base(pl.LightningModule, Nox):
             predictions_dict = {}
             predictions_dict = self.store_in_predictions(predictions_dict, batch)
             predictions_dict = self.store_in_predictions(predictions_dict, model_output)
-        
+
         self.call_metric(predictions_dict, "update")
 
         logged_output.update(logging_dict)
@@ -198,7 +217,7 @@ class Base(pl.LightningModule, Nox):
 
         if (self.args.log_gen_image) and (batch_idx == 0):
             self.log_image(model_output, batch)
-        
+
         return logged_output
 
     def training_step(self, batch, batch_idx, optimizer_idx=None):
@@ -373,7 +392,11 @@ class Base(pl.LightningModule, Nox):
         if (self.args.profiler is not None) and (self.args.log_profiler):
             logging_dict.update(self.get_time_profile(key))
         self.log_dict(
-            logging_dict, prog_bar=True, logger=True, batch_size=self.args.batch_size, sync_dist=True
+            logging_dict,
+            prog_bar=True,
+            logger=True,
+            batch_size=self.args.batch_size,
+            sync_dist=True,
         )
 
     def get_time_profile(self, key):
@@ -518,7 +541,6 @@ class Base(pl.LightningModule, Nox):
             choices=["epoch", "step"],
             help="how often to apply scheduling on model parameters.",
         )
-
 
 
 def gather_step_outputs(outputs):

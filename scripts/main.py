@@ -24,9 +24,11 @@ from rich import print
 
 from pytorch_lightning.strategies import DDPStrategy
 
+
 def train(args):
     # legacy
     if not hasattr(pl.Trainer, "from_argparse_args"):
+
         def cast_type(val):
             if isinstance(val, str):
                 if val.isdigit():
@@ -36,18 +38,21 @@ def train(args):
                 except ValueError:
                     return val
             return val
+
         # Get the trainer's argument names
         trainer_arg_names = set(inspect.signature(pl.Trainer).parameters.keys())
-        trainer_args = {k: cast_type(v) for k, v in vars(args).items() if k in trainer_arg_names}
+        trainer_args = {
+            k: cast_type(v) for k, v in vars(args).items() if k in trainer_arg_names
+        }
         if int(args.devices) > 1:
             trainer_args["strategy"] = DDPStrategy(find_unused_parameters=True)
-            args.strategy = 'ddp' # important for loading
+            args.strategy = "ddp"  # important for loading
         else:
-            trainer_args["strategy"] = 'auto'
-            args.strategy = 'auto'
+            trainer_args["strategy"] = "auto"
+            args.strategy = "auto"
         trainer = pl.Trainer(**trainer_args)
     else:
-    # Remove callbacks from args for safe pickling later
+        # Remove callbacks from args for safe pickling later
         args.find_unused_parameters = False
         trainer = pl.Trainer.from_argparse_args(args)
     args.callbacks = None
@@ -123,9 +128,11 @@ def eval(model, logger, args):
     # just keeps track for args, trainer is reinitialized above
     if not hasattr(pl.Trainer, "add_argparse_args"):
         args.devices = 1
-        args.strategy = "auto" # note must set devices=1 otherwise will use all available gpus
+        args.strategy = (
+            "auto"  # note must set devices=1 otherwise will use all available gpus
+        )
     else:
-        args.strategy = None # legacy
+        args.strategy = None  # legacy
 
     # connect to same logger as in training
     trainer.logger = logger

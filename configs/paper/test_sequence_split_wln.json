@@ -28,9 +28,10 @@
     "chemprop_hidden_dim": [480],
     "reactivity_net_type": ["reaction_center_net"],
     "attn_type": ["pairwise_global_attn"],
-    "reactivity_model_path": ["/Mounts/rbg-storage1/snapshots/metabolomics/5c6868b012227cc1d45da4950a71ee52/5c6868b012227cc1d45da4950a71ee52epoch=4.ckpt"],
-    "from_checkpoint": [true],
+    "reactivity_model_path": ["/Mounts/rbg-storage1/snapshots/metabolomics/85736b7cc86ce309bcded62199d13291/85736b7cc86ce309bcded62199d13291epoch=19.ckpt"],
+    "from_checkpoint": [false],
     "checkpoint_path": ["/Mounts/rbg-storage1/snapshots/metabolomics/7ad4a9935bb26291f14732fd316f9f8f/7ad4a9935bb26291f14732fd316f9f8fepoch=3.ckpt"],
+    "ranker_model_path": ["/Mounts/rbg-storage1/snapshots/metabolomics/7ad4a9935bb26291f14732fd316f9f8f/7ad4a9935bb26291f14732fd316f9f8fepoch=3.ckpt"],
     "add_core_score": [true],
     "max_num_change_combos_per_reaction": [150],
     "num_candidate_bond_changes": [16],
@@ -62,5 +63,5 @@
     "project_name": ["enzymes"],
     "logger_tags": ["test product wldn"]
 },
-"available_gpus": ["2"]
+"available_gpus": ["5"]
 }
