@@ -558,9 +558,9 @@ class EnzymaticReactionEncoder(ReactionEncoder):
             encoder_outputs = self.model.encoder(
                 input_ids=encoder_input_ids["input_ids"],
                 attention_mask=encoder_input_ids["attention_mask"],
-                token_type_ids=token_type_ids,
+                # token_type_ids=token_type_ids,
             )
-        return encoder_outputs, protein_reactants_attention_mask
+        return encoder_outputs, protein_reactants_attention_mask, protein_embeds
 
     def forward(self, batch) -> Dict:
         if self.args.predict or self.args.run_generate:
@@ -584,9 +584,11 @@ class EnzymaticReactionEncoder(ReactionEncoder):
             decoder_input_ids[k] = v.to(self.devicevar.device)
 
         # encode and get attention mask with proteins
-        encoder_outputs, encoder_attention_mask = self.encode_reactants_and_enzyme(
-            batch, encoder_input_ids
-        )
+        (
+            encoder_outputs,
+            encoder_attention_mask,
+            protein_embeds,
+        ) = self.encode_reactants_and_enzyme(batch, encoder_input_ids)
 
         encoder_hidden_states = encoder_outputs[0]
 
