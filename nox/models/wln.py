@@ -303,7 +303,7 @@ class WLDN(AbstractModel):
         elif args.use_chemprop_encoder:
             self.wln = DMPNNEncoder(args)  # WLN for mol representation
             wln_diff_args = copy.deepcopy(args)
-            if args.model_name == 'wldn':
+            if args.model_name == "wldn":
                 wln_diff_args.chemprop_node_dim = args.chemprop_hidden_dim
             else:
                 wln_diff_args.chemprop_edge_dim = args.chemprop_hidden_dim + 1
@@ -796,12 +796,12 @@ class ChempropWLDN(WLDN):
             default=False,
             help="use gat implementation.",
         )
-        parser.add_argument(
-            "--add_scores_to_edge_attr",
-            action="store_true",
-            default=False,
-            help="use gat implementation.",
-        )
+        # parser.add_argument(
+        #     "--add_scores_to_edge_attr",
+        #     action="store_true",
+        #     default=False,
+        #     help="use gat implementation.",
+        # )
 
     def forward(self, batch):
         product_candidates_list = self.get_product_candidate_list(
@@ -938,12 +938,12 @@ class ChempropCGR(WLDN):
             default=False,
             help="use gat implementation.",
         )
-        parser.add_argument(
-            "--add_scores_to_edge_attr",
-            action="store_true",
-            default=False,
-            help="use gat implementation.",
-        )
+        # parser.add_argument(
+        #     "--add_scores_to_edge_attr",
+        #     action="store_true",
+        #     default=False,
+        #     help="use gat implementation.",
+        # )
 
     def forward(self, batch):
         product_candidates_list = self.get_product_candidate_list(
@@ -1360,12 +1360,12 @@ class ChempropESMCGR(WLDN):
             default=False,
             help="use gat implementation.",
         )
-        parser.add_argument(
-            "--add_scores_to_edge_attr",
-            action="store_true",
-            default=False,
-            help="use gat implementation.",
-        )
+        # parser.add_argument(
+        #     "--add_scores_to_edge_attr",
+        #     action="store_true",
+        #     default=False,
+        #     help="use gat implementation.",
+        # )
         parser.add_argument(
             "--wln_esm_model_version",
             type=str,
@@ -1604,12 +1604,12 @@ class ChempropESMCGRLate(WLDN):
             default=False,
             help="use gat implementation.",
         )
-        parser.add_argument(
-            "--add_scores_to_edge_attr",
-            action="store_true",
-            default=False,
-            help="use gat implementation.",
-        )
+        # parser.add_argument(
+        #     "--add_scores_to_edge_attr",
+        #     action="store_true",
+        #     default=False,
+        #     help="use gat implementation.",
+        # )
         parser.add_argument(
             "--wln_esm_model_version",
             type=str,
