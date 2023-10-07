@@ -417,7 +417,6 @@ class EnzymeMap(AbstractDataset):
             "ec",
             "product",
             "mmseqs_precomputed",
-            "ec_hold_out",
         ]:
             if (
                 self.args.split_type == "mmseqs"
@@ -472,19 +471,92 @@ class EnzymeMap(AbstractDataset):
             )
             dev_probs = split_probs[1] / (split_probs[0] + split_probs[1])
             train_probs = split_probs[0] / (split_probs[0] + split_probs[1])
-            products2split = {
-                p: np.random.choice(["train", "dev"], p=[train_probs, dev_probs])
-                for p in unique_products
-            }
+            if not self.args.split_multiproduct_samples:
+                products2split = {
+                    p: np.random.choice(["train", "dev"], p=[train_probs, dev_probs])
+                    for p in unique_products
+                }
+            else:
+                products2split = {}
+                for p_list in unique_products:
+                    for p in p_list.split("."):
+                        products2split[p] = np.random.choice(
+                            ["train", "dev"], p=[train_probs, dev_probs]
+                        )
 
             for sample in self.metadata_json:
-                ec = sample["ec"].split(".")[0]
-                if str(self.args.held_out_ec_num) == ec:
-                    self.to_split[sample["hash_sample_id"]] = "test"
-                else:
-                    self.to_split[sample["hash_sample_id"]] = products2split[
-                        ".".join(sample["products"])
-                    ]
+                ec = sample["ec"]
+                rkey = (
+                    "mapped_reactants"
+                    if "mapped_reactants" in self.metadata_json[0]
+                    else "reactants"
+                )
+                pkey = (
+                    "mapped_products"
+                    if "mapped_products" in self.metadata_json[0]
+                    else "products"
+                )
+                reactants = sorted([s for s in sample[rkey] if s != "[H+]"])
+                products = sorted([s for s in sample[pkey] if s != "[H+]"])
+                products = [p for p in products if p not in reactants]
+
+                if self.args.topk_byproducts_to_remove is not None:
+                    products = [p for p in products if p not in self.common_byproducts]
+
+                reaction_string = "{}>>{}".format(
+                    ".".join(reactants), ".".join(products)
+                )
+
+                if self.args.version == "1":
+                    alluniprots = self.ec2uniprot.get(ec, [])
+                    protein_refs = []
+                elif self.args.version == "2":
+                    protein_refs = eval(sample["protein_refs"])
+                    alluniprots = protein_refs
+                    if (len(alluniprots) == 0) and self.args.sample_uniprot_per_ec:
+                        alluniprots = self.ec2uniprot.get(ec, [])
+
+                if (
+                    self.args.create_sample_per_sequence
+                    or self.args.sample_uniprot_per_ec
+                ):
+                    valid_uniprots = []
+                    for uniprot in alluniprots:
+                        if self.args.split_multiproduct_samples:
+                            for product_id, p in enumerate(products):
+                                psample = copy.deepcopy(sample)
+                                psample["products"] = [p]
+                                # psample["sample_id"] += f"_{product_id}"
+                                preaction_string = "{}>>{}".format(
+                                    ".".join(psample["reactants"]), p
+                                )
+                                # uniprot = psample["uniprot_id"]
+                                punique_sample_content = f"{preaction_string}{uniprot}{psample.get('organism', '')}"
+                                phashed_sample_content = hashlib.sha256(
+                                    punique_sample_content.encode("utf-8")
+                                ).hexdigest()
+                                psample["hash_sample_id"] = phashed_sample_content
+                                if str(self.args.held_out_ec_num) == ec:
+                                    self.to_split[psample["hash_sample_id"]] = "test"
+                                else:
+                                    self.to_split[
+                                        psample["hash_sample_id"]
+                                    ] = products2split[p]
+
+                        else:
+                            unique_sample_content = f"{reaction_string}{uniprot}{sample.get('organism', '')}"
+                            hashed_sample_content = hashlib.sha256(
+                                unique_sample_content.encode("utf-8")
+                            ).hexdigest()
+                            sample["hash_sample_id"] = hashed_sample_content
+                            if sample["ec"].split(".")[0] == str(
+                                self.args.held_out_ec_num
+                            ):
+                                self.to_split[sample["hash_sample_id"]] = "test"
+                            else:
+                                self.to_split[
+                                    sample["hash_sample_id"]
+                                ] = products2split[".".join(sample["products"])]
 
         # random splitting
         elif self.args.split_type == "random":
@@ -721,9 +793,6 @@ class EnzymeMap(AbstractDataset):
             return data
 
         except Exception as e:
-            import pdb
-
-            pdb.set_trace()
             print(
                 f"Create prot graph: Could not load sample {sample['uniprot_id']} because of the exception {e}"
             )
@@ -1846,6 +1915,17 @@ class EnzymeMapGraph(EnzymeMap):
                             psample = copy.deepcopy(sample)
                             psample["products"] = [p]
                             psample["sample_id"] += f"_{product_id}"
+                            preaction_string = "{}>>{}".format(
+                                ".".join(psample["reactants"]), p
+                            )
+                            uniprot = psample["uniprot_id"]
+                            punique_sample_content = (
+                                f"{preaction_string}{uniprot}{psample['organism']}"
+                            )
+                            phashed_sample_content = hashlib.sha256(
+                                punique_sample_content.encode("utf-8")
+                            ).hexdigest()
+                            psample["hash_sample_id"] = phashed_sample_content
                             dataset.append(psample)
                     else:
                         dataset.append(sample)
