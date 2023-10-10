@@ -35,7 +35,7 @@ class IOCB(AbstractDataset):
 
         # assign groups
         if self.args.split_type == "fold":
-            samples = sorted(list(set(row[split_key] for row in metadata_json)))
+            samples = sorted(list(set(row[split_key] for row in self.metadata_json)))
             np.random.shuffle(samples)
             split_indices = np.ceil(
                 np.cumsum(np.array(split_probs) * len(samples))
@@ -794,3 +794,248 @@ class IOCBNegatives(IOCB):
     def set_args(args) -> None:
         super(IOCB, IOCB).set_args(args)
         args.dataset_file_path = "/Mounts/rbg-storage1/datasets/Enzymes/IOCB/IOCB_TPS_substrate_enzyme_pairs_major_product_split.json"
+
+
+@register_object("iocb_mapped_reactions", "dataset")
+class IOCBMappedReactions(AbstractDataset):
+    def assign_splits(self, dataset, split_probs, seed=0) -> None:
+        """
+        Assigns each sample to a split group based on split_probs
+        """
+        # set seed
+        np.random.seed(seed)
+
+        # assign groups
+        if self.args.split_type == "fold":
+            samples = sorted(list(set(row["fold"] for row in self.metadata_json)))
+            np.random.shuffle(samples)
+            split_indices = np.ceil(
+                np.cumsum(np.array(split_probs) * len(samples))
+            ).astype(int)
+            split_indices = np.concatenate([[0], split_indices])
+
+            for i in range(len(split_indices) - 1):
+                self.to_split.update(
+                    {
+                        sample: ["train", "dev", "test"][i]
+                        for sample in samples[split_indices[i] : split_indices[i + 1]]
+                    }
+                )
+
+        elif self.args.split_type == "fixed":
+            self.to_split = {
+                "fold_0": "test",
+                "fold_1": "dev",
+                "fold_2": "train",
+                "fold_3": "train",
+                "fold_4": "train",
+            }
+        elif self.args.split_type == "all_test":
+            self.to_split = {
+                "fold_0": "test",
+                "fold_1": "test",
+                "fold_2": "test",
+                "fold_3": "test",
+                "fold_4": "test",
+            }
+        else:
+            raise ValueError(
+                f"Split {self.args.split_type} type not supported. Must be one of [fold, fixed, all_test]"
+            )
+
+    def get_split_group_dataset(
+        self, processed_dataset, split_group: Literal["train", "dev", "test"]
+    ) -> List[dict]:
+        dataset = []
+        if self.args.split_type == "all_test":
+            if split_group != "test":
+                processed_dataset = processed_dataset[
+                    :2
+                ]  # just stick two samples in train and dev so it doesnt break
+            return processed_dataset
+
+        else:
+            for sample in processed_dataset:
+                if self.to_split[sample["split"]] != split_group:
+                    continue
+
+                dataset.append(sample)
+
+            return dataset
+
+    def create_dataset(
+        self, split_group: Literal["train", "dev", "test"]
+    ) -> List[dict]:
+        self.mol2size = {}
+
+        dataset = []
+
+        for rowid, row in tqdm(
+            enumerate(self.metadata_json),
+            total=len(self.metadata_json),
+            desc="Creating dataset",
+            ncols=50,
+        ):
+            uniprotid = row["Uniprot ID"]
+            reaction = row["rxn_smiles"]
+            reactants, products = reaction.split(">>")
+            reactants, products = reactants.split("."), products.split(".")
+            sample = {
+                "protein_id": uniprotid,
+                "sequence": row["Amino acid sequence"].replace("\n", ""),
+                "sequence_name": row["Name"],
+                "protein_type": row["Type (mono, sesq, di, \u2026)"],
+                "reactants": reactants,
+                "products": products,
+                "bond_changes": row.get("bond_changes", []),
+                "sample_id": f"sample_{rowid}",
+                "species": row["Species"],
+                "kingdom": row["Kingdom (plant, fungi, bacteria)"],
+                "split": row["IOCB_TPS_phylogenetic_fold"],
+                "IOCB_TPS_phylogenetic_fold_ignore_in_eval": row[
+                    "IOCB_TPS_phylogenetic_fold_ignore_in_eval"
+                ],
+            }
+
+            if self.skip_sample(sample, split_group):
+                continue
+
+            dataset.append(sample)
+
+        return dataset
+
+    def skip_sample(self, sample, split_group) -> bool:
+        if len(sample["bond_changes"]) == 0:
+            return True
+
+        # if sequence is unknown
+        if (sample["sequence"] is None) or (len(sample["sequence"]) == 0):
+            return True
+
+        if (self.args.max_protein_length is not None) and len(
+            sample["sequence"]
+        ) > self.args.max_protein_length:
+            return True
+
+        for mol in sample["reactants"]:
+            if not (mol in self.mol2size):
+                self.mol2size[mol] = rdkit.Chem.MolFromSmiles(mol).GetNumAtoms()
+
+            if self.args.max_reactant_size is not None:
+                if self.mol2size[mol] > self.args.max_reactant_size:
+                    return True
+
+        for mol in sample["products"]:
+            if not (mol in self.mol2size):
+                self.mol2size[mol] = rdkit.Chem.MolFromSmiles(mol).GetNumAtoms()
+            if self.args.max_product_size is not None:
+                if self.mol2size[mol] > self.args.max_product_size:
+                    return True
+
+        # IOCB_TPS_phylogenetic_fold_ignore_in_eval
+        if (split_group == "test") and (
+            sample["IOCB_TPS_phylogenetic_fold_ignore_in_eval"]
+        ):
+            return True
+
+        # Type (mono, sesq, di, \u2026)
+        if sample["protein_type"] in ["ggpps", "fpps", "gpps", "gfpps", "hsqs"]:
+            return True
+
+        return False
+
+    @property
+    def SUMMARY_STATEMENT(self) -> None:
+        proteins = [d["protein_id"] for d in self.dataset]
+        statement = f""" 
+        * Number of samples: {len(self.dataset)}
+        * Number of proteins: {len(set(proteins))}
+        """
+        return statement
+
+    def __getitem__(self, index):
+        sample = self.dataset[index]
+
+        try:
+            if self.args.use_graph_version:
+                reactants, products = copy.deepcopy(sample["reactants"]), copy.deepcopy(
+                    sample["products"]
+                )
+                reactants, products = ".".join(reactants), ".".join(products)
+                reaction_str = "{}>>{}".format(
+                    remove_atom_maps(reactants), remove_atom_maps(products)
+                )
+                sequence = sample["sequence"]
+                uniprot_id = sample["protein_id"]
+                sample_id = sample["sample_id"]
+
+                # reactants = assign_dummy_atom_maps(reactants)
+                reactants, atom_map2new_index = from_mapped_smiles(
+                    reactants, encode_no_edge=True
+                )
+
+                bond_changes = [
+                    (atom_map2new_index[int(u)], atom_map2new_index[int(v)], btype)
+                    for u, v, btype in sample["bond_changes"]
+                ]
+                bond_changes = [(min(x, y), max(x, y), t) for x, y, t in bond_changes]
+                reactants.bond_changes = bond_changes
+
+                # products = assign_dummy_atom_maps(products)
+                products, _ = from_mapped_smiles(products, encode_no_edge=True)
+
+                all_smiles = [(sample["products"], [])]
+
+                item = {
+                    "reaction": reaction_str,
+                    "reactants": reactants,
+                    "products": products,
+                    "sequence": sequence,
+                    "protein_id": uniprot_id,
+                    "sample_id": sample_id,
+                    "smiles": products,
+                    "all_smiles": all_smiles,
+                }
+                return item
+
+            return sample
+
+        except Exception:
+            warnings.warn(f"Could not load sample: {sample['sample_id']}")
+
+    @staticmethod
+    def add_args(parser) -> None:
+        """Add class specific args
+
+        Args:
+            parser (argparse.ArgumentParser): argument parser
+        """
+        super(IOCBMappedReactions, IOCBMappedReactions).add_args(parser)
+        parser.add_argument(
+            "--max_protein_length",
+            type=int,
+            default=None,
+            help="skip proteins longer than max_protein_length",
+        )
+        parser.add_argument(
+            "--max_reactant_size",
+            type=int,
+            default=None,
+            help="maximum reactant size",
+        )
+        parser.add_argument(
+            "--max_product_size",
+            type=int,
+            default=None,
+            help="maximum product size",
+        )
+        parser.add_argument(
+            "--use_graph_version",
+            action="store_true",
+            default=False,
+            help="use graph structure for inputs",
+        )
+
+    @staticmethod
+    def set_args(args) -> None:
+        args.dataset_file_path = "/Mounts/rbg-storage1/datasets/Enzymes/IOCB/TPS-rxn-carbon-mapped-curated-activity.json"

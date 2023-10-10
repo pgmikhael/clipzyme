@@ -651,8 +651,8 @@ class EnzymeMap(AbstractDataset):
                     continue
 
             elif self.args.split_type == "mmseqs":
-                cluster = self.uniprot2cluster[sample["protein_id"]]
-                if self.to_split[cluster] != split_group:
+                cluster = self.uniprot2cluster.get(sample["protein_id"], None)
+                if (cluster is None) or (self.to_split[cluster] != split_group):
                     continue
             elif (
                 self.args.split_type == "mmseqs_precomputed"

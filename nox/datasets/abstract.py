@@ -63,7 +63,10 @@ class AbstractDataset(data.Dataset, Nox):
             args (argparse.ArgumentParser)
             split_group (str)
         """
-        self.input_loader = get_sample_loader(split_group, args)
+        try:
+            self.input_loader = get_sample_loader(split_group, args)
+        except:
+            print(f"Couldn't create input_loader: {args.input_loader_name}")
         self.load_dataset(args)
 
     def post_process(self, args):
