@@ -469,6 +469,10 @@ class EnzymeMap(AbstractDataset):
                     if sample["ec"].split(".")[0] != str(self.args.held_out_ec_num)
                 ]
             )
+            # ! ENSURE REPRODUCIBLE SETS FOR SAME SEED
+            unique_products = sorted(list(unique_products))
+            np.random.shuffle(unique_products)
+
             dev_probs = split_probs[1] / (split_probs[0] + split_probs[1])
             train_probs = split_probs[0] / (split_probs[0] + split_probs[1])
             if not self.args.split_multiproduct_samples:
@@ -1834,6 +1838,7 @@ class EnzymeMapGraph(EnzymeMap):
                 valid_uniprots = []
                 for uniprot in alluniprots:
                     temp_sample = {
+                        "df_row": rowid,
                         "bond_changes": bond_changes,
                         "quality": reaction["quality"],
                         "reactants": reactants,
@@ -1859,6 +1864,7 @@ class EnzymeMapGraph(EnzymeMap):
             if self.args.create_sample_per_sequence:
                 for uniprot in valid_uniprots:
                     sample = {
+                        "df_row": rowid,
                         "quality": reaction["quality"],
                         "reactants": reactants,
                         "products": products,
@@ -1932,6 +1938,7 @@ class EnzymeMapGraph(EnzymeMap):
 
             else:
                 sample = {
+                    "df_row": rowid,
                     "quality": reaction["quality"],
                     "reactants": reactants,
                     "products": products,
@@ -1983,14 +1990,14 @@ class EnzymeMapGraph(EnzymeMap):
             ec = sample["ec"]
             if self.args.create_sample_per_sequence:
                 uniprot_id = sample["uniprot_id"]
-                sequence = self.uniprot2sequence[uniprot_id]
+                sequence = self.uniprot2sequence.get(uniprot_id, "<unk>")
             elif self.args.sample_uniprot_per_ec:
-                valid_uniprots = self.valid_ec2uniprot[ec]
+                valid_uniprots = self.valid_ec2uniprot.get(ec, ["<unk>"])
                 uniprot_id = random.sample(valid_uniprots, 1)[0]
                 sequence = self.uniprot2sequence[uniprot_id]
             else:
-                uniprot_id = ""
-                sequence = ""
+                uniprot_id = "unk"
+                sequence = "<unk>"
 
             reaction = "{}>>{}".format(".".join(reactants), ".".join(products))
             # randomize order of reactants and products
@@ -2088,7 +2095,7 @@ class EnzymeMapGraph(EnzymeMap):
             # ecs as tensors
             split_ec = ec.split(".")
             for k, v in self.args.ec_levels.items():
-                item[f"ec{k}"] = v[".".join(split_ec[: int(k)])]
+                item[f"ec{k}"] = v.get(".".join(split_ec[: int(k)]), -1)
 
             if self.args.load_wln_cache_in_dataset:
                 item["product_candidates"] = self.cache.get(rowid)
@@ -2528,3 +2535,41 @@ class EnzymeMapSubstrateBLIP(EnzymeMapSubstrate):
     @staticmethod
     def set_args(args):
         pass
+
+
+from nox.utils.registry import get_object
+
+
+@register_object("enzyme_map+uspto_graph", "dataset")
+class EMap_USPTO(EnzymeMapGraph):
+    def __init__(self, args, split_group) -> None:
+        super().__init__(args, split_group)
+
+        emap_dataset = self.dataset
+        cargs = copy.deepcopy(args)
+        cargs.dataset_file_path = args.uspto_dataset_file_path
+        if split_group == "train":
+            uspto_dataset = get_object("chemical_reactions_graph", "dataset")(
+                cargs, split_group
+            ).dataset
+        else:
+            uspto_dataset = []
+
+        for d in uspto_dataset:
+            d["dataset"] = "uspto"
+        for d in emap_dataset:
+            d["dataset"] = "emap"
+
+        self.dataset = emap_dataset + uspto_dataset
+        self.set_sample_weights(args)
+        self.print_summary_statement(self.dataset, split_group)
+
+    @staticmethod
+    def add_args(parser):
+        EnzymeMap.add_args(parser)
+        parser.add_argument(
+            "--uspto_dataset_file_path", default=None, help="path to file path"
+        )
+        parser.add_argument(
+            "--emap_dataset_file_path", default=None, help="path to file path"
+        )

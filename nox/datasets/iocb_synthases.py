@@ -12,6 +12,7 @@ import rdkit
 import hashlib
 from nox.utils.pyg import from_smiles, from_mapped_smiles
 from nox.utils.smiles import get_rdkit_feature, remove_atom_maps, assign_dummy_atom_maps
+from rxn.chemutils.smiles_randomization import randomize_smiles_rotated
 from nox.utils.wln_processing import get_bond_changes
 import copy
 
@@ -957,18 +958,18 @@ class IOCBMappedReactions(AbstractDataset):
         sample = self.dataset[index]
 
         try:
-            if self.args.use_graph_version:
-                reactants, products = copy.deepcopy(sample["reactants"]), copy.deepcopy(
-                    sample["products"]
-                )
-                reactants, products = ".".join(reactants), ".".join(products)
-                reaction_str = "{}>>{}".format(
-                    remove_atom_maps(reactants), remove_atom_maps(products)
-                )
-                sequence = sample["sequence"]
-                uniprot_id = sample["protein_id"]
-                sample_id = sample["sample_id"]
+            sequence = sample["sequence"]
+            uniprot_id = sample["protein_id"]
+            sample_id = sample["sample_id"]
 
+            reactants, products = copy.deepcopy(sample["reactants"]), copy.deepcopy(
+                sample["products"]
+            )
+            reactants, products = ".".join(reactants), ".".join(products)
+            reaction_str = "{}>>{}".format(
+                remove_atom_maps(reactants), remove_atom_maps(products)
+            )
+            if self.args.use_graph_version:
                 # reactants = assign_dummy_atom_maps(reactants)
                 reactants, atom_map2new_index = from_mapped_smiles(
                     reactants, encode_no_edge=True
@@ -997,8 +998,36 @@ class IOCBMappedReactions(AbstractDataset):
                     "all_smiles": all_smiles,
                 }
                 return item
+            else:
+                reactants, products = reaction_str.split(">>")
+                reactants, products = reactants.split("."), products.split(".")
 
-            return sample
+                # randomize order of reactants and products
+                if self.args.randomize_order_in_reaction:
+                    np.random.shuffle(reactants)
+                    np.random.shuffle(products)
+
+                if self.args.use_random_smiles_representation:
+                    try:
+                        reactants = [randomize_smiles_rotated(s) for s in reactants]
+                        products = [randomize_smiles_rotated(s) for s in products]
+                    except:
+                        pass
+
+                reactants, products = ".".join(reactants), ".".join(products)
+                reaction = "{}>>{}".format(reactants, products)
+
+                item = {
+                    "reaction": reaction,
+                    "reactants": reactants,
+                    "products": products,
+                    "sequence": sequence,
+                    "protein_id": uniprot_id,
+                    "sample_id": sample_id,
+                    "smiles": products,
+                    "all_smiles": products,
+                }
+                return item
 
         except Exception:
             warnings.warn(f"Could not load sample: {sample['sample_id']}")
@@ -1034,6 +1063,18 @@ class IOCBMappedReactions(AbstractDataset):
             action="store_true",
             default=False,
             help="use graph structure for inputs",
+        )
+        parser.add_argument(
+            "--randomize_order_in_reaction",
+            action="store_true",
+            default=False,
+            help="Permute smiles in reactants and in products as augmentation",
+        )
+        parser.add_argument(
+            "--use_random_smiles_representation",
+            action="store_true",
+            default=False,
+            help="Use non-canonical representation of smiles as augmentation",
         )
 
     @staticmethod

@@ -10,8 +10,10 @@ from nox.utils.smiles import standardize_reaction
 import copy
 import numpy as np
 from collections import defaultdict
-from nox.utils.pyg import  from_mapped_smiles
+from nox.utils.pyg import from_mapped_smiles
 from nox.utils.wln_processing import get_bond_changes
+import hashlib
+
 
 @register_object("chemical_reactions", "dataset")
 class ChemRXN(AbstractDataset):
@@ -20,9 +22,9 @@ class ChemRXN(AbstractDataset):
     ) -> List[dict]:
         reaction2products = defaultdict(set)
         for rxn_dict in tqdm(self.metadata_json):
-            reaction2products[f"{'.'.join(rxn_dict['reactants'])}"].update(rxn_dict['products'])
-
-
+            reaction2products[f"{'.'.join(rxn_dict['reactants'])}"].update(
+                rxn_dict["products"]
+            )
 
         dataset = []
         for rxn_dict in tqdm(self.metadata_json):
@@ -31,11 +33,11 @@ class ChemRXN(AbstractDataset):
                     "x": rxn_dict["reaction"],
                     "sample_id": rxn_dict["rxnid"],
                     "split": rxn_dict["split"],
-                    "reactants": rxn_dict['reactants'],
-                    "products": rxn_dict['products'],
+                    "reactants": rxn_dict["reactants"],
+                    "products": rxn_dict["products"],
                     "protein_id": "spontaneous",
-                    "sequence": "<pad>", # esm pad token
-                    "all_smiles": reaction2products['.'.join(rxn_dict['reactants'])]
+                    "sequence": "<pad>",  # esm pad token
+                    "all_smiles": reaction2products[".".join(rxn_dict["reactants"])],
                 }
             )
         return dataset
@@ -120,17 +122,18 @@ class ChemRXN(AbstractDataset):
         """
         return summary
 
+
 @register_object("chemical_reactions_graph", "dataset")
 class ChemRXNGraph(ChemRXN):
     def create_dataset(
         self, split_group: Literal["train", "dev", "test"]
     ) -> List[dict]:
-
         dataset = []
-        for rxn_dict in tqdm(self.metadata_json):
+        for rxn_dict in tqdm(self.metadata_json, ncols=100):
             reaction = rxn_dict["reaction"]
             reactants, products = rxn_dict["reaction"].split(">>")
             reactants = reactants.split(".")
+            products = products.split(" ")[0]
             products = products.split(".")
 
             if "bond_changes" not in rxn_dict:
@@ -138,18 +141,30 @@ class ChemRXNGraph(ChemRXN):
             else:
                 bond_changes = rxn_dict["bond_changes"]
 
+            sample_id = f"uspto_{rxn_dict['split']}_{rxn_dict['rxnid']}"
+            hash_sample_id = hashlib.sha256(
+                f"{reaction}{'<unk>'}{''}".encode("utf-8")
+            ).hexdigest()
             dataset.append(
                 {
                     "reaction": reaction,
                     "reactants": reactants,
                     "products": products,
-                    "sample_id": f"{rxn_dict['split']}_{rxn_dict['rxnid']}",
+                    "sample_id": sample_id,
                     "split": rxn_dict["split"],
                     "bond_changes": list(bond_changes),
+                    "ec": f"0.0.0.{rxn_dict['rxnid']}",
+                    "ec1": "0",
+                    "ec2": "0.0",
+                    "ec3": "0.0.0",
+                    "ec4": f"0.0.0.{rxn_dict['rxnid']}",
+                    "uniprot_id": "unk",
+                    "rowid": -rxn_dict["rxnid"],
+                    # "hash_sample_id": hash_sample_id,
+                    "quality": 1.0,
                 }
             )
         return dataset
-
 
     def __getitem__(self, index):
         sample = self.dataset[index]
@@ -160,34 +175,43 @@ class ChemRXNGraph(ChemRXN):
                 sample["products"]
             )
 
-            reactants, atom_map2new_index = from_mapped_smiles(".".join(reactants), encode_no_edge=True)
-            products, _ = from_mapped_smiles(".".join(products),  encode_no_edge=True)
+            reactants, atom_map2new_index = from_mapped_smiles(
+                ".".join(reactants), encode_no_edge=True
+            )
+            products, _ = from_mapped_smiles(".".join(products), encode_no_edge=True)
 
-            bond_changes = [(atom_map2new_index[int(u)], atom_map2new_index[int(v)], btype) for u, v, btype in sample["bond_changes"]]
-            bond_changes = [(min(x,y), max(x,y), t) for x,y,t in bond_changes]
+            bond_changes = [
+                (atom_map2new_index[int(u)], atom_map2new_index[int(v)], btype)
+                for u, v, btype in sample["bond_changes"]
+            ]
+            bond_changes = [(min(x, y), max(x, y), t) for x, y, t in bond_changes]
             reactants.bond_changes = bond_changes
             sample_id = sample["sample_id"]
-            
+
             item = {
                 "reaction": reaction,
                 "reactants": reactants,
                 "products": products,
                 "sample_id": sample_id,
-                "all_smiles": []
+                "all_smiles": [],
             }
             return item
 
         except Exception as e:
-            print(f"Could not load sample {sample['sample_id']} because of an exception {e}")
+            print(
+                f"Could not load sample {sample['sample_id']} because of an exception {e}"
+            )
 
-    def get_split_group_dataset(self, processed_dataset, split_group: Literal["train", "dev", "test"]) -> List[dict]:
+    def get_split_group_dataset(
+        self, processed_dataset, split_group: Literal["train", "dev", "test"]
+    ) -> List[dict]:
         dataset = []
         for sample in processed_dataset:
             if sample["split"] != split_group:
                 continue
             dataset.append(sample)
         return dataset
-    
+
     @property
     def SUMMARY_STATEMENT(self) -> None:
         reactions = [d["reaction"] for d in self.dataset]
@@ -206,7 +230,8 @@ from nox.utils.pyg import from_smiles, x_map, e_map
 import torch
 import torch.nn.functional as F
 from torch_geometric.data import Batch
-import random 
+import random
+
 
 @register_object("chemical_reactions_digress", "dataset")
 class ChemRXNDigress(ChemRXN):
@@ -215,23 +240,26 @@ class ChemRXNDigress(ChemRXN):
     ) -> List[dict]:
         reaction2products = defaultdict(set)
         for rxn_dict in tqdm(self.metadata_json):
-            reaction2products[rxn_dict['reaction'].split(">>")[0]].update(rxn_dict['reaction'].split(">>")[-1])
+            reaction2products[rxn_dict["reaction"].split(">>")[0]].update(
+                rxn_dict["reaction"].split(">>")[-1]
+            )
 
         dataset = []
         for rxn_dict in tqdm(self.metadata_json):
-
             dataset.append(
                 {
                     "x": rxn_dict["reaction"],
                     "sample_id": rxn_dict["rxnid"],
                     "split": rxn_dict["split"],
                     "protein_id": "spontaneous",
-                    "sequence": "<pad>", # esm pad token
-                    "all_smiles": reaction2products[rxn_dict['reaction'].split(">>")[0]],
+                    "sequence": "<pad>",  # esm pad token
+                    "all_smiles": reaction2products[
+                        rxn_dict["reaction"].split(">>")[0]
+                    ],
                 }
             )
         return dataset
-    
+
     def post_process(self, args):
         split_group = self.split_group
 
@@ -243,7 +271,7 @@ class ChemRXNDigress(ChemRXN):
             smiles.update(d["x"].split(">>"))
         smiles = list(smiles)
 
-        data_info = DatasetInfo(random.sample(smiles,1000), args)
+        data_info = DatasetInfo(random.sample(smiles, 1000), args)
 
         extra_features = ExtraFeatures(args.extra_features_type, dataset_info=data_info)
 
@@ -256,7 +284,9 @@ class ChemRXNDigress(ChemRXN):
             domain_features=None,
         )
 
-        data_info.input_dims["E"] += len(e_map["bond_type"]) # edge are combination of reactants and to-be-noised product edges
+        data_info.input_dims["E"] += len(
+            e_map["bond_type"]
+        )  # edge are combination of reactants and to-be-noised product edges
 
         args.dataset_statistics = data_info
         args.extra_features = extra_features
@@ -273,11 +303,16 @@ class ChemRXNDigress(ChemRXN):
             products = from_smiles(products, return_atom_number=True)
 
             # get products edge indices in terms of reactant nodes (i.e., mapped)
-            reactant_atomnumber2id = {i:j for i,j in zip(reactants.atom_map_number, reactants.x_ids)}
-            productid2reactantid = {i: reactant_atomnumber2id[j] for i,j in zip(products.x_ids, products.atom_map_number)}
-            
+            reactant_atomnumber2id = {
+                i: j for i, j in zip(reactants.atom_map_number, reactants.x_ids)
+            }
+            productid2reactantid = {
+                i: reactant_atomnumber2id[j]
+                for i, j in zip(products.x_ids, products.atom_map_number)
+            }
+
             reactants.product_edge_index = products.edge_index.clone()
-            reactants.product_edge_index.apply_(productid2reactantid.get) 
+            reactants.product_edge_index.apply_(productid2reactantid.get)
             reactants.product_edge_attr = products.edge_attr.clone()
 
             # first feature is atomic number
@@ -291,7 +326,7 @@ class ChemRXNDigress(ChemRXN):
             reactants.product_edge_attr = F.one_hot(
                 reactants.product_edge_attr[:, 0], len(e_map["bond_type"])
             ).to(torch.float)
-            
+
             reactants.y = torch.zeros((1, 0), dtype=torch.float)
 
             item = {
