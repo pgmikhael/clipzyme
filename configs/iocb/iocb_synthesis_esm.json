@@ -4,7 +4,7 @@
     "batch_size": [8],
     "precision": ["bf16"],
     "accumulate_grad_batches": [1],
-    "dataset_name": ["iocb_reactions"],
+    "dataset_name": ["iocb_mapped_reactions"],
     "max_reactant_size": [100],    
     "assign_splits": [true],
     "split_type": ["fixed"],
@@ -24,7 +24,7 @@
     "hidden_size": [480],
     "num_classes": [465],
     "vocab_path": ["/Mounts/rbg-storage1/datasets/Enzymes/ECReact/uspto_ecreact_vocab.txt"],
-    "from_checkpoint": [true],
+    "from_checkpoint": [false],
     "checkpoint_path": ["/Mounts/rbg-storage1/snapshots/metabolomics/3b9335bf559a58f67acdb7579df3ed19/3b9335bf559a58f67acdb7579df3ed19epoch=2.ckpt"],
     "relax_checkpoint_matching": [true],
     "max_seq_len": [2000],
@@ -53,7 +53,7 @@
     "test": [false],
     "num_sanity_val_steps": [0],
     "val_check_interval": [1.0],
-    "gpus": [6],
+    "gpus": [8],
     "ignore_warnings": [false],
     "dropout": [0],
     "checkpoint_dir": ["/Mounts/rbg-storage1/snapshots/metabolomics"],
@@ -62,5 +62,5 @@
     "project_name": ["enzymes"],
     "logger_tags": ["enzyme-synthesis esm"]
   },
-  "available_gpus": ["1,3,4,5,6,7"]
+  "available_gpus": ["0,1,2,3,4,5,6,7"]
 }

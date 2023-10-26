@@ -8,7 +8,7 @@
     "max_reactant_size": [100],
     "max_product_size": [100],
     "max_num_products": [4],
-    "dataset_file_path": ["/Mounts/rbg-storage1/datasets/Enzymes/EnzymeMap/version2/enzymemap_v2_brenda2_processed_multi_remove_products.json"],
+    "dataset_file_path": ["/Mounts/rbg-storage1/datasets/Enzymes/EnzymeMap/version2/enzymemap_v2_brenda2_processed_single_remove_products_all_changes.json"],
     "version": ["2"],
     "remove_stereochemistry": [true],
     "class_bal": [true],
