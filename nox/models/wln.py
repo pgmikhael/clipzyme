@@ -19,6 +19,7 @@ from nox.models.chemprop import WLNEncoder, DMPNNEncoder
 from rdkit import Chem
 import copy
 import os
+from rich import print as rprint
 
 
 class WLDN_Cache:
@@ -271,11 +272,14 @@ class WLDN(AbstractModel):
                 }
             )
             self.reactivity_net.requires_grad_(False)
+            rprint(
+                f"[magenta]Loaded Reactivity Model from {args.reactivity_model_path}[/magenta]"
+            )
         except:
             self.reactivity_net = get_object(args.reactivity_net_type, "model")(
                 args
             ).requires_grad_(False)
-            print("Could not load pretrained model")
+            rprint("[magenta]WARNING: Could not load pretrained model[/magenta]")
         self.reactivity_net.eval()
 
         self.add_scores_features = getattr(args, "add_scores_features", True)
@@ -348,28 +352,34 @@ class WLDN(AbstractModel):
             assert not self.args.train
 
         if args.ranker_model_path:
-            state_dict = torch.load(args.ranker_model_path)
-            self.wln.load_state_dict(
-                {
-                    k[len("model.wln.") :]: v
-                    for k, v in state_dict["state_dict"].items()
-                    if k.startswith("model.wln.")
-                }
-            )
-            self.wln_diff.load_state_dict(
-                {
-                    k[len("model.wln_diff.") :]: v
-                    for k, v in state_dict["state_dict"].items()
-                    if k.startswith("model.wln_diff.")
-                }
-            )
-            self.final_transform.load_state_dict(
-                {
-                    k[len("model.final_transform.") :]: v
-                    for k, v in state_dict["state_dict"].items()
-                    if k.startswith("model.final_transform.")
-                }
-            )
+            try:
+                state_dict = torch.load(args.ranker_model_path)
+                self.wln.load_state_dict(
+                    {
+                        k[len("model.wln.") :]: v
+                        for k, v in state_dict["state_dict"].items()
+                        if k.startswith("model.wln.")
+                    }
+                )
+                self.wln_diff.load_state_dict(
+                    {
+                        k[len("model.wln_diff.") :]: v
+                        for k, v in state_dict["state_dict"].items()
+                        if k.startswith("model.wln_diff.")
+                    }
+                )
+                self.final_transform.load_state_dict(
+                    {
+                        k[len("model.final_transform.") :]: v
+                        for k, v in state_dict["state_dict"].items()
+                        if k.startswith("model.final_transform.")
+                    }
+                )
+                rprint(
+                    f"[magenta]Loaded Ranker from {args.ranker_model_path}[/magenta]"
+                )
+            except:
+                pass
 
     def predict(self, batch, product_candidates_list, candidate_scores):
         predictions = []
@@ -1591,6 +1601,52 @@ class ChempropESMCGRLate(WLDN):
             ec_args = copy.deepcopy(args)
             ec_args.num_classes = len(args.ec_levels["4"].values())
             self.ec_classifier = get_object(args.wldn_ec_classifier, "model")(ec_args)
+
+        if args.ranker_model_path:
+            try:
+                state_dict = torch.load(args.ranker_model_path)
+                self.wln.load_state_dict(
+                    {
+                        k[len("model.wln.") :]: v
+                        for k, v in state_dict["state_dict"].items()
+                        if k.startswith("model.wln.")
+                    }
+                )
+                self.wln_diff.load_state_dict(
+                    {
+                        k[len("model.wln_diff.") :]: v
+                        for k, v in state_dict["state_dict"].items()
+                        if k.startswith("model.wln_diff.")
+                    }
+                )
+                self.esm_model.load_state_dict(
+                    {
+                        k[len("model.esm_model.") :]: v
+                        for k, v in state_dict["state_dict"].items()
+                        if k.startswith("model.esm_model.")
+                    }
+                )
+                self.final_transform.load_state_dict(
+                    {
+                        k[len("model.final_transform.") :]: v
+                        for k, v in state_dict["state_dict"].items()
+                        if k.startswith("model.final_transform.")
+                    }
+                )
+                if self.predict_ecs:
+                    self.ec_classifier.load_state_dict(
+                        {
+                            k[len("model.ec_classifier.") :]: v
+                            for k, v in state_dict["state_dict"].items()
+                            if k.startswith("model.ec_classifier.")
+                        }
+                    )
+
+                rprint(
+                    f"[magenta]Loaded Ranker from {args.ranker_model_path}[/magenta]"
+                )
+            except:
+                pass
 
     def encode_sequence(self, batch):
         encoder_input_ids = self.esm_tokenizer(
