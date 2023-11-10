@@ -51,6 +51,7 @@ import nox.learning.optimizers.lamb
 # scheduler
 import nox.learning.schedulers.basic
 import nox.learning.schedulers.noam
+import nox.learning.schedulers.warmup
 
 # losses
 import nox.learning.losses.basic
@@ -59,6 +60,7 @@ import nox.learning.losses.contrastive
 import nox.learning.losses.digress
 import nox.learning.losses.attention
 import nox.learning.losses.wln
+import nox.learning.losses.protmol
 
 # metrics
 import nox.learning.metrics.basic
@@ -67,6 +69,7 @@ import nox.learning.metrics.representation
 import nox.learning.metrics.reactions
 import nox.learning.metrics.digress
 import nox.learning.metrics.wln
+import nox.learning.metrics.protmol
 
 # callbacks
 import nox.callbacks.basic

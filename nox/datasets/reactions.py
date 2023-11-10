@@ -6,7 +6,7 @@ import warnings
 from tqdm import tqdm
 import random
 from rxn.chemutils.smiles_randomization import randomize_smiles_rotated
-from nox.utils.smiles import standardize_reaction
+from nox.utils.smiles import standardize_reaction, remove_atom_maps
 import copy
 import numpy as np
 from collections import defaultdict
@@ -27,17 +27,30 @@ class ChemRXN(AbstractDataset):
             )
 
         dataset = []
-        for rxn_dict in tqdm(self.metadata_json):
+        for rxnid, rxn_dict in tqdm(
+            enumerate(self.metadata_json),
+            ncols=100,
+            total=len(self.metadata_json),
+        ):
             dataset.append(
                 {
                     "x": rxn_dict["reaction"],
-                    "sample_id": rxn_dict["rxnid"],
+                    "sample_id": f"uspto_{rxn_dict['rxnid']}",
                     "split": rxn_dict["split"],
                     "reactants": rxn_dict["reactants"],
                     "products": rxn_dict["products"],
                     "protein_id": "spontaneous",
                     "sequence": "<pad>",  # esm pad token
                     "all_smiles": reaction2products[".".join(rxn_dict["reactants"])],
+                    "bond_changes": [],
+                    "ec": f"0.0.0.{rxnid}",
+                    "ec1": "0",
+                    "ec2": "0.0",
+                    "ec3": "0.0.0",
+                    "ec4": f"0.0.0.{rxnid}",
+                    "uniprot_id": "unk",
+                    "rowid": f"uspto_{rxn_dict['rxnid']}",
+                    "quality": 1.0,
                 }
             )
         return dataset
@@ -129,7 +142,9 @@ class ChemRXNGraph(ChemRXN):
         self, split_group: Literal["train", "dev", "test"]
     ) -> List[dict]:
         dataset = []
-        for rxn_dict in tqdm(self.metadata_json, ncols=100):
+        for rxnid, rxn_dict in tqdm(
+            enumerate(self.metadata_json), total=len(self.metadata_json), ncols=100
+        ):
             reaction = rxn_dict["reaction"]
             reactants, products = rxn_dict["reaction"].split(">>")
             reactants = reactants.split(".")
@@ -141,10 +156,11 @@ class ChemRXNGraph(ChemRXN):
             else:
                 bond_changes = rxn_dict["bond_changes"]
 
-            sample_id = f"uspto_{rxn_dict['split']}_{rxn_dict['rxnid']}"
+            sample_id = f"uspto_{rxn_dict['split']}_{rxnid}"
             hash_sample_id = hashlib.sha256(
                 f"{reaction}{'<unk>'}{''}".encode("utf-8")
             ).hexdigest()
+
             dataset.append(
                 {
                     "reaction": reaction,
@@ -153,13 +169,13 @@ class ChemRXNGraph(ChemRXN):
                     "sample_id": sample_id,
                     "split": rxn_dict["split"],
                     "bond_changes": list(bond_changes),
-                    "ec": f"0.0.0.{rxn_dict['rxnid']}",
+                    "ec": f"0.0.0.{rxnid}",
                     "ec1": "0",
                     "ec2": "0.0",
                     "ec3": "0.0.0",
-                    "ec4": f"0.0.0.{rxn_dict['rxnid']}",
+                    "ec4": f"0.0.0.{rxnid}",
                     "uniprot_id": "unk",
-                    "rowid": -rxn_dict["rxnid"],
+                    "rowid": -rxnid,
                     # "hash_sample_id": hash_sample_id,
                     "quality": 1.0,
                 }

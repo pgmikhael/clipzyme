@@ -95,7 +95,7 @@ class BaseClassification(Metric, Nox):
                 task=args.task_type,
             )
             self.auroc_metric = torchmetrics.AUROC(
-                task=args.task_type, 
+                task=args.task_type,
             )
             self.f1_metric = torchmetrics.F1Score(
                 task=args.task_type,
@@ -105,10 +105,10 @@ class BaseClassification(Metric, Nox):
                 average="macro",
             )
             self.ap_metric = torchmetrics.AveragePrecision(
-                task=args.task_type, 
+                task=args.task_type,
             )
             self.auprc_metric = torchmetrics.PrecisionRecallCurve(
-                task=args.task_type, 
+                task=args.task_type,
             )
             self.precision_metric = torchmetrics.Precision(
                 task=args.task_type,
@@ -411,8 +411,8 @@ class Seq2SeqClassification(Metric, Nox):
         #     pr_auc = compute_auc(rc, pr)
         stats_dict = {
             "accuracy": self.accuracy_metric.compute().mean(),
-            #"roc_auc": self.auroc_metric.compute(),
-            #pr_auc": pr_auc,
+            # "roc_auc": self.auroc_metric.compute(),
+            # pr_auc": pr_auc,
             "f1": self.f1_metric.compute().mean(),
             "macro_f1": self.macro_f1_metric.compute().mean(),
             "precision": self.precision_metric.compute().mean(),
@@ -424,8 +424,8 @@ class Seq2SeqClassification(Metric, Nox):
     def reset(self):
         super().reset()
         self.accuracy_metric.reset()
-        #self.auroc_metric.reset()
-        #self.auprc_metric.reset()
+        # self.auroc_metric.reset()
+        # self.auprc_metric.reset()
         self.f1_metric.reset()
         self.macro_f1_metric.reset()
         self.precision_metric.reset()
@@ -542,7 +542,9 @@ class TopK(Metric):
         self.add_state("correct", default=torch.tensor(0), dist_reduce_fx="sum")
         self.add_state("total", default=torch.tensor(0), dist_reduce_fx="sum")
 
-    def update(self, preds: torch.Tensor, target: torch.Tensor, preds_mask: torch.Tensor):
+    def update(
+        self, preds: torch.Tensor, target: torch.Tensor, preds_mask: torch.Tensor
+    ):
         assert preds.shape == target.shape
 
         if self.ignore_index is not None:

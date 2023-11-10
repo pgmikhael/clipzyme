@@ -6,6 +6,7 @@ from collections import OrderedDict
 from nox.utils.classes import Nox
 from nox.utils.loading import concat_all_gather
 import torch.distributed as dist
+
 EPSILON = 1e-6
 
 
@@ -287,37 +288,92 @@ class CLIPLoss(Nox):
         # cosine similarity as logits
         logit_scale = model.model.logit_scale.exp()
 
-        if args.clip_loss_use_gather:
-            # gather 
-            substrate_features_all = concat_all_gather(substrate_features)
-            protein_features_all = concat_all_gather(protein_features) 
-            
-            # contrast against all molecules
-            logits_per_protein = logit_scale * protein_features @ substrate_features_all.t()
-            # contrast against all proteins
-            logits_per_substrate = logit_scale * substrate_features @ protein_features_all.t()
+        if (len(substrate_features.shape) == 2) and (len(protein_features.shape) == 2):
+            if args.clip_loss_use_gather:
+                # gather
+                substrate_features_all = concat_all_gather(substrate_features)
+                protein_features_all = concat_all_gather(protein_features)
 
-            rank = dist.get_rank()
-            batch_size = substrate_features.size(0)
-            labels = torch.linspace(rank * batch_size, rank * batch_size + batch_size - 1, batch_size, dtype=int).to(substrate_features.device)                  
-            loss= (
-                    F.cross_entropy(logits_per_protein, labels, label_smoothing=args.clip_loss_label_smoothing)
-                    + F.cross_entropy(logits_per_substrate, labels, label_smoothing=args.clip_loss_label_smoothing)
-                ) / 2 
+                # contrast against all molecules
+                logits_per_protein = (
+                    logit_scale * protein_features @ substrate_features_all.t()
+                )
+                # contrast against all proteins
+                logits_per_substrate = (
+                    logit_scale * substrate_features @ protein_features_all.t()
+                )
+
+                rank = dist.get_rank()
+                batch_size = substrate_features.size(0)
+                labels = torch.linspace(
+                    rank * batch_size,
+                    rank * batch_size + batch_size - 1,
+                    batch_size,
+                    dtype=int,
+                ).to(substrate_features.device)
+
+            else:
+                logits_per_substrate = (
+                    logit_scale * substrate_features @ protein_features.t()
+                )
+                logits_per_protein = logits_per_substrate.t()
+
+                # labels
+                labels = torch.arange(logits_per_substrate.shape[0]).to(
+                    logits_per_substrate.device
+                )
+
+        elif len(protein_features.shape) == 3:
+            if args.clip_loss_use_gather:
+                substrate_features_all = concat_all_gather(substrate_features)
+                protein_features_all = concat_all_gather(protein_features)
+
+                rank = dist.get_rank()
+                batch_size = substrate_features.size(0)
+                labels = torch.linspace(
+                    rank * batch_size,
+                    rank * batch_size + batch_size - 1,
+                    batch_size,
+                    dtype=int,
+                ).to(substrate_features.device)
+            else:
+                substrate_features_all = substrate_features
+                protein_features_all = protein_features
+                labels = torch.arange(protein_features.shape[0]).to(
+                    protein_features.device
+                )
+
+            logits_per_substrate = torch.matmul(
+                substrate_features.unsqueeze(1).unsqueeze(1),
+                protein_features_all.permute(0, 2, 1),
+            ).squeeze()  # num graphs, num proteins, sequence length
+            logits_per_substrate, _ = logits_per_substrate.max(-1)
+
+            logits_per_protein = torch.matmul(
+                protein_features.unsqueeze(1), substrate_features_all.unsqueeze(-1)
+            ).squeeze()  # num proteins, num graphs, sequence length
+            logits_per_protein, _ = logits_per_protein.max(-1)
+
+            if len(logits_per_protein.shape) == 1:
+                logits_per_protein = logits_per_protein.unsqueeze(0)
+            if len(logits_per_substrate.shape) == 1:
+                logits_per_substrate = logits_per_substrate.unsqueeze(0)
+
         else:
-            logits_per_substrate = logit_scale * substrate_features @ protein_features.t()
-            logits_per_protein = logits_per_substrate.t()
+            raise NotImplementedError
 
-            # labels
-            labels = torch.arange(logits_per_substrate.shape[0]).to(
-                logits_per_substrate.device
+        loss = (
+            F.cross_entropy(
+                logits_per_protein,
+                labels,
+                label_smoothing=args.clip_loss_label_smoothing,
             )
-            loss = (
-                F.cross_entropy(logits_per_substrate, labels, label_smoothing=args.clip_loss_label_smoothing)
-                + F.cross_entropy(logits_per_protein, labels, label_smoothing=args.clip_loss_label_smoothing)
-            ) / 2
-
-        
+            + F.cross_entropy(
+                logits_per_substrate,
+                labels,
+                label_smoothing=args.clip_loss_label_smoothing,
+            )
+        ) / 2
 
         logging_dict["clip_loss"] = loss.detach()
 
@@ -325,24 +381,8 @@ class CLIPLoss(Nox):
         predictions["preds"] = probs.argmax(axis=-1).reshape(-1)
         predictions["golds"] = labels
 
-        # if predictions["probs"].shape[-1] != args.batch_size:
-        #     predictions["probs"] = torch.cat(
-        #         [
-        #             predictions["probs"],
-        #             torch.zeros(
-        #                 predictions["probs"].shape[0],
-        #                 args.batch_size - predictions["probs"].shape[1],
-        #                 device=logits_per_protein.device,
-        #             ),
-        #         ],
-        #         dim=-1,
-        #     )
-
-        # predictions["projection1"] = substrate_features.detach()
-        # predictions["projection2"] = protein_features.detach()
-
         return loss, logging_dict, predictions
-    
+
     @staticmethod
     def add_args(parser) -> None:
         """Add class specific args
