@@ -1,14 +1,9 @@
 {
     "script": "main",
     "paired_hyperparams": {
-        "held_out_ec_num": [1,2,3,4,5,6],
+        "held_out_ec_num": [2],
         "reactivity_model_path": [
-            "/Mounts/rbg-storage1/snapshots/metabolomics/381bb22390385f8449c4555df29ee1f2/381bb22390385f8449c4555df29ee1f2epoch=16.ckpt",
-            "/Mounts/rbg-storage1/snapshots/metabolomics/218a21ed53dc2de011209c262bf9afc9/218a21ed53dc2de011209c262bf9afc9epoch=16.ckpt",
-            "/Mounts/rbg-storage1/snapshots/metabolomics/0aef86b3b6a82d81180a8a5c53b53e0f/0aef86b3b6a82d81180a8a5c53b53e0fepoch=19.ckpt",
-            "/Mounts/rbg-storage1/snapshots/metabolomics/52ea36a18478e9dfe05c285d3162f985/52ea36a18478e9dfe05c285d3162f985epoch=11.ckpt",
-            "/Mounts/rbg-storage1/snapshots/metabolomics/cc19ca2c8a622adff2c0c165908dae45/cc19ca2c8a622adff2c0c165908dae45epoch=17.ckpt",
-            "/Mounts/rbg-storage1/snapshots/metabolomics/7581aef31965c19599dd823ecd03cb71/7581aef31965c19599dd823ecd03cb71epoch=19.ckpt"
+            "/Mounts/rbg-storage1/snapshots/metabolomics/34bc72dab6f8dc6a1fe2d2ad3ecedb5c/34bc72dab6f8dc6a1fe2d2ad3ecedb5cepoch=14.ckpt"
         ]
     },
     "cartesian_hyperparams": {

@@ -1,25 +1,16 @@
 {
     "script": "main",
     "paired_hyperparams": {
-        "held_out_ec_num": [1,2,3,4,5,6],
+        "held_out_ec_num": [6],
         "reactivity_model_path": [
-            "/Mounts/rbg-storage1/snapshots/metabolomics/381bb22390385f8449c4555df29ee1f2/381bb22390385f8449c4555df29ee1f2epoch=16.ckpt",
-            "/Mounts/rbg-storage1/snapshots/metabolomics/218a21ed53dc2de011209c262bf9afc9/218a21ed53dc2de011209c262bf9afc9epoch=16.ckpt",
-            "/Mounts/rbg-storage1/snapshots/metabolomics/0aef86b3b6a82d81180a8a5c53b53e0f/0aef86b3b6a82d81180a8a5c53b53e0fepoch=19.ckpt",
-            "/Mounts/rbg-storage1/snapshots/metabolomics/52ea36a18478e9dfe05c285d3162f985/52ea36a18478e9dfe05c285d3162f985epoch=11.ckpt",
-            "/Mounts/rbg-storage1/snapshots/metabolomics/cc19ca2c8a622adff2c0c165908dae45/cc19ca2c8a622adff2c0c165908dae45epoch=17.ckpt",
-            "/Mounts/rbg-storage1/snapshots/metabolomics/7581aef31965c19599dd823ecd03cb71/7581aef31965c19599dd823ecd03cb71epoch=19.ckpt"
+            "/Mounts/rbg-storage1/snapshots/metabolomics/3af2c951d79d84fba80453eff7798645/3af2c951d79d84fba80453eff7798645epoch=17.ckpt"
         ],
-        "checkpoint_path": [
-            "/Mounts/rbg-storage1/snapshots/metabolomics/bda192ae2ea0478f42865e61ad23b5ed/bda192ae2ea0478f42865e61ad23b5edepoch=4.ckpt",
-            "/Mounts/rbg-storage1/snapshots/metabolomics/1b569fb374e131e5cca14b54200b914e/1b569fb374e131e5cca14b54200b914eepoch=4.ckpt",
-            "/Mounts/rbg-storage1/snapshots/metabolomics/8cf4737030b1c4261d83d86508a60d24/8cf4737030b1c4261d83d86508a60d24epoch=3.ckpt",
-            "/Mounts/rbg-storage1/snapshots/metabolomics/36cdb21b794d0b43635d6d28031fcf78/36cdb21b794d0b43635d6d28031fcf78epoch=4.ckpt",
-            "/Mounts/rbg-storage1/snapshots/metabolomics/dd7126e5a107d5bd7e8fe1d2d2b856e5/dd7126e5a107d5bd7e8fe1d2d2b856e5epoch=4.ckpt",
+        "ranker_model_path": [
             "/Mounts/rbg-storage1/snapshots/metabolomics/232b22ad3e1f8cf3fa084ac2b79536a6/232b22ad3e1f8cf3fa084ac2b79536a6epoch=4.ckpt"
         ]
     },
     "cartesian_hyperparams": {
+        "from_checkpoint": [false],
         "batch_size": [8],
         "precision": ["bf16"],
         "accumulate_grad_batches": [1],
@@ -69,6 +60,8 @@
         "candidate_topk_values": ["1 3 5 10"],
         "checkpoint_save_last": [false],
         "monitor": ["val_per_reaction_accuracy"],
+        "save_predictions": [true],
+        "inference_dir": ["/Mounts/rbg-storage1/results/metabolomics/ec6_2"],
         "num_workers": [0],
         "optimizer_name": ["adam"],
         "patience": [5],
@@ -86,6 +79,6 @@
         "project_name": ["enzymes"],
         "logger_tags": ["esm ranker ec"]
     },
-    "available_gpus": [0,1,2,3,6,7]
+    "available_gpus": [7]
   }
   

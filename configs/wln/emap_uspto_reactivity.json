@@ -11,7 +11,7 @@
     "dataset_name": ["enzyme_map+uspto_graph"],
     "assign_splits": [true],
     "split_type":["ec_hold_out"],
-    "held_out_ec_num": [4],
+    "held_out_ec_num": [6],
     "split_seed": [0],
     "split_probs": ["0.8 0.1 0.1"],
     "max_num_products": [4],
