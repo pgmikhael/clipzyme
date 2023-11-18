@@ -20,6 +20,7 @@ from transformers import (
 )
 from transformers.modeling_outputs import BaseModelOutput
 import selfies as sf
+import numpy as np
 
 
 @register_object("reaction_encoder", "model")
@@ -1635,14 +1636,21 @@ class SelfCorrector(EnzymaticReactionEncoder):
     ):
         x = [standardize_reaction(r + ">>")[:-2] for r in list_of_text]
         x = [tokenize_smiles(r, return_as_str=True) for r in x]
-        x = [f"{prefix} {r}" for r in x]
+        if isinstance(prefix, list):
+            x = [f"{p} {r}" for p, r in zip(prefix, x)]
+        elif isinstance(prefix, str):
+            x = [f"{prefix} {r}" for r in x]
+        else:
+            raise NotImplementedError
 
         if list_of_predictions is not None:
             list_of_predictions = [
                 pred for sample_preds in list_of_predictions for pred in sample_preds
             ]  # flatten out
             x = [
-                "{} {} {}".format(given_input, tokenizer.sep_token, pred)
+                given_input
+                if pred == ""
+                else "{} {} {}".format(given_input, tokenizer.sep_token, pred)
                 for given_input, pred in zip(x, list_of_predictions)
             ]
         x = [f"{r} {suffix}" for r in x]
@@ -1675,7 +1683,7 @@ class SelfCorrector(EnzymaticReactionEncoder):
         if self.args.predict or self.args.run_generate:
             predictions = self.generate(batch)
             return {
-                "preds": predictions,
+                "preds": predictions["batch_samples"],
                 "golds": batch["products"],
             }
 
@@ -1693,6 +1701,12 @@ class SelfCorrector(EnzymaticReactionEncoder):
                 reactants += [batch["reactants"][idx] for s in sample]
                 products += [batch["products"][idx] for s in sample]
 
+            # mix with [GEN] task
+            generations = [
+                [""]*len(g) if np.random.uniform() < self.args.generations_ratio else g
+                for g in generations
+            ]
+            prefixes = ["[GEN]" if g == [""] else "[CRT]" for g in generations]
             # get molecule tokens
             encoder_input_ids = self.tokenize(
                 reactants,
@@ -1702,7 +1716,7 @@ class SelfCorrector(EnzymaticReactionEncoder):
                 list_of_predictions=generations,
             )
             decoder_input_ids = self.tokenize(
-                products, self.tokenizer, self.args, prefix="[CRT]", suffix="[EOS]"
+                products, self.tokenizer, self.args, prefix=prefixes, suffix="[EOS]"
             )
 
         else:
@@ -1896,6 +1910,7 @@ class SelfCorrector(EnzymaticReactionEncoder):
             attention_mask=encoder_attention_mask,
             generation_config=self.generation_config,
         )
+        generated_ids.sequences = generated_ids.sequences[:, 1:]  # first token is [GEN]
         generated_raw_samples = self.tokenizer.batch_decode(
             generated_ids.sequences, skip_special_tokens=True
         )
@@ -1955,6 +1970,8 @@ class SelfCorrector(EnzymaticReactionEncoder):
                 generation_config=self.generation_config,
             )
 
+            # first token is [CRT]
+            generated_ids.sequences = generated_ids.sequences[:, 1:]
             generated_raw_samples = self.tokenizer.batch_decode(
                 generated_ids.sequences, skip_special_tokens=True
             )
@@ -1998,4 +2015,10 @@ class SelfCorrector(EnzymaticReactionEncoder):
             type=int,
             default=1,
             help="number of iterations through corrector",
+        )
+        parser.add_argument(
+            "--generations_ratio",
+            type=int,
+            default=0.5,
+            help="ratio of generations (vs corrections) when training corrector",
         )
