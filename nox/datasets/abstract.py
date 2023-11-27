@@ -3,6 +3,8 @@ import argparse
 from typing import List, Literal
 from abc import ABCMeta, abstractmethod
 import json
+import pickle
+import os
 from collections import Counter
 import numpy as np
 from torch.utils import data
@@ -38,7 +40,15 @@ class AbstractDataset(data.Dataset, Nox):
 
         self.init_class(args, split_group)
 
-        self.dataset = self.create_dataset(split_group)
+        if args.dataset_cache_path is not None:
+            try:
+                self.dataset = pickle.load(open(args.dataset_cache_path, "rb"))
+            except:
+                self.dataset = self.create_dataset(split_group)
+                pickle.dump(self.dataset, open(args.dataset_cache_path, "wb"))
+        else:
+            self.dataset = self.create_dataset(split_group)
+
         if len(self.dataset) == 0:
             return
 
@@ -273,4 +283,11 @@ class AbstractDataset(data.Dataset, Nox):
             action=set_nox_type("input_loader"),
             default=None,
             help="input loader",
+        )
+        # cache dataset
+        parser.add_argument(
+            "--dataset_cache_path",
+            type=str,
+            default=None,
+            help="path to dataset cache",
         )
