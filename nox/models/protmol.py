@@ -32,6 +32,35 @@ import torch.distributed as dist
 from nox.utils.loading import concat_all_gather, all_gather_with_grad
 
 
+def invert_attention_mask(encoder_attention_mask, dtype=torch.float32):
+    """
+    Invert an attention mask (e.g., switches 0. and 1.).
+
+    Args:
+        encoder_attention_mask (`torch.Tensor`): An attention mask.
+
+    Returns:
+        `torch.Tensor`: The inverted attention mask.
+    """
+    if encoder_attention_mask.dim() == 3:
+        encoder_extended_attention_mask = encoder_attention_mask[:, None, :, :]
+    if encoder_attention_mask.dim() == 2:
+        encoder_extended_attention_mask = encoder_attention_mask[:, None, None, :]
+    # T5 has a mask that can compare sequence ids, we can simulate this here with this transposition
+    # Cf. https://github.com/tensorflow/mesh/blob/8d2465e9bc93129b913b5ccc6a59aa97abd96ec6/mesh_tensorflow
+    # /transformer/transformer_layers.py#L270
+    # encoder_extended_attention_mask = (encoder_extended_attention_mask ==
+    # encoder_extended_attention_mask.transpose(-1, -2))
+    encoder_extended_attention_mask = encoder_extended_attention_mask.to(
+        dtype=dtype
+    )  # fp16 compatibility
+    encoder_extended_attention_mask = (
+        1.0 - encoder_extended_attention_mask
+    ) * torch.finfo(dtype).min
+
+    return encoder_extended_attention_mask
+
+
 @register_object("protmol_clip", "model")
 class ProteinMoleculeCLIP(AbstractModel):
     def __init__(self, args):
@@ -997,6 +1026,26 @@ class ProteinMoleculeCLIPMultiObj(AbstractModel):
             action="store_true",
             default=False,
             help="use gat implementation.",
+        )
+        parser.add_argument(
+            "--egnn_name",
+            type=str,
+            action=set_nox_type("model"),
+            default="egnn_sparse_network",
+            help="mlp",
+        )
+        parser.add_argument(
+            "--predict_ecs",
+            action="store_true",
+            default=False,
+            help="do ec classification.",
+        )
+        parser.add_argument(
+            "--ec_classifier",
+            type=str,
+            action=set_nox_type("model"),
+            default="mlp_classifier",
+            help="mlp",
         )
 
 
@@ -2506,10 +2555,13 @@ class ProteinMoleculeCLIPMultiObjSmallCGRHeid(AbstractModel):
         self.protein_tokenizer = AutoTokenizer.from_pretrained(args.esm_model_version)
         config = EsmConfig.from_pretrained(args.esm_model_version)
         config.cross_attention_freq = args.cross_attention_frequency
-        self.protein_encoder = EsmModel.from_pretrained(
-            args.esm_model_version, config=config
-        )
-
+        if args.use_protein_graphs:
+            self.egnn = get_object(args.egnn_name, "model")(args)
+            self.egnn_mask = nn.Parameter(torch.randn(1, config.hidden_size))
+        else:
+            self.protein_encoder = EsmModel.from_pretrained(
+                args.esm_model_version, config=config
+            )
         args.vocab_size = config.vocab_size
         self.register_buffer("devicevar", torch.zeros(1, dtype=torch.int8))
 
@@ -2545,6 +2597,12 @@ class ProteinMoleculeCLIPMultiObjSmallCGRHeid(AbstractModel):
             )
         else:
             self.matching_pair_head = nn.Linear(hidden_size, 2)
+
+        self.predict_ecs = getattr(args, "predict_ecs", False)
+        if self.predict_ecs:
+            ec_args = copy.deepcopy(args)
+            ec_args.num_classes = len(args.ec_levels["4"].values())
+            self.ec_classifier = get_object(args.ec_classifier, "model")(ec_args)
 
         if args.protmol_clip_model_path is not None:
             state_dict = torch.load(args.protmol_clip_model_path)
@@ -2623,11 +2681,12 @@ class ProteinMoleculeCLIPMultiObjSmallCGRHeid(AbstractModel):
 
         encoder_input_ids = self.protein_tokenizer(
             batch["sequence"],
-            padding="max_length",  # change to "max_length"
+            padding="longest",  # change to "max_length"
             return_tensors="pt",
             return_special_tokens_mask=True,
             max_length=self.args.max_protein_length,
             truncation=True,
+            add_special_tokens=not self.args.use_protein_graphs,  # do not use cls or eos with graph
         )
 
         # move to device
@@ -2641,15 +2700,36 @@ class ProteinMoleculeCLIPMultiObjSmallCGRHeid(AbstractModel):
             for k, v in encoder_input_ids.items()
         }  # clone to use in MLM, otherwise it will be used in a forward method then modified which raises grad errors
 
-        special_tokens_mask = encoder_input_ids.pop("special_tokens_mask")
-        output = self.protein_encoder(**encoder_input_ids)
-        encoder_input_ids["special_tokens_mask"] = special_tokens_mask
+        if self.args.use_protein_graphs:
+            feats, coors = self.egnn(batch)
+            try:
+                batch_idxs = batch["graph"]["receptor"].batch
+            except:
+                batch_idxs = batch["receptor"].batch
+            encoder_hidden_states, mask = to_dense_batch(feats, batch_idxs)
+            hidden = scatter(
+                feats,
+                batch_idxs,
+                dim=0,
+                reduce=self.args.pool_type,
+            )
+            output = {
+                "last_hidden_state": encoder_hidden_states,
+                "attention_mask": mask,
+                "hidden": hidden,
+            }
+        else:
+            special_tokens_mask = encoder_input_ids.pop("special_tokens_mask")
+            output = self.protein_encoder(**encoder_input_ids)
+            encoder_input_ids["special_tokens_mask"] = special_tokens_mask
+            output["hidden"] = output[:, 0]  # cls token
 
         return encoder_input_ids, encoder_input_ids_clone, output
 
     def set_decoder_status(self, status: bool):
-        self.protein_encoder.config.is_decoder = status
-        self.protein_encoder.is_decoder = status
+        if not self.args.use_protein_graphs:
+            self.protein_encoder.config.is_decoder = status
+            self.protein_encoder.is_decoder = status
 
     def forward(self, batch) -> Dict:
         output = {}
@@ -2765,6 +2845,7 @@ class ProteinMoleculeCLIPMultiObjSmallCGRHeid(AbstractModel):
             dim=1, keepdim=True
         )
         protein_aa_attention_mask = protein_input_dict["attention_mask"]
+        protein_pooled_features = protein_features["hidden"]
 
         output.update(
             {
@@ -2777,7 +2858,7 @@ class ProteinMoleculeCLIPMultiObjSmallCGRHeid(AbstractModel):
         # prob( node involved in reaction | protein )
         if self.args.do_reaction_node_task:
             protein_cls = torch.repeat_interleave(
-                protein_aa_features[:, 0], torch.bincount(batch["mol"].batch), dim=0
+                protein_pooled_features, torch.bincount(batch["mol"].batch), dim=0
             )  # use CLS for protein encoding and repeat for each molecule
             substrate_nodes = torch.cat(
                 [substrate_features["node_features"], protein_cls], dim=-1
@@ -2788,7 +2869,9 @@ class ProteinMoleculeCLIPMultiObjSmallCGRHeid(AbstractModel):
 
         ###========== Molecule - Protein Matching ==========###
         if self.args.do_matching_task:
-            if self.args.gather_representations_for_matching:  # gather
+            if (self.args.gather_representations_for_matching) and (
+                int(self.args.gpus) > 1
+            ):  # gather
                 substrate_features_all = concat_all_gather(substrate_graph_features)
                 protein_features_all = concat_all_gather(protein_aa_features)
                 # protein_input_ids = concat_all_gather(protein_input_dict.input_ids)
@@ -2894,13 +2977,9 @@ class ProteinMoleculeCLIPMultiObjSmallCGRHeid(AbstractModel):
 
             matching_output = self.matching_layer(
                 hidden_states=prot_ids_all,
-                attention_mask=self.protein_encoder.invert_attention_mask(
-                    prot_atts_all
-                ),
+                attention_mask=invert_attention_mask(prot_atts_all),
                 encoder_hidden_states=mol_nodes_all,
-                encoder_attention_mask=self.protein_encoder.invert_attention_mask(
-                    mol_atts_all
-                ),
+                encoder_attention_mask=invert_attention_mask(mol_atts_all),
             )
 
             matching_logits = self.matching_pair_head(matching_output[0])
@@ -2927,9 +3006,11 @@ class ProteinMoleculeCLIPMultiObjSmallCGRHeid(AbstractModel):
             sequence_annotation = torch.zeros_like(
                 protein_input_dict_clone["input_ids"]
             ).float()
-            sequence_annotation[
-                :, 1 : batch["sequence_annotation"].shape[-1] + 1
-            ] = batch["sequence_annotation"]
+            if self.args.use_protein_graphs:
+                annot_begin, annot_end = 0, batch["sequence_annotation"].shape[-1]
+            else:
+                annot_begin, annot_end = 1, batch["sequence_annotation"].shape[-1] + 1
+            sequence_annotation[:, annot_begin:annot_end] = batch["sequence_annotation"]
 
             # get masked inputs
             masked_inputs, mlm_labels, mlm_attention_mask = self.torch_mask_tokens(
@@ -2937,27 +3018,33 @@ class ProteinMoleculeCLIPMultiObjSmallCGRHeid(AbstractModel):
                 protein_input_dict_clone["special_tokens_mask"],
                 sequence_annotation,
             )
+            if self.args.use_protein_graphs:
+                mask_indices = masked_inputs.eq(self.protein_tokenizer.mask_token_id)
+                mask_indices = mask_indices[
+                    protein_input_dict_clone["attention_mask"].bool()
+                ]
+                batch["graph"]["receptor"].x[mask_indices] = self.egnn_mask
+                feats, coors = self.egnn(batch)
+                batch_idxs = batch["graph"]["receptor"].batch
+                mlm_output, mlm_attention_mask = to_dense_batch(feats, batch_idxs)
+            else:
+                mlm_output = self.protein_encoder(
+                    input_ids=masked_inputs,
+                    attention_mask=mlm_attention_mask,
+                    # encoder_hidden_states=node_features_dense,
+                    # encoder_attention_mask=node_attention_mask,
+                    output_hidden_states=True,
+                    return_dict=True,
+                )
+                mlm_output = mlm_output[0]
 
-            mlm_output = self.protein_encoder(
-                input_ids=masked_inputs,
-                attention_mask=mlm_attention_mask,
-                # encoder_hidden_states=node_features_dense,
-                # encoder_attention_mask=node_attention_mask,
-                output_hidden_states=True,
-                return_dict=True,
-            )
             matching_output = self.matching_layer(
-                hidden_states=mlm_output[0],
-                attention_mask=self.protein_encoder.invert_attention_mask(
-                    mlm_attention_mask
-                ),
+                hidden_states=mlm_output,
+                attention_mask=invert_attention_mask(mlm_attention_mask),
                 encoder_hidden_states=node_features_dense,
-                encoder_attention_mask=self.protein_encoder.invert_attention_mask(
-                    node_attention_mask
-                ),
+                encoder_attention_mask=invert_attention_mask(node_attention_mask),
             )
-
-            sequence_output = mlm_output[0]
+            sequence_output = matching_output[0]
             prediction_scores = self.mlm_head(sequence_output)
             output[
                 "mlm_logits"
