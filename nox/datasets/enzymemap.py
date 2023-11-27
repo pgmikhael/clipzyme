@@ -1,31 +1,34 @@
 from typing import List, Literal
-from nox.utils.registry import register_object
+from nox.utils.registry import register_object, get_object
 from nox.datasets.abstract import AbstractDataset
 from tqdm import tqdm
 import argparse
 import pickle
-from rxn.chemutils.smiles_randomization import randomize_smiles_rotated
-from nox.utils.smiles import (
-    get_rdkit_feature,
-    remove_atom_maps,
-    assign_dummy_atom_maps,
-    generate_scaffold,
-)
-from nox.utils.pyg import from_smiles, from_mapped_smiles
 import warnings
 import copy, os
 import numpy as np
 import random
+from random import Random
 from collections import defaultdict, Counter
 import rdkit
+from rdkit import Chem
+from rdkit.Chem import AllChem as rdk
 import torch
+from torch_geometric.data import HeteroData, Data, Batch, Dataset
 import hashlib
 import json
 from Bio.Data.IUPACData import protein_letters_3to1
 from esm import pretrained
 import Bio
 import Bio.PDB
-from collections import Counter
+from rxn.chemutils.smiles_randomization import randomize_smiles_rotated
+
+from nox.utils.smiles import (
+    get_rdkit_feature,
+    remove_atom_maps,
+    assign_dummy_atom_maps,
+    generate_scaffold,
+)
 from nox.utils.protein_utils import (
     read_structure_file,
     filter_resolution,
@@ -35,15 +38,10 @@ from nox.utils.protein_utils import (
     compute_node_embedding,
     get_sequences,
 )
+from nox.utils.pyg import from_smiles, from_mapped_smiles
 from nox.utils.wln_processing import get_bond_changes
-from torch_geometric.data import HeteroData, Data, Batch, Dataset
-import argparse
-from nox.models.wln import WLDN_Cache
 from nox.utils.amino_acids import AA_TO_SMILES
-from random import Random
-from rdkit import Chem
-from rdkit.Chem import AllChem as rdk
-
+from nox.models.wln import WLDN_Cache
 
 ESM_MODEL2HIDDEN_DIM = {
     "esm2_t48_15B_UR50D": 5120,
@@ -95,7 +93,7 @@ class EnzymeMap(AbstractDataset):
         self.version = args.version
         self.load_dataset(args)
 
-        self.valid_ec2uniprot = {}
+        self.valid_ec2uniprot = defaultdict(set)
 
         self.ec2uniprot = pickle.load(
             open(
@@ -109,6 +107,9 @@ class EnzymeMap(AbstractDataset):
                 "rb",
             )
         )
+        self.uniprot2sequence_len = {
+            k: 0 if v is None else len(v) for k, v in self.uniprot2sequence.items()
+        }
         self.uniprot2cluster = pickle.load(
             # open(
             #     "/Mounts/rbg-storage1/datasets/Enzymes/EnzymeMap/mmseq_clusters.p",  # TODO
@@ -223,7 +224,6 @@ class EnzymeMap(AbstractDataset):
                     "products": products,
                     "ec": ec,
                     "protein_id": uniprot,
-                    "sequence": self.uniprot2sequence.get(uniprot, None),
                     "protein_db": reaction.get("protein_db", ""),
                     "protein_refs": protein_refs,
                     "organism": reaction.get("organism", ""),
@@ -267,7 +267,7 @@ class EnzymeMap(AbstractDataset):
             return True
 
         # if sequence is unknown
-        sequence = sample["sequence"]
+        sequence = self.uniprot2sequence.get(sample["protein_id"], None)
         if (sequence is None) or (len(sequence) == 0):
             return True
 
@@ -276,18 +276,19 @@ class EnzymeMap(AbstractDataset):
         ) > self.args.max_protein_length:
             return True
 
-        for mol in sample["reactants"]:
-            if not (mol in self.mol2size):
-                self.mol2size[mol] = rdkit.Chem.MolFromSmiles(mol).GetNumAtoms()
+        if self.args.max_reactant_size is not None:
+            for mol in sample["reactants"]:
+                if not (mol in self.mol2size):
+                    self.mol2size[mol] = rdkit.Chem.MolFromSmiles(mol).GetNumAtoms()
 
-            if self.args.max_reactant_size is not None:
                 if self.mol2size[mol] > self.args.max_reactant_size:
                     return True
 
-        for mol in sample["products"]:
-            if not (mol in self.mol2size):
-                self.mol2size[mol] = rdkit.Chem.MolFromSmiles(mol).GetNumAtoms()
-            if self.args.max_product_size is not None:
+        if self.args.max_product_size is not None:
+            for mol in sample["products"]:
+                if not (mol in self.mol2size):
+                    self.mol2size[mol] = rdkit.Chem.MolFromSmiles(mol).GetNumAtoms()
+
                 if self.mol2size[mol] > self.args.max_product_size:
                     return True
             # if self.mol2size[mol] < 2:
@@ -321,8 +322,8 @@ class EnzymeMap(AbstractDataset):
             )
 
             ec = sample["ec"]
-            uniprot_id = sample["uniprot_id"]
-            sequence = self.uniprot2sequence[uniprot_id]
+            uniprot_id = sample.get("uniprot_id", "unk")
+            sequence = self.uniprot2sequence.get(uniprot_id, "<unk>")
 
             reaction = "{}>>{}".format(".".join(reactants), ".".join(products))
             # randomize order of reactants and products
@@ -340,8 +341,10 @@ class EnzymeMap(AbstractDataset):
                     pass
 
             # remove atom-mapping if applicable
-            reactants = remove_atom_maps(".".join(reactants))
-            products = remove_atom_maps(".".join(products))
+            reactants = ".".join(reactants)
+            products = ".".join(products)
+            # reactants = remove_atom_maps(reactants)
+            # products = remove_atom_maps(products)
 
             # remove stereochemistry
             if self.args.remove_stereochemistry:
@@ -373,7 +376,7 @@ class EnzymeMap(AbstractDataset):
 
             split_ec = ec.split(".")
             for k, v in self.args.ec_levels.items():
-                item[f"ec{k}"] = v[".".join(split_ec[: int(k)])]
+                item[f"ec{k}"] = v.get(".".join(split_ec[: int(k)]), -1)
 
             if self.args.use_pesto_scores:
                 scores = self.get_pesto_scores(item["protein_id"])
@@ -649,8 +652,7 @@ class EnzymeMap(AbstractDataset):
         for sample in processed_dataset:
             # check right split
             if self.args.split_type == "ec":
-                ec = sample["ec"]
-                split_ec = ".".join(ec.split(".")[: self.args.ec_level + 1])
+                split_ec = sample[f"ec{self.args.ec_level + 1}"]
                 if self.to_split[split_ec] != split_group:
                     continue
 
@@ -966,6 +968,18 @@ class EnzymeMap(AbstractDataset):
             type=str,
             default="1",
             help="enzyme map version number",
+        )
+        parser.add_argument(
+            "--convert_graph_to_smiles",
+            action="store_true",
+            default=False,
+            help="for sequence based methods",
+        )
+        parser.add_argument(
+            "--reaction_to_products_dir",
+            type=str,
+            default=None,
+            help="cache for post process step",
         )
 
     @property
@@ -1745,24 +1759,37 @@ class EnzymeMapSubstrate(EnzymeMap):
 @register_object("enzymemap_reaction_graph", "dataset")
 class EnzymeMapGraph(EnzymeMap):
     def post_process(self, args):
-        # add all possible products
-        reaction_to_products = defaultdict(set)
-        for sample in self.dataset:
-            key = (
-                f"{sample['ec']}{'.'.join(sample['reactants'])}"
-                if args.create_sample_per_sequence
-                else ".".join(sample["reactants"])
-            )
-            reaction_to_products[key].add(
-                (
-                    ".".join(sample["products"]),
-                    stringify_sets(sorted(sample["bond_changes"])),
+        def make_reaction_to_products():
+            reaction_to_products = defaultdict(set)
+            if args.create_sample_per_sequence:
+                key = lambda sample: f"{sample['ec']}{'.'.join(sample['reactants'])}"
+            else:
+                key = lambda sample: ".".join(sample["reactants"])
+            for sample in tqdm(self.dataset, desc="post-processing", ncols=100):
+                reaction_to_products[key(sample)].add(
+                    (
+                        ".".join(sample["products"]),
+                        stringify_sets(sorted(sample["bond_changes"])),
+                    )
                 )
-            )
-        self.reaction_to_products = reaction_to_products
+            return reaction_to_products
+
+        # add all possible products
+        if args.reaction_to_products_dir is not None:
+            if not os.path.exists(args.reaction_to_products_dir):
+                os.makedirs(args.reaction_to_products_dir)
+            path = f"{args.reaction_to_products_dir}/{self.split_group}.p"
+            if os.path.exists(path):
+                self.reaction_to_products = pickle.load(open(path, "rb"))
+            else:
+                self.reaction_to_products = make_reaction_to_products()
+                pickle.dump(self.reaction_to_products, open(path, "wb"))
+        else:
+            self.reaction_to_products = make_reaction_to_products()
 
         # set ec levels to id for use in modeling
-        ecs = [d["ec"].split(".") for d in self.dataset]
+        ecs = set(d["ec"] for d in self.dataset)
+        ecs = [e.split(".") for e in ecs]
         args.ec_levels = {}
         for level in range(1, 5, 1):
             unique_classes = sorted(list(set(".".join(ec[:level]) for ec in ecs)))
@@ -1798,15 +1825,20 @@ class EnzymeMapGraph(EnzymeMap):
             else "products"
         )
 
+        self.mol2size = {}
+
         for rowid, reaction in tqdm(
             enumerate(self.metadata_json),
             desc="Building dataset",
             total=len(self.metadata_json),
             ncols=100,
         ):
-            self.mol2size = {}
-
             ec = reaction["ec"]
+            eclevels_dict = {
+                f"ec{ec_level+1}": ".".join(ec.split(".")[: (ec_level + 1)])
+                for ec_level, _ in enumerate(ec.split("."))
+            }
+            organism = reaction.get("organism", "")
 
             reactants = sorted([s for s in reaction[rkey] if s != "[H+]"])
             products = sorted([s for s in reaction[pkey] if s != "[H+]"])
@@ -1835,34 +1867,7 @@ class EnzymeMapGraph(EnzymeMap):
                     alluniprots = self.ec2uniprot.get(ec, [])
 
             if self.args.create_sample_per_sequence or self.args.sample_uniprot_per_ec:
-                valid_uniprots = []
                 for uniprot in alluniprots:
-                    temp_sample = {
-                        "df_row": rowid,
-                        "bond_changes": bond_changes,
-                        "quality": reaction["quality"],
-                        "reactants": reactants,
-                        "products": products,
-                        "ec": ec,
-                        "protein_id": uniprot,
-                        "sequence": self.uniprot2sequence.get(uniprot, None),
-                        "protein_db": reaction.get("protein_db", ""),
-                        "protein_refs": protein_refs,
-                        "organism": reaction.get("organism", ""),
-                    }
-                    if self.skip_sample(temp_sample, split_group):
-                        continue
-
-                    valid_uniprots.append(uniprot)
-
-                if len(valid_uniprots) == 0:
-                    continue
-
-            if (self.args.sample_uniprot_per_ec) and (ec not in self.valid_ec2uniprot):
-                self.valid_ec2uniprot[ec] = valid_uniprots
-
-            if self.args.create_sample_per_sequence:
-                for uniprot in valid_uniprots:
                     sample = {
                         "df_row": rowid,
                         "quality": reaction["quality"],
@@ -1870,72 +1875,115 @@ class EnzymeMapGraph(EnzymeMap):
                         "products": products,
                         "ec": ec,
                         "rowid": reaction["rxnid"],
-                        "sample_id": f"{uniprot}_{reaction['rxnid']}",
+                        "sample_id": f"{uniprot}_{reaction['rxnid']}_{rowid}",
                         "uniprot_id": uniprot,
                         "protein_id": uniprot,
                         "bond_changes": list(bond_changes),
-                        "split": reaction["split"],
-                        "organism": reaction.get("organism", ""),
+                        "split": reaction.get("split", None),
+                        "protein_refs": protein_refs,
+                        "protein_db": reaction.get("protein_db", ""),
                     }
-                    unique_sample_content = (
-                        f"{reaction_string}{uniprot}{reaction.get('organism', '')}"
-                    )
-                    hashed_sample_content = hashlib.sha256(
-                        unique_sample_content.encode("utf-8")
-                    ).hexdigest()
-                    sample["hash_sample_id"] = hashed_sample_content
+                    sample.update(eclevels_dict)
 
-                    for ec_level, _ in enumerate(ec.split(".")):
-                        sample[f"ec{ec_level+1}"] = ".".join(
-                            ec.split(".")[: (ec_level + 1)]
-                        )
-
-                    try:
-                        # make prot graph if missing
-                        if self.args.use_protein_graphs:
-                            graph_path = os.path.join(
-                                self.args.protein_graphs_dir,
-                                "processed",
-                                f"{sample['uniprot_id']}_graph.pt",
-                            )
-                            structure_path = os.path.join(
-                                self.args.protein_structures_dir,
-                                f"AF-{sample['uniprot_id']}-F1-model_v4.cif",
-                            )
-                            if not os.path.exists(structure_path):
-                                continue
-                            if not os.path.exists(graph_path):
-                                print("Generating none existent protein graph")
-                                data = self.create_protein_graph(sample)
-                                if data is None:
-                                    raise Exception("Could not generate protein graph")
-                                torch.save(data, graph_path)
-
-                    except Exception as e:
-                        print(f"Error processing {sample['sample_id']} because of {e}")
+                    if self.skip_sample(sample, split_group):
                         continue
 
-                    # add reaction sample to dataset
-                    if self.args.split_multiproduct_samples:
-                        for product_id, p in enumerate(products):
-                            psample = copy.deepcopy(sample)
-                            psample["products"] = [p]
-                            psample["sample_id"] += f"_{product_id}"
-                            preaction_string = "{}>>{}".format(
-                                ".".join(psample["reactants"]), p
-                            )
-                            uniprot = psample["uniprot_id"]
-                            punique_sample_content = (
-                                f"{preaction_string}{uniprot}{psample['organism']}"
-                            )
-                            phashed_sample_content = hashlib.sha256(
-                                punique_sample_content.encode("utf-8")
-                            ).hexdigest()
-                            psample["hash_sample_id"] = phashed_sample_content
-                            dataset.append(psample)
-                    else:
-                        dataset.append(sample)
+                    if self.args.sample_uniprot_per_ec:
+                        self.valid_ec2uniprot[ec].add(uniprot)
 
+                        sample = {
+                            "df_row": rowid,
+                            "quality": reaction["quality"],
+                            "reactants": reactants,
+                            "products": products,
+                            "ec": ec,
+                            "rowid": reaction["rxnid"],
+                            "sample_id": str(reaction["rxnid"]),
+                            "uniprot_id": "",
+                            "protein_id": "",
+                            "sequence": "X",
+                            "bond_changes": list(bond_changes),
+                            "split": reaction.get("split", None),
+                            "protein_refs": protein_refs,
+                        }
+                        sample.update(eclevels_dict)
+
+                        if self.args.split_type == "ec_hold_out":
+                            unique_sample_content = f"{reaction_string}"
+                            hashed_sample_content = hashlib.sha256(
+                                unique_sample_content.encode("utf-8")
+                            ).hexdigest()
+                            sample["hash_sample_id"] = hashed_sample_content
+
+                        if self.args.split_multiproduct_samples:
+                            for product_id, p in enumerate(products):
+                                psample = copy.deepcopy(sample)
+                                psample["products"] = [p]
+                                psample["sample_id"] += f"_{product_id}"
+                                dataset.append(psample)
+
+                        else:
+                            dataset.append(sample)
+
+                    else:
+                        if self.args.split_type == "ec_hold_out":
+                            unique_sample_content = (
+                                f"{reaction_string}{uniprot}{organism}"
+                            )
+                            hashed_sample_content = hashlib.sha256(
+                                unique_sample_content.encode("utf-8")
+                            ).hexdigest()
+                            sample["hash_sample_id"] = hashed_sample_content
+
+                        try:
+                            # make prot graph if missing
+                            if self.args.use_protein_graphs:
+                                graph_path = os.path.join(
+                                    self.args.protein_graphs_dir,
+                                    "processed",
+                                    f"{sample['uniprot_id']}_graph.pt",
+                                )
+                                structure_path = os.path.join(
+                                    self.args.protein_structures_dir,
+                                    f"AF-{sample['uniprot_id']}-F1-model_v4.cif",
+                                )
+                                if not os.path.exists(structure_path):
+                                    continue
+                                if not os.path.exists(graph_path):
+                                    print("Generating none existent protein graph")
+                                    data = self.create_protein_graph(sample)
+                                    if data is None:
+                                        raise Exception(
+                                            "Could not generate protein graph"
+                                        )
+                                    torch.save(data, graph_path)
+
+                        except Exception as e:
+                            print(
+                                f"Error processing {sample['sample_id']} because of {e}"
+                            )
+                            continue
+
+                        # add reaction sample to dataset
+                        if self.args.split_multiproduct_samples:
+                            for product_id, p in enumerate(products):
+                                psample = copy.deepcopy(sample)
+                                psample["products"] = [p]
+                                psample["sample_id"] += f"_{product_id}"
+                                preaction_string = "{}>>{}".format(
+                                    ".".join(psample["reactants"]), p
+                                )
+                                uniprot = psample["uniprot_id"]
+                                punique_sample_content = (
+                                    f"{preaction_string}{uniprot}{psample['organism']}"
+                                )
+                                phashed_sample_content = hashlib.sha256(
+                                    punique_sample_content.encode("utf-8")
+                                ).hexdigest()
+                                psample["hash_sample_id"] = phashed_sample_content
+                                dataset.append(psample)
+                        else:
+                            dataset.append(sample)
             else:
                 sample = {
                     "df_row": rowid,
@@ -1949,7 +1997,7 @@ class EnzymeMapGraph(EnzymeMap):
                     "protein_id": "",
                     "sequence": "X",
                     "bond_changes": list(bond_changes),
-                    "split": reaction["split"],
+                    "split": reaction.get("split", None),
                     "protein_refs": protein_refs,
                 }
 
@@ -1959,10 +2007,7 @@ class EnzymeMapGraph(EnzymeMap):
                 ).hexdigest()
                 sample["hash_sample_id"] = hashed_sample_content
 
-                for ec_level, _ in enumerate(ec.split(".")):
-                    sample[f"ec{ec_level+1}"] = ".".join(
-                        ec.split(".")[: (ec_level + 1)]
-                    )
+                sample.update(eclevels_dict)
 
                 if self.skip_sample(sample, split_group):
                     continue
@@ -2196,7 +2241,7 @@ class ReactionGraphInference(AbstractDataset):
                 "protein_id": uniprot,
                 "sequence": sequence,
             }
-            if self.skip_sample(temp_sample, split_group):
+            if self.skip_sample(sample, split_group):
                 continue
 
             dataset.append(sample)
@@ -2235,7 +2280,7 @@ class ReactionGraphInference(AbstractDataset):
             uniprot_id = sample["uniprot_id"]
             sequence = sample["sequence"]
             reaction = ".".join(reactants)
-            reactants = assign_fake_atom_maps(reaction)
+            reactants = assign_dummy_atom_maps(reaction)
             reactants, atom_map2new_index = from_mapped_smiles(
                 ".".join(reactants), encode_no_edge=True
             )
@@ -2537,11 +2582,8 @@ class EnzymeMapSubstrateBLIP(EnzymeMapSubstrate):
         pass
 
 
-from nox.utils.registry import get_object
-
-
 @register_object("enzyme_map+uspto_graph", "dataset")
-class EMap_USPTO(EnzymeMapGraph):
+class EMap_USPTOGraph(EnzymeMapGraph):
     def __init__(self, args, split_group) -> None:
         super().__init__(args, split_group)
 
@@ -2561,6 +2603,52 @@ class EMap_USPTO(EnzymeMapGraph):
             d["dataset"] = "emap"
 
         self.dataset = emap_dataset + uspto_dataset
+        self.set_sample_weights(args)
+        self.print_summary_statement(self.dataset, split_group)
+
+    @staticmethod
+    def add_args(parser):
+        EnzymeMap.add_args(parser)
+        parser.add_argument(
+            "--uspto_dataset_file_path", default=None, help="path to file path"
+        )
+        parser.add_argument(
+            "--emap_dataset_file_path", default=None, help="path to file path"
+        )
+
+
+@register_object("enzyme_map+uspto", "dataset")
+class EMap_USPTO(EnzymeMap):
+    def __init__(self, args, split_group) -> None:
+        super().__init__(args, split_group)
+
+        emap_dataset = self.dataset
+        cargs = copy.deepcopy(args)
+        cargs.dataset_file_path = args.uspto_dataset_file_path
+        if split_group == "train":
+            uspto_dataset = get_object("chemical_reactions", "dataset")(
+                cargs, split_group
+            ).dataset
+        else:
+            uspto_dataset = []
+
+        for d in uspto_dataset:
+            d["dataset"] = "uspto"
+        for d in emap_dataset:
+            d["dataset"] = "emap"
+
+        if split_group == "train":
+            self.dataset = emap_dataset + uspto_dataset
+        else:
+            self.dataset = emap_dataset
+
+        reaction_to_products = defaultdict(set)
+        for sample in uspto_dataset:
+            key = f"{sample['ec']}{'.'.join(sample['reactants'])}"
+            reaction_to_products[key].add(".".join(sample["products"]))
+        self.reaction_to_products.update(reaction_to_products)
+
+        self.dataset = self.dataset
         self.set_sample_weights(args)
         self.print_summary_statement(self.dataset, split_group)
 
