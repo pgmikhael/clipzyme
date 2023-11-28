@@ -1703,7 +1703,9 @@ class SelfCorrector(EnzymaticReactionEncoder):
 
             # mix with [GEN] task
             generations = [
-                [""]*len(g) if np.random.uniform() < self.args.generations_ratio else g
+                [""] * len(g)
+                if np.random.uniform() < self.args.generations_ratio
+                else g
                 for g in generations
             ]
             prefixes = ["[GEN]" if g == [""] else "[CRT]" for g in generations]
@@ -1936,8 +1938,8 @@ class SelfCorrector(EnzymaticReactionEncoder):
             self.generation_config.decoder_start_token_id = (
                 self.tokenizer.convert_tokens_to_ids("[CRT]")
             )
-            self.generation_config.generation_num_beams = 1
-            self.generation_config.generation_num_return_sequences = 1
+            self.generation_config.num_beams = 1
+            self.generation_config.num_return_sequences = 1
 
             # add product to input
             reactants, sequences = [], []
