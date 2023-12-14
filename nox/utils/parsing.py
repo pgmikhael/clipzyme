@@ -249,6 +249,12 @@ def get_parser():
         default=1,
         help="The replicate number for the experiment for running same experiments multiple times",
     )
+    parser.add_argument(
+        "--shuffle_eval_loader",
+        action="store_true",
+        default=False,
+        help="shuffle the dev and test datasets",
+    )
 
     # -------------------------------------
     # Data
