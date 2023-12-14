@@ -227,6 +227,7 @@ class EnzymeMap(AbstractDataset):
                     "protein_db": reaction.get("protein_db", ""),
                     "protein_refs": protein_refs,
                     "organism": reaction.get("organism", ""),
+                    "rule_id": reaction["rule_id"],
                 }
                 if self.skip_sample(temp_sample, split_group):
                     continue
@@ -246,6 +247,7 @@ class EnzymeMap(AbstractDataset):
                     "uniprot_id": uniprot,
                     "protein_id": uniprot,
                     "organism": reaction.get("organism", ""),
+                    "rule_id": reaction["rule_id"],
                 }
                 if "split" in reaction:
                     sample["split"] = reaction["split"]
@@ -464,6 +466,28 @@ class EnzymeMap(AbstractDataset):
                         for sample in samples[split_indices[i] : split_indices[i + 1]]
                     }
                 )
+
+        elif self.args.split_type == "rule_id":
+            # rule id
+            rules = [reaction["rule_id"] for reaction in metadata_json]
+            rule2count = Counter(rules)
+            samples = sorted(list(set(rules)))
+            np.random.shuffle(samples)
+            samples_cumsum = np.cumsum([rule2count[s] for s in samples])
+            # Find the indices for each quantile
+            split_indices = [
+                np.searchsorted(samples_cumsum, q * samples_cumsum[-1], side="right")
+                for q in np.cumsum(split_probs)
+            ]
+            split_indices = np.concatenate([[0], split_indices])
+            for i in range(len(split_indices) - 1):
+                self.to_split.update(
+                    {
+                        sample: ["train", "dev", "test"][i]
+                        for sample in samples[split_indices[i] : split_indices[i + 1]]
+                    }
+                )
+
         elif self.args.split_type == "ec_hold_out":
             unique_products = set(
                 [
@@ -654,6 +678,10 @@ class EnzymeMap(AbstractDataset):
             if self.args.split_type == "ec":
                 split_ec = sample[f"ec{self.args.ec_level + 1}"]
                 if self.to_split[split_ec] != split_group:
+                    continue
+
+            elif self.args.split_type == "rule_id":
+                if self.to_split[sample["rule_id"]] != split_group:
                     continue
 
             elif self.args.split_type == "mmseqs":
@@ -1775,17 +1803,17 @@ class EnzymeMapGraph(EnzymeMap):
             return reaction_to_products
 
         # add all possible products
-        if args.reaction_to_products_dir is not None:
-            if not os.path.exists(args.reaction_to_products_dir):
-                os.makedirs(args.reaction_to_products_dir)
-            path = f"{args.reaction_to_products_dir}/{self.split_group}.p"
-            if os.path.exists(path):
-                self.reaction_to_products = pickle.load(open(path, "rb"))
-            else:
-                self.reaction_to_products = make_reaction_to_products()
-                pickle.dump(self.reaction_to_products, open(path, "wb"))
-        else:
-            self.reaction_to_products = make_reaction_to_products()
+        # if args.reaction_to_products_dir is not None:
+        #     if not os.path.exists(args.reaction_to_products_dir):
+        #         os.makedirs(args.reaction_to_products_dir)
+        #     path = f"{args.reaction_to_products_dir}/{self.split_group}.p"
+        #     if os.path.exists(path):
+        #         self.reaction_to_products = pickle.load(open(path, "rb"))
+        #     else:
+        #         self.reaction_to_products = make_reaction_to_products()
+        #         pickle.dump(self.reaction_to_products, open(path, "wb"))
+        # else:
+        #     self.reaction_to_products = make_reaction_to_products()
 
         # set ec levels to id for use in modeling
         ecs = set(d["ec"] for d in self.dataset)
@@ -1882,6 +1910,7 @@ class EnzymeMapGraph(EnzymeMap):
                         "split": reaction.get("split", None),
                         "protein_refs": protein_refs,
                         "protein_db": reaction.get("protein_db", ""),
+                        "rule_id": reaction["rule_id"],
                     }
                     sample.update(eclevels_dict)
 
@@ -1905,6 +1934,7 @@ class EnzymeMapGraph(EnzymeMap):
                             "bond_changes": list(bond_changes),
                             "split": reaction.get("split", None),
                             "protein_refs": protein_refs,
+                            "rule_id": reaction["rule_id"],
                         }
                         sample.update(eclevels_dict)
 
@@ -1999,6 +2029,7 @@ class EnzymeMapGraph(EnzymeMap):
                     "bond_changes": list(bond_changes),
                     "split": reaction.get("split", None),
                     "protein_refs": protein_refs,
+                    "rule_id": reaction["rule_id"],
                 }
 
                 unique_sample_content = f"{reaction_string}"
@@ -2080,38 +2111,38 @@ class EnzymeMapGraph(EnzymeMap):
             rowid = sample["rowid"]
 
             # convert bond changes for all_smiles
-            all_smiles_key = (
-                f"{ec}{reactants.smiles}"
-                if self.args.create_sample_per_sequence
-                else reactants.smiles
-            )
-            all_smiles_smiles = [
-                smiles for smiles, _ in self.reaction_to_products[all_smiles_key]
-            ]
-            all_smiles_bond_changes = [
-                destringify_sets(bc)
-                for _, bc in self.reaction_to_products[all_smiles_key]
-            ]
-            all_smiles_bond_changes = [
-                [
-                    (atom_map2new_index[int(u)], atom_map2new_index[int(v)], btype)
-                    for u, v, btype in changes
-                ]
-                for changes in all_smiles_bond_changes
-            ]
-            all_smiles_bond_changes = [
-                set((min(x, y), max(x, y), t) for x, y, t in bc)
-                for bc in all_smiles_bond_changes
-            ]
-            all_smiles = [
-                (prod_smile, prod_bc)
-                for prod_smile, prod_bc in zip(
-                    all_smiles_smiles, all_smiles_bond_changes
-                )
-            ]
+            # all_smiles_key = (
+            #     f"{ec}{reactants.smiles}"
+            #     if self.args.create_sample_per_sequence
+            #     else reactants.smiles
+            # )
+            # all_smiles_smiles = [
+            #     smiles for smiles, _ in self.reaction_to_products[all_smiles_key]
+            # ]
+            # all_smiles_bond_changes = [
+            #     destringify_sets(bc)
+            #     for _, bc in self.reaction_to_products[all_smiles_key]
+            # ]
+            # all_smiles_bond_changes = [
+            #     [
+            #         (atom_map2new_index[int(u)], atom_map2new_index[int(v)], btype)
+            #         for u, v, btype in changes
+            #     ]
+            #     for changes in all_smiles_bond_changes
+            # ]
+            # all_smiles_bond_changes = [
+            #     set((min(x, y), max(x, y), t) for x, y, t in bc)
+            #     for bc in all_smiles_bond_changes
+            # ]
+            # all_smiles = [
+            #     (prod_smile, prod_bc)
+            #     for prod_smile, prod_bc in zip(
+            #         all_smiles_smiles, all_smiles_bond_changes
+            #     )
+            # ]
 
             reaction_nodes = torch.zeros(reactants.x.shape[0])
-            for s in all_smiles_bond_changes:
+            for s in [bond_changes]:
                 for u, v, t in s:
                     reaction_nodes[u] = 1
                     reaction_nodes[v] = 1
@@ -2132,7 +2163,7 @@ class EnzymeMapGraph(EnzymeMap):
                 "sample_id": sample_id,
                 "row_id": rowid,
                 "smiles": products,
-                "all_smiles": all_smiles,
+                "all_smiles": [],  # all_smiles,
                 "quality": sample["quality"]
                 # "bond_changes": stringify_sets(bond_changes)
             }
@@ -2661,3 +2692,10 @@ class EMap_USPTO(EnzymeMap):
         parser.add_argument(
             "--emap_dataset_file_path", default=None, help="path to file path"
         )
+
+
+@register_object("enzyme_map+uspto_val", "dataset")
+class EMap_USPTO_Val(EMap_USPTO):
+    def __init__(self, args, split_group) -> None:
+        split = "dev" if split_group == "train" else split_group
+        super().__init__(args, split)
