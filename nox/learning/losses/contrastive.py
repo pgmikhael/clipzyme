@@ -289,7 +289,7 @@ class CLIPLoss(Nox):
         logit_scale = model.model.logit_scale.exp()
 
         if (len(substrate_features.shape) == 2) and (len(protein_features.shape) == 2):
-            if args.clip_loss_use_gather:
+            if (args.clip_loss_use_gather) and (int(args.gpus) > 1):
                 # gather
                 substrate_features_all = concat_all_gather(substrate_features)
                 protein_features_all = concat_all_gather(protein_features)
@@ -324,7 +324,7 @@ class CLIPLoss(Nox):
                 )
 
         elif len(protein_features.shape) == 3:
-            if args.clip_loss_use_gather:
+            if (args.clip_loss_use_gather) and (int(args.gpus) > 1):
                 substrate_features_all = concat_all_gather(substrate_features)
                 protein_features_all = concat_all_gather(protein_features)
 
