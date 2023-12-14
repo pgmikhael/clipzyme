@@ -194,8 +194,9 @@ def get_eval_dataset_loader(
     Returns:
         data_loader: iterator that returns batches
     """
-    # print("Val dataloader shuffle = True")
-    # shuffle = True
+    if shuffle:
+        rprint("[bold] Eval dataloader shuffle = True")
+
     eval_data = get_object(args.dataset_name, "dataset")(args, split)
 
     if args.strategy == "ddp":
