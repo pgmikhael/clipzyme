@@ -1696,10 +1696,11 @@ class SelfCorrector(EnzymaticReactionEncoder):
                 generation_dict = self.generate(batch)
             generations = generation_dict["batch_raw_samples"]
             # add product to input
-            reactants, products = [], []
+            reactants, products, sequences = [], [], []
             for idx, sample in enumerate(generations):
                 reactants += [batch["reactants"][idx] for s in sample]
                 products += [batch["products"][idx] for s in sample]
+                sequences += [batch["sequence"][idx] for s in sample]
 
             # mix with [GEN] task
             generations = [
@@ -1708,7 +1709,7 @@ class SelfCorrector(EnzymaticReactionEncoder):
                 else g
                 for g in generations
             ]
-            prefixes = ["[GEN]" if g == [""] else "[CRT]" for g in generations]
+            prefixes = ["[GEN]" if k == "" else "[CRT]" for g in generations for k in g]
             # get molecule tokens
             encoder_input_ids = self.tokenize(
                 reactants,
@@ -1744,7 +1745,7 @@ class SelfCorrector(EnzymaticReactionEncoder):
             encoder_outputs,
             encoder_attention_mask,
             protein_embeds,
-        ) = self.encode_reactants_and_enzyme(batch, encoder_input_ids)
+        ) = self.encode_reactants_and_enzyme({"sequence": sequences}, encoder_input_ids)
 
         encoder_hidden_states = encoder_outputs[0]
 
@@ -1783,13 +1784,11 @@ class SelfCorrector(EnzymaticReactionEncoder):
             gen_batch_ids = torch.cat(
                 generation_dict["batch_ids"], dim=0
             )  # generator predictions
-            decoder_shape = min(
-                gen_batch_ids.shape[-1], decoder_input_ids["input_ids"].shape[-1]
-            )
+            decoder_shape = min(gen_batch_ids.shape[-1], labels.shape[-1])
             weights = (
                 torch.eq(
                     gen_batch_ids[:, :decoder_shape],
-                    decoder_input_ids["input_ids"][:, :decoder_shape],
+                    labels[:, :decoder_shape],
                 )
                 .all(1)
                 .int()
