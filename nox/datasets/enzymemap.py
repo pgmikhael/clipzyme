@@ -25,7 +25,7 @@ from rxn.chemutils.smiles_randomization import randomize_smiles_rotated
 
 from nox.utils.smiles import (
     get_rdkit_feature,
-    remove_atom_maps,
+    remove_atom_maps_manual,
     assign_dummy_atom_maps,
     generate_scaffold,
 )
@@ -313,6 +313,17 @@ class EnzymeMap(AbstractDataset):
             ):
                 return True
 
+        if self.args.remove_duplicate_reactions:
+            # reaction = "{}>>{}".format(
+            #     remove_atom_maps_manual(".".join(sample["reactants"])),
+            #     remove_atom_maps_manual(".".join(sample["products"])),
+            # )
+
+            reaction = "{}|{}".format(sample["reaction_string"], sample["uniprot_id"])
+            if reaction in self.unique_reactions:
+                return True
+            self.unique_reactions.add(reaction)
+
         return False
 
     def __getitem__(self, index):
@@ -476,9 +487,12 @@ class EnzymeMap(AbstractDataset):
             samples_cumsum = np.cumsum([rule2count[s] for s in samples])
             # Find the indices for each quantile
             split_indices = [
-                np.searchsorted(samples_cumsum, q * samples_cumsum[-1], side="right")
+                np.searchsorted(
+                    samples_cumsum, np.round(q, 3) * samples_cumsum[-1], side="right"
+                )
                 for q in np.cumsum(split_probs)
             ]
+            split_indices[-1] = len(samples)
             split_indices = np.concatenate([[0], split_indices])
             for i in range(len(split_indices) - 1):
                 self.to_split.update(
@@ -821,7 +835,7 @@ class EnzymeMap(AbstractDataset):
             else:
                 data["receptor"].x = node_embedding
 
-            if len(data["receptor"].seq) != node_embedding.shape[0]:
+            if len(data["receptor"].seq) != data["receptor"].x.shape[0]:
                 return None
 
             return data
@@ -1008,6 +1022,12 @@ class EnzymeMap(AbstractDataset):
             type=str,
             default=None,
             help="cache for post process step",
+        )
+        parser.add_argument(
+            "--remove_duplicate_reactions",
+            action="store_true",
+            default=False,
+            help="remove duplicates",
         )
 
     @property
@@ -1840,6 +1860,9 @@ class EnzymeMapGraph(EnzymeMap):
                 for s in byproducts
             }
 
+        if self.args.remove_duplicate_reactions:
+            self.unique_reactions = set()
+
         dataset = []
 
         rkey = (
@@ -1897,6 +1920,10 @@ class EnzymeMapGraph(EnzymeMap):
             if self.args.create_sample_per_sequence or self.args.sample_uniprot_per_ec:
                 for uniprot in alluniprots:
                     sample = {
+                        "reaction_string": "{}>>{}".format(
+                            ".".join(sorted(reaction["reactants"])),
+                            ".".join(sorted(reaction["products"])),
+                        ),
                         "df_row": rowid,
                         "quality": reaction["quality"],
                         "reactants": reactants,
