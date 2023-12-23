@@ -32,8 +32,6 @@ SMI_REGEX_PATTERN = r"(\[[^\]]+]|Br?|Cl?|N|O|S|P|F|I|b|c|n|o|s|p|\(|\)|\.|=|#|-|
 BAD_TOKS = ["[CLS]", "[SEP]"]  # Default Bad Tokens
 
 
-
-
 def get_rdkit_feature(
     mol: Molecule, radius: int = 2, num_bits: int = 2048, method="morgan_binary"
 ) -> np.ndarray:
@@ -48,7 +46,7 @@ def get_rdkit_feature(
         features_vec = Chem.RDKFingerprint(mol)
     else:
         raise NotImplementedError
-        
+
     features = np.zeros((1,))
     DataStructs.ConvertToNumpyArray(features_vec, features)
 
@@ -610,7 +608,6 @@ def process_reaction_with_product_maps_atoms(rxn, skip_if_not_in_precursors=Fals
     warnings_list = []
 
     for p_map in product_atom_maps:
-
         if skip_if_not_in_precursors and p_map not in precursors_atom_maps:
             products_maps.append(-1)
         elif int(p_map) == 0:
@@ -655,12 +652,20 @@ def standardize_reaction(reaction: str):
     # parsed_input = {k: v.to(self.device) for k, v in encoded_ids.items()}
     # return encoded_ids
 
+
+def remove_atom_maps_manual(smiles: str):
+    """Remove atom maps from smiles string using RegEx"""
+    smi = re.sub(":[0-9]+", "", smiles)
+    return smi
+
+
 def remove_atom_maps(smiles: str, sanitize=True):
     """Remove atom maps from smiles string"""
     mol = Chem.MolFromSmiles(smiles, sanitize=sanitize)
     for atom in mol.GetAtoms():
         atom.SetAtomMapNum(0)
     return Chem.MolToSmiles(mol)
+
 
 def assign_dummy_atom_maps(smiles: str):
     """Assign atom numbers to smiles string for use in graph editing"""
