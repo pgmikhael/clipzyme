@@ -438,7 +438,11 @@ class EnzymeMap(AbstractDataset):
                 self.args.split_type == "mmseqs"
                 or self.args.split_type == "mmseqs_precomputed"
             ):
-                samples = list(self.uniprot2cluster.values())
+                samples = [
+                    self.uniprot2cluster[reaction["uniprot_id"]]
+                    for reaction in metadata_json
+                ]
+                # samples = list(self.uniprot2cluster.values())
 
             if self.args.split_type == "sequence":
                 # split based on uniprot_id
@@ -463,13 +467,19 @@ class EnzymeMap(AbstractDataset):
                 # split by reaction product (splits share no products)
                 samples = [".".join(s["products"]) for s in metadata_json]
 
+            sample2count = Counter(samples)
             samples = sorted(list(set(samples)))
             np.random.shuffle(samples)
-            split_indices = np.ceil(
-                np.cumsum(np.array(split_probs) * len(samples))
-            ).astype(int)
+            samples_cumsum = np.cumsum([sample2count[s] for s in samples])
+            # Find the indices for each quantile
+            split_indices = [
+                np.searchsorted(
+                    samples_cumsum, np.round(q, 3) * samples_cumsum[-1], side="right"
+                )
+                for q in np.cumsum(split_probs)
+            ]
+            split_indices[-1] = len(samples)
             split_indices = np.concatenate([[0], split_indices])
-
             for i in range(len(split_indices) - 1):
                 self.to_split.update(
                     {
@@ -477,6 +487,19 @@ class EnzymeMap(AbstractDataset):
                         for sample in samples[split_indices[i] : split_indices[i + 1]]
                     }
                 )
+
+            # split_indices = np.ceil(
+            #     np.cumsum(np.array(split_probs) * len(samples))
+            # ).astype(int)
+            # split_indices = np.concatenate([[0], split_indices])
+
+            # for i in range(len(split_indices) - 1):
+            #     self.to_split.update(
+            #         {
+            #             sample: ["train", "dev", "test"][i]
+            #             for sample in samples[split_indices[i] : split_indices[i + 1]]
+            #         }
+            #     )
 
         elif self.args.split_type == "rule_id":
             # rule id
