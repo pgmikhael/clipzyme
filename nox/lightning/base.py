@@ -106,6 +106,7 @@ class Base(pl.LightningModule, Nox):
             "top",
             "coverage",
             "found",
+            "quantile",
         ]
 
     @property
