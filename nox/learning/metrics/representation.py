@@ -5,6 +5,7 @@ from nox.utils.registry import register_object
 import torch
 from typing import Dict
 
+
 def get_sample_similarity(h1, h2):
     cov = torch.mm(h1, h2.T)
     self_mean = torch.mean(torch.diag(cov))
@@ -148,16 +149,14 @@ class ClipClassification(Metric, Nox):
         super().__init__()
         self.add_state("num_correct", default=torch.tensor(0.0), dist_reduce_fx="sum")
         self.add_state("total", default=torch.tensor(0.0), dist_reduce_fx="sum")
-        
 
     @property
     def metric_keys(self):
-        return ["probs", "preds", "golds"]
+        return ["clip_preds", "clip_golds"]
 
     def update(self, predictions_dict, args) -> Dict:
-        
-        preds = predictions_dict["preds"]  # B
-        golds = predictions_dict["golds"].int()  # B
+        preds = predictions_dict["clip_preds"]  # B
+        golds = predictions_dict["clip_golds"].int()  # B
 
         self.num_correct += (golds == preds).sum()
         self.total += len(golds)
@@ -165,5 +164,36 @@ class ClipClassification(Metric, Nox):
     def compute(self) -> Dict:
         stats_dict = {
             "clip_accuracy": self.num_correct.float() / self.total,
+        }
+        return stats_dict
+
+
+@register_object("clip_quantile", "metric")
+class ClipQuantile(Metric, Nox):
+    def __init__(self, args) -> None:
+        """
+        Computes the quantile rank of a score relative to other scores pairwise similarity matrix
+        """
+        super().__init__()
+        self.add_state("quantile", default=torch.tensor(0.0), dist_reduce_fx="sum")
+        self.add_state("total", default=torch.tensor(0.0), dist_reduce_fx="sum")
+
+    @property
+    def metric_keys(self):
+        return ["clip_probs"]
+
+    def update(self, predictions_dict, args) -> Dict:
+        # select diagonal
+        # check fraction > diagonal
+        probs = predictions_dict["clip_probs"]  # B x B
+        pos_score = torch.diagonal(probs).unsqueeze(-1)
+        num_less_than_score = probs < pos_score
+        score_quantile = num_less_than_score.float().mean(1).sum()
+        self.quantile += score_quantile
+        self.total += probs.shape[0]
+
+    def compute(self) -> Dict:
+        stats_dict = {
+            "clip_quantile": self.quantile.float() / self.total,
         }
         return stats_dict

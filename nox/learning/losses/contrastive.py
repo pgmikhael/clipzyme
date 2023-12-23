@@ -282,8 +282,8 @@ class CLIPLoss(Nox):
 
     def __call__(self, model_output, batch, model, args):
         logging_dict, predictions = {}, {}
-        substrate_features = model_output["substrate_features"]
-        protein_features = model_output["protein_features"]
+        substrate_features = model_output["substrate_hiddens"]
+        protein_features = model_output["protein_hiddens"]
 
         # cosine similarity as logits
         logit_scale = model.model.logit_scale.exp()
@@ -377,9 +377,10 @@ class CLIPLoss(Nox):
 
         logging_dict["clip_loss"] = loss.detach()
 
-        probs = F.softmax(logits_per_protein, dim=-1).detach()
-        predictions["preds"] = probs.argmax(axis=-1).reshape(-1)
-        predictions["golds"] = labels
+        probs = F.softmax(logits_per_substrate, dim=-1).detach()
+        predictions["clip_probs"] = probs
+        predictions["clip_preds"] = probs.argmax(axis=-1).reshape(-1)
+        predictions["clip_golds"] = labels
 
         return loss, logging_dict, predictions
 
@@ -411,8 +412,8 @@ class SupervisedCLIPLoss(Nox):
 
     def __call__(self, model_output, batch, model, args):
         logging_dict, predictions = {}, {}
-        substrate_features = model_output["substrate_features"]
-        protein_features = model_output["protein_features"]
+        substrate_features = model_output["substrate_hiddens"]
+        protein_features = model_output["protein_hiddens"]
 
         mask = []
         for smiles in batch.smiles:
@@ -432,8 +433,8 @@ class SupervisedCLIPLoss(Nox):
 
         logging_dict["clip_loss"] = loss.detach()
 
-        predictions["substrate_features"] = substrate_features.detach()
-        predictions["protein_features"] = protein_features.detach()
+        predictions["substrate_hiddens"] = substrate_features.detach()
+        predictions["protein_hiddens"] = protein_features.detach()
 
         # logits substrates @ prots -> prots @ substrates
         logits = logits.t()

@@ -972,8 +972,8 @@ class ECReactSubstratePlainGraph(ECReactSubstrate):
         """
         standard = [
             "sample_id",
-            "protein_features",
-            "substrate_features",
+            "protein_hiddens",
+            "substrate_hiddens",
             "sequence",
             "smiles",
         ]
@@ -1058,8 +1058,8 @@ class ECReactProtMolGraph(ECReactSubstrate):
         """
         standard = [
             "sample_id",
-            "protein_features",
-            "substrate_features",
+            "protein_hiddens",
+            "substrate_hiddens",
             "sequence",
             "smiles",
         ]
@@ -1300,8 +1300,8 @@ class ECReactIOCB(ECReactSubstrate):
         """
         standard = [
             "sample_id",
-            "protein_features",
-            "substrate_features",
+            "protein_hiddens",
+            "substrate_hiddens",
             "sequence",
             "smiles",
         ]

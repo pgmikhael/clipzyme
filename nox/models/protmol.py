@@ -89,8 +89,8 @@ class ProteinMoleculeCLIP(AbstractModel):
 
         output.update(
             {
-                "substrate_features": substrate_features,
-                "protein_features": protein_features,
+                "substrate_hiddens": substrate_features,
+                "protein_hiddens": protein_features,
             }
         )
         return output
@@ -388,8 +388,8 @@ class EnzymeReactionCLIP(AbstractModel):
 
         output.update(
             {
-                "substrate_features": substrate_features,
-                "protein_features": protein_features,
+                "substrate_hiddens": substrate_features,
+                "protein_hiddens": protein_features,
             }
         )
 
@@ -877,8 +877,8 @@ class ProteinMoleculeCLIPMultiObjSmallCGRHeid(AbstractModel):
             output.update(
                 {
                     "logit": logit,
-                    "substrate_features": substrate_graph_features,
-                    "protein_features": protein_aa_features,
+                    "substrate_hiddens": substrate_graph_features,
+                    "protein_hiddens": protein_aa_features,
                 }
             )
 
@@ -909,8 +909,8 @@ class ProteinMoleculeCLIPMultiObjSmallCGRHeid(AbstractModel):
 
         output.update(
             {
-                "substrate_features": substrate_graph_features,
-                "protein_features": protein_aa_features,
+                "substrate_hiddens": substrate_graph_features,
+                "protein_hiddens": protein_aa_features,
             }
         )
 
