@@ -37,6 +37,7 @@ import nox.datasets.iocb_synthases
 import nox.datasets.protein_graph
 import nox.datasets.drugbank
 import nox.datasets.tdc_adme
+import nox.datasets.clean_ec
 
 # lightning
 import nox.lightning.base
@@ -70,6 +71,7 @@ import nox.learning.metrics.reactions
 import nox.learning.metrics.digress
 import nox.learning.metrics.wln
 import nox.learning.metrics.protmol
+import nox.learning.metrics.hierarchical_ec
 
 # callbacks
 import nox.callbacks.basic
