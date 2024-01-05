@@ -168,7 +168,7 @@ class CLEAN_EC(AbstractDataset):
     ) -> List[dict]:
         dataset = []
         sgroup = "test" if split_group == "test" else "train"
-        for entry in tqdm(self.metadata_json[sgroup][:100]):
+        for entry in tqdm(self.metadata_json[sgroup]):
             if self.skip_sample(entry):
                 continue
 
@@ -194,7 +194,6 @@ class CLEAN_EC(AbstractDataset):
                 if not os.path.exists(structure_path):
                     continue
                 if not os.path.exists(graph_path):
-                    continue
                     print("Generating none existent protein graph")
                     data = self.create_protein_graph(sample)
                     if data is None:
