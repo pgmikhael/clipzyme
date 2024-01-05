@@ -12,7 +12,7 @@ class Classifier(AbstractModel):
         super(Classifier, self).__init__()
 
         self.args = args
-
+        self.logit_scale = nn.Parameter(torch.ones([]) * torch.log(torch.tensor(1 / 2)))
         if args.pretrained_encoder_path:
             state_dict = torch.load(args.pretrained_encoder_path)
             self.encoder = get_object(args.model_name_for_encoder, "model")(
