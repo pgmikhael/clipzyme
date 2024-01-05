@@ -1,6 +1,12 @@
 # Generate HHblits MSA for sequences
 # https://github.com/soedinglab/hh-suite/wiki#generating-a-multiple-sequence-alignment-using-hhblits
 
+# MSA Transformer:
+# - An MSA is generated for each UniRef50 (Suzek et al., 2007) sequence by searching UniClust30 (Mirdita et al., 2017) with HHblits (Steinegger et al., 2019).
+# - hhfilter to subsample 256 sequences.
+# - `conda install -c conda-forge -c bioconda hhsuite`
+
+
 import subprocess
 import os
 import shutil
