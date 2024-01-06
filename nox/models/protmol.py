@@ -6,10 +6,7 @@ from typing import Union, Tuple, Any, List, Dict, Optional
 from nox.utils.classes import set_nox_type
 from nox.models.abstract import AbstractModel
 from nox.utils.registry import register_object, get_object
-from transformers import (
-    AutoTokenizer,
-    EsmConfig,
-)
+from transformers import AutoTokenizer, EsmConfig, BertModel
 from nox.models.modeling_esm import EsmModel, EsmLayer
 from transformers.models.esm.modeling_esm import EsmLMHead
 from nox.utils.pyg import x_map
@@ -544,6 +541,28 @@ class EnzymeReactionCLIPv2(EnzymeReactionCLIP):
             # node_feats, _ = to_dense_batch(node_feats, batch["reactants"].batch) # num_candidates x max_num_nodes x D
             graph_feats = torch.sum(node_feats * attn, dim=-2)
         return graph_feats
+
+
+@register_object("enzyme_reaction_clip_string", "model")
+class EnzymeReactionCLIPString(EnzymeReactionCLIP):
+    def __init__(self, args):
+        super(EnzymeReactionCLIPString, self).__init__(args)
+        self.substrate_encoder = get_object(args.substrate_encoder, "model")(args)
+
+    def encode_reaction(self, batch):
+        feats = self.substrate_encoder(batch)["encoder_output"]
+        return feats
+
+    @staticmethod
+    def add_args(parser) -> None:
+        super(EnzymeReactionCLIPString, EnzymeReactionCLIPString).add_args(parser)
+        parser.add_argument(
+            "--substrate_encoder",
+            type=str,
+            action=set_nox_type("model"),
+            default="full_reaction_encoder",
+            help="Rxn String Encoder",
+        )
 
 
 @register_object("protmol_clip_multiobjective_small_cgr_heid", "model")
