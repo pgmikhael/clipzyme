@@ -98,6 +98,7 @@ import nox.models.protmol
 import nox.models.noncanonnet
 import nox.models.wln
 import nox.models.reaction_center_classifier
+import nox.models.msatransformer
 
 # comet
 import nox.loggers.comet

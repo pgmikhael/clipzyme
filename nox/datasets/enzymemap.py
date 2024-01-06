@@ -2298,6 +2298,31 @@ class EnzymeMapGraph(EnzymeMap):
             )
 
 
+@register_object("enzymemap_reactions_msa", "dataset")
+class EnzymeMapMSA(
+    EnzymeMapGraph
+):  # doesn't actually need to be reaction graph but leaving it for data consistency
+    def __init__(self, args, split_group) -> None:
+        super(EnzymeMapMSA, EnzymeMapMSA).__init__(self, args, split_group)
+        self.uniprot2msa = pickle.load(
+            open(
+                "/Mounts/rbg-storage1/datasets/Enzymes/EnzymeMap/uniprot2msa.pkl", "rb"
+            )
+        )
+
+    def __getitem__(self, index):
+        sample = super().__getitem__(index)
+
+        try:
+            sample["msa"] = self.uniprot2msa[sample["protein_id"]]
+            return sample
+
+        except Exception as e:
+            print(
+                f"Getitem enzymemap: Could not load sample {sample['uniprot_id']} because of exception {e}"
+            )
+
+
 @register_object("reaction_graph_inference", "dataset")
 class ReactionGraphInference(AbstractDataset):
     def create_dataset(self, split_group: Literal["test"]) -> List[dict]:
