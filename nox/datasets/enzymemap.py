@@ -42,6 +42,7 @@ from nox.utils.pyg import from_smiles, from_mapped_smiles
 from nox.utils.wln_processing import get_bond_changes
 from nox.utils.amino_acids import AA_TO_SMILES
 from nox.models.wln import WLDN_Cache
+from nox.utils.hhblits_msa import read_msa, sample_msa
 
 ESM_MODEL2HIDDEN_DIM = {
     "esm2_t48_15B_UR50D": 5120,
@@ -912,6 +913,18 @@ class EnzymeMap(AbstractDataset):
             type=str,
             default=None,
             help="directory to load protein graphs from",
+        )
+        parser.add_argument(
+            "--use_protein_msa",
+            action="store_true",
+            default=False,
+            help="whether to use and generate protein MSAs",
+        )
+        parser.add_argument(
+            "--protein_msa_dir",
+            type=str,
+            default="/Mounts/rbg-storage1/datasets/Enzymes/EnzymeMap/hhblits_embeds",
+            help="directory where msa transformer embeddings are stored.",
         )
         parser.add_argument(
             "--ec_level",
@@ -2261,13 +2274,6 @@ class EnzymeMapGraph(EnzymeMap):
 
                 keep_keys = {
                     "receptor",
-                    # "mol_data",
-                    # "sequence",
-                    # "protein_id",
-                    # "uniprot_id",
-                    # "sample_id",
-                    # "smiles",
-                    # "y",
                     ("receptor", "contact", "receptor"),
                 }
 
@@ -2287,6 +2293,12 @@ class EnzymeMapGraph(EnzymeMap):
                     max(edge_index[0]) < coors.shape[0]
                     and max(edge_index[1]) < coors.shape[0]
                 ), "Edge index contains node indices not present in coors"
+
+                if self.args.use_protein_msa:
+                    msa_embed = torch.load(
+                        os.path.join(self.args.protein_msa_dir, f"{uniprot_id}.pt")
+                    )
+                    data["receptor"].x = torch.concat([feats, msa_embed], dim=-1)
 
                 item["graph"] = data
 
@@ -2749,3 +2761,4 @@ class EMap_USPTO_Val(EMap_USPTO):
     def __init__(self, args, split_group) -> None:
         split = "dev" if split_group == "train" else split_group
         super().__init__(args, split)
+                                                                                                                                                                                                                                                                                                                                                  
