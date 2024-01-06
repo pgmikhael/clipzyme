@@ -214,6 +214,7 @@ class ProtMolCLIPClassifier(ProtMolClassifier):
 class EnzymeReactionCLIP(AbstractModel):
     def __init__(self, args):
         super(EnzymeReactionCLIP, self).__init__()
+        self.args = args
         self.reaction_clip_model_path = copy.copy(args.reaction_clip_model_path)
         self.use_as_protein_encoder = getattr(args, "use_as_protein_encoder", False)
         self.use_as_mol_encoder = getattr(args, "use_as_mol_encoder", False)
@@ -226,7 +227,6 @@ class EnzymeReactionCLIP(AbstractModel):
             }
             args = state_dict["hyper_parameters"]["args"]
 
-        self.args = args
         self.protein_encoder = get_object(args.protein_encoder, "model")(args)
         self.ln_final = nn.LayerNorm(
             args.chemprop_hidden_dim
@@ -251,7 +251,8 @@ class EnzymeReactionCLIP(AbstractModel):
         self.attention_fc = nn.Linear(args.chemprop_hidden_dim, 1, bias=False)
 
         # classifier
-        self.mlp = get_object(args.mlp_name, "model")(args)
+        if args.do_matching_task:
+            self.mlp = get_object(args.mlp_name, "model")(args)
 
         if self.reaction_clip_model_path is not None:
             self.load_state_dict(state_dict_copy)
@@ -348,7 +349,7 @@ class EnzymeReactionCLIP(AbstractModel):
 
     def forward(self, batch) -> Dict:
         output = {}
-        if self.use_as_protein_encoder:
+        if getattr(self.args, "use_as_protein_encoder", False):
             protein_features = self.encode_protein(batch)
 
             protein_features = protein_features / protein_features.norm(
@@ -362,7 +363,7 @@ class EnzymeReactionCLIP(AbstractModel):
             )
             return output
 
-        if self.use_as_mol_encoder:
+        if getattr(self.args, "use_as_mol_encoder", False):
             substrate_features = self.encode_reaction(batch)
             substrate_features = substrate_features / substrate_features.norm(
                 dim=1, keepdim=True

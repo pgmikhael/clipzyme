@@ -12,7 +12,19 @@ class Classifier(AbstractModel):
         super(Classifier, self).__init__()
 
         self.args = args
-        self.encoder = get_object(args.model_name_for_encoder, "model")(args)
+        self.logit_scale = nn.Parameter(torch.ones([]) * torch.log(torch.tensor(1 / 2)))
+        if args.pretrained_encoder_path:
+            state_dict = torch.load(args.pretrained_encoder_path)
+            self.encoder = get_object(args.model_name_for_encoder, "model")(
+                state_dict["hyper_parameters"]["args"]
+            )
+            self.encoder.load_state_dict(
+                {k[len("model.") :]: v for k, v in state_dict["state_dict"].items()}
+            )
+            self.encoder.args = args
+        else:
+            self.encoder = get_object(args.model_name_for_encoder, "model")(args)
+
         cargs = copy.deepcopy(args)
         cargs.mlp_input_dim = args.classifier_mlp_input_dim
         cargs.mlp_layer_configuration = args.classifier_mlp_layer_configuration
@@ -40,6 +52,12 @@ class Classifier(AbstractModel):
             action=set_nox_type("model"),
             default="resnet18",
             help="Name of encoder to use",
+        )
+        parser.add_argument(
+            "--pretrained_encoder_path",
+            type=str,
+            default=None,
+            help="path to pretrained if applicable",
         )
         parser.add_argument(
             "--encoder_hidden_key",
