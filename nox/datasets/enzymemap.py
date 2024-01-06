@@ -1084,6 +1084,7 @@ class EnzymeMap(AbstractDataset):
         except:
             ecs = "NA"
         statement = f""" 
+        * Number of samples: {len(self.dataset)}
         * Number of reactions: {len(set(reactions))}
         * Number of proteins: {len(set(proteins))}
         * Number of ECs: {len(set(ecs))}
