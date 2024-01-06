@@ -180,13 +180,15 @@ class ClipQuantile(Metric, Nox):
 
     @property
     def metric_keys(self):
-        return ["clip_probs"]
+        return ["clip_probs", "clip_golds"]
 
     def update(self, predictions_dict, args) -> Dict:
         # select diagonal
         # check fraction > diagonal
-        probs = predictions_dict["clip_probs"]  # B x B
-        pos_score = torch.diagonal(probs).unsqueeze(-1)
+        probs = predictions_dict["clip_probs"]  # N x K
+        indices = predictions_dict["clip_golds"]
+        # generalize for ddp gathering: pos_score = torch.diagonal(probs).unsqueeze(-1)
+        pos_score = probs.gather(1, indices.unsqueeze(1))
         num_less_than_score = probs < pos_score
         score_quantile = num_less_than_score.float().mean(1).sum()
         self.quantile += score_quantile
