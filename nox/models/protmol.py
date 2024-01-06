@@ -254,7 +254,8 @@ class EnzymeReactionCLIP(AbstractModel):
         self.attention_fc = nn.Linear(args.chemprop_hidden_dim, 1, bias=False)
 
         # classifier
-        self.mlp = get_object(args.mlp_name, "model")(args)
+        if args.do_matching_task:
+            self.mlp = get_object(args.mlp_name, "model")(args)
 
         if self.reaction_clip_model_path is not None:
             self.load_state_dict(state_dict_copy)
