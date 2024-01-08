@@ -555,7 +555,7 @@ class BrendaConstants(Brenda):
                 continue
 
             proteinid2uniprot = {
-                k: v[0]["accessions"] for k, v in ec_dict["proteins"].items()
+                k: v[0].get("accessions", []) for k, v in ec_dict["proteins"].items()
             }
             protein2organism = (
                 {k: v["value"] for k, v in ec_dict["organisms"].items()}
@@ -710,7 +710,11 @@ class BrendaConstants(Brenda):
                 print("Skipped sample because y is multi value")
                 return True
         elif self.args.enzyme_property == "km_value":
-            raise NotImplementedError
+            if not self.args.use_mean_labels and (
+                isinstance(sample["y"], np.ndarray) or isinstance(sample["y"], tuple)
+            ):  # for kcat_km, y is should have one value
+                print("Skipped sample because y is multi value")
+                return True
         elif self.args.enzyme_property == "ph_optimum":
             raise NotImplementedError
         elif self.args.enzyme_property == "specific_activity":
@@ -720,9 +724,17 @@ class BrendaConstants(Brenda):
         elif self.args.enzyme_property == "isoelectric_point":
             raise NotImplementedError
         elif self.args.enzyme_property == "ki_value":
-            raise NotImplementedError
+            if not self.args.use_mean_labels and (
+                isinstance(sample["y"], np.ndarray) or isinstance(sample["y"], tuple)
+            ):  # for kcat_km, y is should have one value
+                print("Skipped sample because y is multi value")
+                return True
         elif self.args.enzyme_property == "ic50":
-            raise NotImplementedError
+            if not self.args.use_mean_labels and (
+                isinstance(sample["y"], np.ndarray) or isinstance(sample["y"], tuple)
+            ):  # for kcat_km, y is should have one value
+                print("Skipped sample because y is multi value")
+                return True
         elif self.args.enzyme_property == "kcat_km":
             if not self.args.use_mean_labels and (
                 isinstance(sample["y"], np.ndarray) or isinstance(sample["y"], tuple)
@@ -805,7 +817,7 @@ class BrendaConstants(Brenda):
         if args.enzyme_property == "turnover_number":
             args.num_classes = 1
         elif args.enzyme_property == "km_value":
-            raise NotImplementedError
+            args.num_classes = 1
         elif args.enzyme_property == "ph_optimum":
             raise NotImplementedError
         elif args.enzyme_property == "specific_activity":
@@ -815,9 +827,9 @@ class BrendaConstants(Brenda):
         elif args.enzyme_property == "isoelectric_point":
             raise NotImplementedError
         elif args.enzyme_property == "ki_value":
-            raise NotImplementedError
+            args.num_classes = 1
         elif args.enzyme_property == "ic50":
-            raise NotImplementedError
+            args.num_classes = 1
         elif args.enzyme_property == "kcat_km":
             args.num_classes = 1
         elif args.enzyme_property == "ph_stability":
