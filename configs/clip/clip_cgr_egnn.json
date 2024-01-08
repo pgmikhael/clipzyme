@@ -51,7 +51,7 @@
       "lr": [1e-4],
       "weight_decay": [0.05],
       "loss_names": ["clip_loss"],
-      "clip_loss_use_gather": [false],
+      "clip_loss_use_gather": [true],
       "metric_names": ["clip_classification clip_quantile"],
       "checkpoint_save_last": [true],
       "monitor": ["val_clip_quantile"],
