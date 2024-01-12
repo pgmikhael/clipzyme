@@ -1,5 +1,5 @@
 from typing import List, Literal
-import traceback, warnings, os
+import traceback, warnings, os, pickle
 import pandas as pd
 import argparse
 import copy
@@ -141,10 +141,26 @@ class CLEAN_EC(AbstractDataset):
             ]:
                 csv_dataset = pd.read_csv(filepath, delimiter="\t")
                 self.metadata_json[split] = csv_dataset.to_dict("records")
+            self.alphafold_files = pickle.load(
+                open("/Mounts/rbg-storage1/datasets/Metabo/alphafold_enzymes.p", "rb")
+            )
+            self.quickprot_caches = pickle.load(
+                open("/Mounts/rbg-storage1/datasets/Metabo/quickprot_caches.p", "rb")
+            )
+            self.uniprot2sequence = {
+                d["Entry"]: d["Sequence"]
+                for _, dct in self.metadata_json.items()
+                for d in dct
+            }
         except Exception as e:
             raise Exception(METAFILE_NOTFOUND_ERR.format(args.dataset_file_path, e))
 
     def post_process(self, args):
+        pickle.dump(
+            self.quickprot_caches,
+            open("/Mounts/rbg-storage1/datasets/Metabo/quickprot_caches.p", "wb"),
+        )
+
         ecs = sorted(
             list(
                 set(
@@ -187,18 +203,15 @@ class CLEAN_EC(AbstractDataset):
                     "processed",
                     f"{sample['uniprot_id']}_graph.pt",
                 )
-                structure_path = os.path.join(
-                    self.args.protein_structures_dir,
-                    f"AF-{sample['uniprot_id']}-F1-model_v4.cif",
-                )
-                if not os.path.exists(structure_path):
+                if sample["uniprot_id"] not in self.alphafold_files:
                     continue
-                if not os.path.exists(graph_path):
-                    print("Generating none existent protein graph")
-                    data = self.create_protein_graph(sample)
-                    if data is None:
-                        raise Exception("Could not generate protein graph")
-                    torch.save(data, graph_path)
+                # if sample["uniprot_id"] not in self.quickprot_caches:
+                #     print("Generating none existent protein graph")
+                #     data = self.create_protein_graph(sample)
+                #     if data is None:
+                #         raise Exception("Could not generate protein graph")
+                #     torch.save(data, graph_path)
+                #     self.quickprot_caches.add(sample["uniprot_id"])
 
             dataset.append(sample)
 
@@ -228,7 +241,7 @@ class CLEAN_EC(AbstractDataset):
             ec2size = Counter([ec for d in metadata_json for ec in d["ec"]])
 
             for idx in range(len(metadata_json)):
-                if any(ec2size[e] < 5 for e in metadata_json[idx]["ec"]):
+                if any(ec2size[e] < 10 for e in metadata_json[idx]["ec"]):
                     metadata_json[idx]["split"] = "train"
                 else:
                     metadata_json[idx]["split"] = np.random.choice(
@@ -250,6 +263,7 @@ class CLEAN_EC(AbstractDataset):
         sample = self.dataset[index]
         try:
             item = copy.deepcopy(sample)
+            uniprot_id = item["uniprot_id"]
 
             # ecs as tensors
             for k, v in self.args.ec_levels.items():
@@ -267,21 +281,11 @@ class CLEAN_EC(AbstractDataset):
                     "processed",
                     f"{item['uniprot_id']}_graph.pt",
                 )
-                data = torch.load(graph_path)
-                if data is None:
-                    structure_path = os.path.join(
-                        self.args.protein_structures_dir,
-                        f"AF-{item['uniprot_id']}-F1-model_v4.cif",
-                    )
-                    assert os.path.exists(
-                        structure_path
-                    ), f"Structure path {graph_path} does not exist"
-                    print(
-                        f"Structure path does exist, but graph path does not exist {graph_path} so making graph"
-                    )
-
+                try:
+                    data = torch.load(graph_path)
+                except:
                     data = self.create_protein_graph(item)
-                    torch.save(data, graph_path)
+                    # torch.save(data, graph_path)
 
                 if hasattr(data, "x") and not hasattr(data["receptor"], "x"):
                     data["receptor"].x = data.x
@@ -308,6 +312,12 @@ class CLEAN_EC(AbstractDataset):
                     and max(edge_index[1]) < coors.shape[0]
                 ), "Edge index contains node indices not present in coors"
 
+                if self.args.use_protein_msa:
+                    msa_embed = torch.load(
+                        os.path.join(self.args.protein_msa_dir, f"{uniprot_id}.pt")
+                    )
+                    data["receptor"].x = torch.concat([feats, msa_embed], dim=-1)
+
                 item["graph"] = data
 
             return item
@@ -330,6 +340,7 @@ class CLEAN_EC(AbstractDataset):
             type=str,
             default="/Mounts/rbg-storage1/datasets/Metabo/CLEAN/app/data/datasets/new.csv",
             choices=[
+                "/Mounts/rbg-storage1/datasets/Metabo/CLEAN/app/data/split100.csv",
                 "/Mounts/rbg-storage1/datasets/Metabo/CLEAN/app/data/datasets/new.csv",
                 "/Mounts/rbg-storage1/datasets/Metabo/CLEAN/app/data/datasets/price.csv",
                 "/Mounts/rbg-storage1/datasets/Metabo/CLEAN/app/data/datasets/halogenase.csv",
@@ -359,6 +370,18 @@ class CLEAN_EC(AbstractDataset):
             type=str,
             default=None,
             help="directory to load protein graphs from",
+        )
+        parser.add_argument(
+            "--use_protein_msa",
+            action="store_true",
+            default=False,
+            help="whether to use and generate protein MSAs",
+        )
+        parser.add_argument(
+            "--protein_msa_dir",
+            type=str,
+            default="/Mounts/rbg-storage1/datasets/Enzymes/EnzymeMap/hhblits_embeds",
+            help="directory where msa transformer embeddings are stored.",
         )
 
     @staticmethod
