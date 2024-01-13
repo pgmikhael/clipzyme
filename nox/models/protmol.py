@@ -3,18 +3,19 @@ import torch.nn as nn
 import copy
 import torch.nn.functional as F
 from typing import Union, Tuple, Any, List, Dict, Optional
-from nox.utils.classes import set_nox_type
-from nox.models.abstract import AbstractModel
-from nox.utils.registry import register_object, get_object
-from transformers import AutoTokenizer, EsmConfig, BertModel
-from nox.models.modeling_esm import EsmModel, EsmLayer
-from transformers.models.esm.modeling_esm import EsmLMHead
-from nox.utils.pyg import x_map
 from torch_geometric.utils import to_dense_batch, to_dense_adj, dense_to_sparse
-from nox.models.chemprop import DMPNNEncoder
 from torch_scatter import scatter
 import torch.distributed as dist
+from transformers import AutoTokenizer, EsmConfig, BertModel
+from transformers.models.esm.modeling_esm import EsmLMHead
+from esm import pretrained
+from nox.utils.classes import set_nox_type
+from nox.utils.registry import register_object, get_object
+from nox.utils.pyg import x_map
 from nox.utils.loading import concat_all_gather, all_gather_with_grad
+from nox.models.abstract import AbstractModel
+from nox.models.chemprop import DMPNNEncoder
+from nox.models.modeling_esm import EsmModel, EsmLayer
 
 
 def invert_attention_mask(encoder_attention_mask, dtype=torch.float32):
@@ -218,6 +219,7 @@ class EnzymeReactionCLIP(AbstractModel):
         self.reaction_clip_model_path = copy.copy(args.reaction_clip_model_path)
         self.use_as_protein_encoder = getattr(args, "use_as_protein_encoder", False)
         self.use_as_mol_encoder = getattr(args, "use_as_mol_encoder", False)
+        args.train_esm_with_graph = getattr(args, "train_esm_with_graph", False)
 
         if args.reaction_clip_model_path is not None:
             state_dict = torch.load(args.reaction_clip_model_path)
@@ -228,6 +230,14 @@ class EnzymeReactionCLIP(AbstractModel):
             args = state_dict["hyper_parameters"]["args"]
 
         self.protein_encoder = get_object(args.protein_encoder, "model")(args)
+        # option to train esm
+        if args.train_esm_with_graph:
+            self.esm_dir = args.esm_dir
+            model, alphabet = pretrained.load_model_and_alphabet(args.esm_dir)
+            self.esm_model = model
+            self.alphabet = alphabet
+            self.batch_converter = alphabet.get_batch_converter()
+
         self.ln_final = nn.LayerNorm(
             args.chemprop_hidden_dim
         )  # needs to be shape of protein_hidden, make it chemprop shape since we typically make these match
@@ -262,6 +272,29 @@ class EnzymeReactionCLIP(AbstractModel):
 
     def encode_protein(self, batch):
         if self.args.use_protein_graphs:
+            if self.args.train_esm_with_graph:
+                sequences = [
+                    (i, s) for i, s in enumerate(batch["graph"].structure_sequence)
+                ]
+                repr_layer = len(self.esm_model.layers)
+                _, _, batch_tokens = self.batch_converter(sequences)
+                batch_tokens = batch_tokens.to(self.logit_scale.device)
+                mask = torch.logical_and(
+                    torch.logical_and(
+                        (batch_tokens != self.alphabet.cls_idx),
+                        (batch_tokens != self.alphabet.eos_idx),
+                    ),
+                    (batch_tokens != self.alphabet.padding_idx),
+                )
+                out = self.esm_model(batch_tokens, repr_layers=[repr_layer])
+                representations = out["representations"][repr_layer][mask]
+                batch["graph"]["receptor"].x = representations
+                if self.args.use_protein_msa:
+                    msa = batch["graph"]["receptor"].msa
+                    batch["graph"]["receptor"].x = torch.concat(
+                        [representations, msa], dim=-1
+                    )
+
             feats, coors = self.protein_encoder(batch)
             try:
                 batch_idxs = batch["graph"]["receptor"].batch
@@ -392,9 +425,17 @@ class EnzymeReactionCLIP(AbstractModel):
         )
 
         if self.args.do_matching_task:
+            # take negatives based on EC
+            ec = batch["ec2"] != batch["ec1"][:, None]
+            ec = (ec / ec.sum(1))[:, None]
+            neg_idx = []
+            for e in ec:
+                neg_idx.append(torch.multinomial(e, 1))
+            neg_idx = torch.concat(neg_idx).squeeze()
+
             # take pairwise similarity of rxn embed and choose negatives
-            substrate_sim = substrate_features @ substrate_features.T
-            neg_idx = torch.argmin(substrate_sim, dim=-1)
+            # substrate_sim = substrate_features @ substrate_features.T
+            # neg_idx = torch.argmin(substrate_sim, dim=-1)
             neg_samples = substrate_features[neg_idx]
 
             concat_hiddens_pos = torch.cat(
@@ -462,6 +503,12 @@ class EnzymeReactionCLIP(AbstractModel):
             action="store_true",
             default=False,
             help="use gat implementation.",
+        )
+        parser.add_argument(
+            "--train_esm_with_graph",
+            action="store_true",
+            default=False,
+            help="train ESM model with graph NN.",
         )
 
 
