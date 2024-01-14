@@ -129,7 +129,6 @@ parser.add_argument(
     "--msa_target_directory",
     type=str,
     default="/Mounts/rbg-storage1/datasets/Enzymes/EnzymeMap/hhblits_msas",
-    required=True,
     help="directory where msa files are stored.",
 )
 parser.add_argument(
@@ -261,8 +260,6 @@ if __name__ == "__main__":
 
         print("Launched command: {}".format(shell_cmd))
 
-    shutil.rmtree(TEMP_FOLDER)
-
     if args.generate_msa_transformer_embeddings:
         if not os.path.exists(args.embedding_target_directory):
             os.mkdir(args.embedding_target_directory)
@@ -278,6 +275,8 @@ if __name__ == "__main__":
 
         for identifier, msa_file in tqdm(header_to_sequence_or_path.items(), ncols=100):
             pt_file = os.path.join(args.embedding_target_directory, f"{identifier}.pt")
+            if os.path.exists(pt_file):
+                continue
             msa = read_msa(msa_file)
             if len(msa[0][1]) > 1022:
                 continue
@@ -293,3 +292,5 @@ if __name__ == "__main__":
                 )
             msa_rep = msa_out["representations"][12][0, 0, 1:].cpu()
             torch.save(msa_rep, pt_file)
+
+    shutil.rmtree(TEMP_FOLDER)
