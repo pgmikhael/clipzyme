@@ -53,6 +53,8 @@ ESM_MODEL2HIDDEN_DIM = {
     "esm2_t6_8M_UR50D": 320,
 }
 
+protein_letters_3to1.update({k.upper(): v for k, v in protein_letters_3to1.items()})
+
 
 def stringify_sets(sets):
     final = []
@@ -840,9 +842,6 @@ class EnzymeMap(AbstractDataset):
             # Fix sequence length mismatches
             if len(data["receptor"].seq) != node_embedding.shape[0]:
                 print("Computing seq embedding for mismatched seq length")
-                protein_letters_3to1.update(
-                    {k.upper(): v for k, v in protein_letters_3to1.items()}
-                )
                 AA_seq = ""
                 for char in seq:
                     AA_seq += protein_letters_3to1[char]
@@ -923,7 +922,7 @@ class EnzymeMap(AbstractDataset):
         parser.add_argument(
             "--protein_msa_dir",
             type=str,
-            default="/Mounts/rbg-storage1/datasets/Enzymes/EnzymeMap/hhblits_embeds",
+            default="/Mounts/rbg-storage1/datasets/Enzymes/embed_msa_transformer",
             help="directory where msa transformer embeddings are stored.",
         )
         parser.add_argument(
@@ -2273,8 +2272,14 @@ class EnzymeMapGraph(EnzymeMap):
                 if hasattr(data, "x") and not hasattr(data["receptor"], "x"):
                     data["receptor"].x = data.x
 
+                if not hasattr(data, "structure_sequence"):
+                    data.structure_sequence = "".join(
+                        [protein_letters_3to1[char] for char in data["receptor"].seq]
+                    )
+
                 keep_keys = {
                     "receptor",
+                    "structure_sequence",
                     ("receptor", "contact", "receptor"),
                 }
 
@@ -2300,6 +2305,7 @@ class EnzymeMapGraph(EnzymeMap):
                         os.path.join(self.args.protein_msa_dir, f"{uniprot_id}.pt")
                     )
                     data["receptor"].x = torch.concat([feats, msa_embed], dim=-1)
+                    data["receptor"].msa = msa_embed
 
                 item["graph"] = data
 
