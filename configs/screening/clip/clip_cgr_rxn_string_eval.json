@@ -81,7 +81,7 @@
       "train": [false],
       "dev": [false],
       "test": [false],
-      "eval_on_train": [true],
+      "eval_on_train_multigpu": [true],
       "use_as_protein_encoder": [true],
       "shuffle_eval_loader": [true],
       "num_sanity_val_steps": [0],

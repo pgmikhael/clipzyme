@@ -38,6 +38,7 @@ import nox.datasets.protein_graph
 import nox.datasets.drugbank
 import nox.datasets.tdc_adme
 import nox.datasets.clean_ec
+import nox.datasets.enzyme_screening
 
 # lightning
 import nox.lightning.base
@@ -100,7 +101,6 @@ import nox.models.protmol
 import nox.models.noncanonnet
 import nox.models.wln
 import nox.models.reaction_center_classifier
-import nox.models.msatransformer
 
 # comet
 import nox.loggers.comet
