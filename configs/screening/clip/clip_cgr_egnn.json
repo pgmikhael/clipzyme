@@ -1,9 +1,9 @@
 {
     "script": "main",
     "cartesian_hyperparams": {
-      "batch_size": [8],
+      "batch_size": [4],
       "precision": ["bf16"],
-      "accumulate_grad_batches": [1],
+      "accumulate_grad_batches": [2],
       "dataset_name": ["enzymemap_reaction_graph"],
       "dataset_file_path": ["/Mounts/rbg-storage1/datasets/Enzymes/EnzymeMap/version2/enzymemap_v2_brenda2_blip.json"],
       "dataset_cache_path": ["/Mounts/rbg-storage1/users/pgmikhael/nox/cache/cached_egnn_blip_dataset_version2.p"],
@@ -23,12 +23,15 @@
       "lightning_name": ["base"],
       "model_name": ["enzyme_reaction_clip"],
       "use_protein_msa": [true],
+      "protein_msa_dir": ["/Mounts/rbg-storage1/datasets/Enzymes/embed_msa_transformer"],
+      "train_esm_with_graph": [true],
+      "esm_dir": ["/Mounts/rbg-storage1/snapshots/metabolomics/esm2/checkpoints/esm2_t30_150M_UR50D.pt"],
       "use_one_hot_mol_features": [false],
       "chemprop_node_dim": [9],
       "chemprop_edge_dim": [3],
       "protein_encoder": ["egnn_sparse_network"],
       "use_protein_graphs": [true],
-      "protein_dim": [2048],
+      "protein_dim": [1408],
       "neighbour_aggr": ["mean"],
       "pool_type": ["sum"],
       "message_dim": [24],
@@ -41,7 +44,7 @@
       "protein_graphs_dir": ["/Mounts/rbg-storage1/datasets/Metabo/quickprot_caches"],
       "protein_structures_dir": ["/Mounts/rbg-storage1/datasets/Metabo/AlphaFoldEnzymes/"],
       "chemprop_num_layers": [5],
-      "chemprop_hidden_dim": [2048],
+      "chemprop_hidden_dim": [1408],
       "chemprop_pool": ["none"],
       "do_matching_task": [false],
       "compute_metrics_every_step": [true],
@@ -68,7 +71,7 @@
       "shuffle_eval_loader": [true],
       "num_sanity_val_steps": [0],
       "val_check_interval": [1.0],
-      "gpus": [6],
+      "gpus": [8],
       "ignore_warnings": [false],
       "dropout": [0],
       "checkpoint_dir": ["/Mounts/rbg-storage1/snapshots/metabolomics"],
@@ -77,6 +80,6 @@
       "project_name": ["enzymes"],
       "logger_tags": ["clip msa"]
     },
-    "available_gpus": ["0,1,2,3,4,5"]
+    "available_gpus": ["0,1,2,3,4,5,6,7"]
   }
   

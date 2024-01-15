@@ -148,7 +148,9 @@ def prepare_training_config_for_eval(train_config):
     # reset defaults
     eval_args["cartesian_hyperparams"]["train"] = [False]
     eval_args["cartesian_hyperparams"]["test"] = [True]
-    eval_args["cartesian_hyperparams"]["from_checkpoint"] = train_config["eval_args"].get("from_checkpoint", [True])
+    eval_args["cartesian_hyperparams"]["from_checkpoint"] = train_config[
+        "eval_args"
+    ].get("from_checkpoint", [True])
     eval_args["cartesian_hyperparams"]["gpus"] = [1]
     eval_args["cartesian_hyperparams"]["logger_tags"][0] += " eval"
     eval_args["available_gpus"] = train_config["available_gpus"]
@@ -156,7 +158,7 @@ def prepare_training_config_for_eval(train_config):
 
     experiments, flags, experiment_axies = parse_dispatcher_config(eval_args)
 
-    if ("checkpoint_path" not in eval_args["cartesian_hyperparams"]):
+    if "checkpoint_path" not in eval_args["cartesian_hyperparams"]:
         for (idx, e), s in zip(enumerate(experiments), stem_names):
             experiments[idx] += " --checkpoint_path {}".format(
                 os.path.join(train_config["log_dir"], "{}.args".format(s))
@@ -242,6 +244,12 @@ def get_parser():
         action="store_true",
         default=False,
         help="Whether or not to evaluate model on train split",
+    )
+    parser.add_argument(
+        "--eval_on_train_multigpu",
+        action="store_true",
+        default=False,
+        help="Whether or not to evaluate model on train split using ddp",
     )
     parser.add_argument(
         "--replicate",
@@ -656,22 +664,22 @@ def parse_args(args_strings=None):
     parser = get_parser()
     sig = inspect.signature(Trainer.__init__)
     for name, param in sig.parameters.items():
-        if name == 'self':
+        if name == "self":
             continue
         if param.default is inspect.Parameter.empty:
-            parser.add_argument(f'--{name}')
+            parser.add_argument(f"--{name}")
         else:
             # Note that this does not store types, because many defaults are None
-            parser.add_argument(f'--{name}', default=param.default)
-    
+            parser.add_argument(f"--{name}", default=param.default)
+
     # legacy
     if not hasattr(Trainer, "add_argparse_args"):
         parser.add_argument(
-        "--gpus",
+            "--gpus",
             default=None,
             help="Number of GPUs to train on",
         )
-    
+
     if args_strings is None:
         args = parser.parse_args()
     else:
@@ -687,12 +695,12 @@ def parse_args(args_strings=None):
     ):
         args.strategy = "ddp"
         # should not matter since we set our sampler, in 2.0 this is default True and used to be called replace_sampler_ddp
-        args.use_distributed_sampler = False 
+        args.use_distributed_sampler = False
     else:
-        if not hasattr(Trainer, "add_argparse_args"): # lightning 2.0
+        if not hasattr(Trainer, "add_argparse_args"):  # lightning 2.0
             # args.strategy = "auto"
-            args.strategy = "ddp" # should be overwritten later in main
-        else: # legacy
+            args.strategy = "ddp"  # should be overwritten later in main
+        else:  # legacy
             args.strategy = None
             args.replace_sampler_ddp = False
 

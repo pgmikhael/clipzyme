@@ -24,6 +24,12 @@ from rich import print
 
 from pytorch_lightning.strategies import DDPStrategy
 
+import resource
+
+rlimit = resource.getrlimit(resource.RLIMIT_NOFILE)
+resource.setrlimit(resource.RLIMIT_NOFILE, (4096, rlimit[1]))
+torch.multiprocessing.set_sharing_strategy("file_system")
+
 
 def train(args):
     # legacy
@@ -74,7 +80,9 @@ def train(args):
     )
 
     train_dataset = loaders.get_train_dataset_loader(args)
-    dev_dataset = loaders.get_eval_dataset_loader(args, split="dev")
+    dev_dataset = loaders.get_eval_dataset_loader(
+        args, split="dev", shuffle=args.shuffle_eval_loader
+    )
 
     # print args
     for key, value in sorted(vars(args).items()):
@@ -101,6 +109,13 @@ def train(args):
         trainer.fit(model, train_dataset, dev_dataset)
         if trainer.checkpoint_callback:
             args.model_path = trainer.checkpoint_callback.best_model_path
+
+    if args.eval_on_train_multigpu:
+        # ability to eval on multi-gpu when aim is
+        # saving predictions for large data rather than computing test metrics
+        log.info("\nInference Phase on train set...")
+        train_dataset = loaders.get_eval_dataset_loader(args, split="train")
+        trainer.test(model, train_dataset)
 
     # save args
     if args.local_rank == 0:
@@ -153,7 +168,9 @@ def eval(model, logger, args):
     # eval on dev
     if args.dev:
         log.info("\nValidation Phase...")
-        dev_dataset = loaders.get_eval_dataset_loader(args, split="dev")
+        dev_dataset = loaders.get_eval_dataset_loader(
+            args, split="dev", shuffle=args.shuffle_eval_loader
+        )
         if args.train and trainer.checkpoint_callback:
             trainer.test(model, dev_dataset, ckpt_path=args.model_path)
         else:
@@ -162,7 +179,9 @@ def eval(model, logger, args):
     # eval on test
     if args.test:
         log.info("\nInference Phase on test set...")
-        test_dataset = loaders.get_eval_dataset_loader(args, split="test")
+        test_dataset = loaders.get_eval_dataset_loader(
+            args, split="test", shuffle=args.shuffle_eval_loader
+        )
 
         if args.train and trainer.checkpoint_callback:
             trainer.test(model, test_dataset, ckpt_path=args.model_path)
