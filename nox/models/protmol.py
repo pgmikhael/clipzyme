@@ -230,6 +230,8 @@ class EnzymeReactionCLIP(AbstractModel):
         self.protein_encoder = get_object(args.protein_encoder, "model")(args)
         self.ln_final = nn.LayerNorm(
             args.chemprop_hidden_dim
+            if not args.use_protein_graphs
+            else args.protein_dim
         )  # needs to be shape of protein_hidden, make it chemprop shape since we typically make these match
 
         self.logit_scale = nn.Parameter(
@@ -253,6 +255,31 @@ class EnzymeReactionCLIP(AbstractModel):
         # classifier
         if args.do_matching_task:
             self.mlp = get_object(args.mlp_name, "model")(args)
+
+        if args.do_ec_task:
+            self.logit_ec_scale = nn.Parameter(
+                torch.ones([]) * torch.log(torch.tensor(1 / 0.07))
+            )
+            if args.ec_model_model_path is not None:  # load pretrained model
+                state_dict_ec = torch.load(args.ec_model_model_path)
+                state_dict_ec_copy = {
+                    k.replace("model.", "", 1): v
+                    for k, v in state_dict_ec["state_dict"].items()
+                }
+                ec_args = state_dict_ec["hyper_parameters"]["args"]
+                assert (
+                    args.ec_model_name == ec_args.ec_model_name
+                ), "ec model name must match"
+                self.ec_head = get_object(args.ec_model_name, "model")(ec_args)
+                self.ec_head.load_state_dict(
+                    {
+                        k[len("model.") :]: v
+                        for k, v in state_dict["state_dict"].items()
+                        if k.startswith("model")
+                    }
+                )
+            else:
+                self.ec_head = get_object(args.ec_model_name, "model")(args)
 
         if self.reaction_clip_model_path is not None:
             self.load_state_dict(state_dict_copy)
@@ -408,6 +435,12 @@ class EnzymeReactionCLIP(AbstractModel):
                 [concat_hiddens.new_ones(bs), concat_hiddens.new_zeros(bs)], dim=0
             )
 
+        if self.args.do_ec_task:
+            assert (
+                "protein_features" in output
+            ), "output must have protein features to predict EC"
+            output.update(self.ec_head(output["protein_features"]))
+
         return output
 
     @staticmethod
@@ -462,6 +495,25 @@ class EnzymeReactionCLIP(AbstractModel):
             action="store_true",
             default=False,
             help="use gat implementation.",
+        )
+        parser.add_argument(
+            "--do_ec_task",
+            action="store_true",
+            default=False,
+            help="do ec prediction",
+        )
+        parser.add_argument(
+            "--ec_model_name",
+            type=str,
+            action=set_nox_type("model"),
+            default="classifier",
+            help="Name of model to use to predict ECs",
+        )
+        parser.add_argument(
+            "--ec_model_model_path",
+            type=str,
+            default=None,
+            help="path to saved model if loading from pretrained",
         )
 
 
@@ -562,6 +614,60 @@ class EnzymeReactionCLIPString(EnzymeReactionCLIP):
             action=set_nox_type("model"),
             default="full_reaction_encoder",
             help="Rxn String Encoder",
+        )
+
+
+@register_object("enzyme_reaction_clip_pretrained", "model")
+class EnzymeReactionCLIPPretrained(EnzymeReactionCLIP):
+    def __init__(self, args):
+        super(EnzymeReactionCLIPPretrained, self).__init__(args)
+        self.substrate_encoder = get_object(args.substrate_encoder, "model")(args)
+        if args.substrate_model_path is not None:
+            state_dict = torch.load(args.substrate_model_path)
+            state_dict_copy = {
+                k.replace("model.", "", 1): v
+                for k, v in state_dict["state_dict"].items()
+            }
+            # Remove keys from state_dict that are not in the model
+            model_state_dict_keys = set(self.substrate_encoder.state_dict().keys())
+            state_dict_keys = list(
+                state_dict_copy.keys()
+            )  # We use list to avoid RuntimeError for changing dict size during iteration
+            for key in state_dict_keys:
+                if key not in model_state_dict_keys:
+                    del state_dict_copy[key]
+            self.substrate_encoder.load_state_dict(state_dict_copy)
+
+        if args.chemprop_hidden_dim != args.protein_dim:
+            self.substrate_projection = nn.Linear(
+                args.chemprop_hidden_dim, args.protein_dim
+            )  # needs to be shape of protein_hidden, make it chemprop shape since we typically make these match
+
+    def encode_reaction(self, batch):
+        feats = self.substrate_encoder(batch)
+        # unbatch the graph
+        feats, mask = to_dense_batch(feats["c_final"], batch=batch["mol"].batch)
+        feats = feats.sum(1)  # sum over all nodes
+        feats = self.substrate_projection(feats)
+        return feats
+
+    @staticmethod
+    def add_args(parser) -> None:
+        super(EnzymeReactionCLIPPretrained, EnzymeReactionCLIPPretrained).add_args(
+            parser
+        )
+        parser.add_argument(
+            "--substrate_encoder",
+            type=str,
+            action=set_nox_type("model"),
+            default="full_reaction_encoder",
+            help="Rxn String Encoder",
+        )
+        parser.add_argument(
+            "--substrate_model_path",
+            type=str,
+            default=None,
+            help="path to saved model if loading from pretrained",
         )
 
 
