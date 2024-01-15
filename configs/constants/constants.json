@@ -1,9 +1,12 @@
 {
     "script": "main",
+    "paired_hyperparams" : {
+      "enzyme_property": ["turnover_number", "km_value", "kcat_km", "ki_value", "ic50"],
+      "logger_tags": ["brenda_constants turnover_number", "brenda_constants km_value", "brenda_constants kcat_km", "brenda_constants ki_value", "brenda_constants ic50"]
+    },
     "cartesian_hyperparams": {
       "batch_size": [24],
       "dataset_name": ["brenda_constants"],
-      "enzyme_property": ["turnover_number", "km_value", "kcat_km", "ki_value", "ic50"],
       "assign_splits": [true],
       "split_seed": [0],
       "split_type": ["sequence", "ec"],
@@ -30,13 +33,13 @@
       "callback_names": ["lr_monitor"],
       "max_epochs": [50],
       "lr_decay": [0.1],
-      "lr": [3e-4, 1e-3],
+      "lr": [3e-4],
       "loss_names": ["rmse"],
       "rmse_loss_lambda": [1.0],
       "metric_names": ["regression"],
       "checkpoint_save_last": [false],
       "monitor": ["val_pearson"],
-      "num_workers": [3],
+      "num_workers": [5],
       "optimizer_name": ["adam"],
       "patience": [5],
       "train": [true],
@@ -44,15 +47,14 @@
       "test": [false],
       "num_sanity_val_steps": [0],
       "val_check_interval": [1.0],
-      "gpus": [1],
+      "gpus": [5],
       "ignore_warnings": [false],
       "dropout": [0],
       "checkpoint_dir": ["/Mounts/rbg-storage1/snapshots/metabolomics"],
       "logger_name": ["wandb"],
       "workspace": ["peteranditamar"],
-      "project_name": ["enzymes"],
-      "logger_tags": ["constant"]
+      "project_name": ["enzymes"]
     },
-    "available_gpus": [2,3,4,5,6,7]
+    "available_gpus": ["3,4,5,6,7"]
   }
   
