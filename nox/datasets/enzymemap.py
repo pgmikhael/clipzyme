@@ -1879,6 +1879,8 @@ class EnzymeMapGraph(EnzymeMap):
         for level in range(1, 5, 1):
             unique_classes = sorted(list(set(".".join(ec[:level]) for ec in ecs)))
             args.ec_levels[str(level)] = {c: i for i, c in enumerate(unique_classes)}
+        if hasattr(args, "do_ec_task") and args.do_ec_task:
+            args.num_classes = len(args.ec_levels["4"])
 
     def create_dataset(
         self, split_group: Literal["train", "dev", "test"]
