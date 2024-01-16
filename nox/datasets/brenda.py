@@ -640,8 +640,10 @@ class BrendaConstants(Brenda):
         # filter through dataset
         dataset = []
         samples_added = set()
+        skipped_samples = 0
         for sample in samples:
             if self.skip_sample(sample, seq_smi_2_y, split_group):
+                skipped_samples += 1
                 continue
 
             if self.args.use_mean_labels:
@@ -684,6 +686,7 @@ class BrendaConstants(Brenda):
                 samples_added.add(f"{seq}{smi}")
 
             dataset.append(sample)
+        print(f"Skipped {skipped_samples} samples out of {len(samples)} samples")
 
         return dataset
 
@@ -755,19 +758,23 @@ class BrendaConstants(Brenda):
             raise NotImplementedError
 
         # check contradictory values TODO
+
         if not self.args.use_mean_labels:
             smi = sample["smiles"]
             seq = sample["sequence"]
-            if any(
-                not np.array_equal(i, sequence_smiles2y[f"{seq}{smi}"][0])
-                if isinstance(i, np.ndarray)
-                else i != sequence_smiles2y[f"{seq}{smi}"][0]
-                for i in sequence_smiles2y[f"{seq}{smi}"]
-            ):
+            if self.has_contradictory_values(sequence_smiles2y, seq, smi):
                 print("Skipped sample because of contradictory values")
                 return True
 
         return False
+
+    def has_contradictory_values(self, sequence_smiles2y, seq, smi):
+        items = sequence_smiles2y[f"{seq}{smi}"]
+        converted_items = [
+            np.array(i) if not isinstance(i, np.ndarray) else i for i in items
+        ]
+        first_item = converted_items[0]
+        return any(not np.array_equal(first_item, item) for item in converted_items)
 
     def get_split_group_dataset(self, processed_dataset, split_group: str):
         dataset = []
