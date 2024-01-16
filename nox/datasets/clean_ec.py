@@ -156,10 +156,11 @@ class CLEAN_EC(AbstractDataset):
             raise Exception(METAFILE_NOTFOUND_ERR.format(args.dataset_file_path, e))
 
     def post_process(self, args):
-        pickle.dump(
-            self.quickprot_caches,
-            open("/Mounts/rbg-storage1/datasets/Metabo/quickprot_caches.p", "wb"),
-        )
+        if self.args.use_protein_graphs:
+            pickle.dump(
+                self.quickprot_caches,
+                open("/Mounts/rbg-storage1/datasets/Metabo/quickprot_caches.p", "wb"),
+            )
 
         ecs = sorted(
             list(
@@ -184,10 +185,11 @@ class CLEAN_EC(AbstractDataset):
     ) -> List[dict]:
         dataset = []
         sgroup = "test" if split_group == "test" else "train"
+        if self.args.skip_missing_structures:
+            print("Skipping samples with missing structures")
+        if self.args.skip_missing_msa:
+            print("Skipping samples with seq len over 1022")
         for entry in tqdm(self.metadata_json[sgroup]):
-            if self.skip_sample(entry):
-                continue
-
             ec = entry["EC number"]
             sample = {
                 "uniprot_id": entry["Entry"],
@@ -195,6 +197,8 @@ class CLEAN_EC(AbstractDataset):
                 "sequence": entry["Sequence"],
                 "sample_id": entry["Entry"],
             }
+            if self.skip_sample(sample, entry):
+                continue
 
             # make prot graph if missing
             if self.args.use_protein_graphs:
@@ -217,10 +221,17 @@ class CLEAN_EC(AbstractDataset):
 
         return dataset
 
-    def skip_sample(self, sample) -> bool:
+    def skip_sample(self, sample, entry) -> bool:
         """
         Return True if sample should be skipped and not included in data
         """
+        if (
+            self.args.skip_missing_structures
+            and sample["uniprot_id"] not in self.alphafold_files
+        ):
+            return True
+        if self.args.skip_missing_msa and len(sample["sequence"]) >= 1022:
+            return True
         return False
 
     def get_split_group_dataset(self, processed_dataset, split_group):
@@ -334,7 +345,18 @@ class CLEAN_EC(AbstractDataset):
             parser (argparse.ArgumentParser): argument parser
         """
         AbstractDataset.add_args(parser)
-
+        parser.add_argument(
+            "--skip_missing_structures",
+            action="store_true",
+            default=False,
+            help="whether to skip samples with missing structures",
+        )
+        parser.add_argument(
+            "--skip_missing_msa",
+            action="store_true",
+            default=False,
+            help="whether to skip samples with missing msa",
+        )
         parser.add_argument(
             "--test_dataset_path",
             type=str,
@@ -387,7 +409,7 @@ class CLEAN_EC(AbstractDataset):
     @staticmethod
     def set_args(args) -> None:
         args.dataset_file_path = (
-            "/Mounts/rbg-storage1/datasets/Metabo/CLEAN/app/data/split100.csv"
+            "/Mounts/rbg-storage1/datasets/Metabo/CLEAN/app/data/split50.csv"
         )
 
     @property
