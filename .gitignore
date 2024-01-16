@@ -3,6 +3,7 @@ notebooks/*.pkl
 notebooks/pickled_data/*
 scratch/
 notebooks/*
+facebookresearch*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
