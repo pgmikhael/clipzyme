@@ -332,3 +332,59 @@ class BottomUpECLoss(Nox):
             type=float,
             help="weight for each level",
         )
+
+
+@register_object("multi_label_ec_loss", "loss")
+class MultiLabelECLoss(Nox):
+    """Multi-label loss for EC classification."""
+
+    def __init__(self) -> None:
+        super().__init__()
+
+        self.ec_to_level = lambda ec, level: ".".join(ec.split(".")[: int(level)])
+
+    def __call__(self, model_output, batch, model, args):
+        logging_dict, predictions = OrderedDict(), OrderedDict()
+        logits = (
+            model_output["ec_logits"]
+            if "ec_logits" in model_output
+            else model_output["logit"]
+        )
+        if hasattr(
+            model.model, "logit_ec_scale"
+        ):  # if using ec_head in CLIP then use logit_ec_scale
+            logit_scale = model.model.logit_ec_scale.exp()
+        else:
+            logit_scale = model.model.logit_scale.exp()
+        loss = F.binary_cross_entropy_with_logits(logits * logit_scale, batch["ec4"])
+
+        logging_dict["ec_loss"] = loss.detach()
+
+        predictions["golds_ec"] = batch["ec"]
+        predictions["probs_ec"] = torch.sigmoid(logits).detach()
+
+        ###############
+
+        # For metrics
+        probs = F.logsigmoid(logits * logit_scale)
+        # class index to EC
+        level4_ecs = {i: c for c, i in args.ec_levels["4"].items()}
+        # list of ecs in order as they appear in yvec
+        level4_ecs = [level4_ecs[i] for i in range(len(level4_ecs))]
+
+        for level in sorted(args.ec_levels):
+            ec2index = args.ec_levels[level]  # comes from data
+
+            # for each ec in level4 order, where does it fall in yvec
+            target_index = torch.tensor(
+                [ec2index[self.ec_to_level(ec, level)] for ec in level4_ecs]
+            ).to(logits.device)
+            # combine probabilities into the right index for this level yvec
+            # level_probs = 1 - scatter(1 - probs, target_index, dim=1, reduce="mul")
+            level_probs = scatter(probs, target_index, dim=1, reduce="sum")  # log
+            level_probs = torch.exp(level_probs)
+
+            predictions[f"golds_ec{level}"] = batch[f"ec{level}"]
+            predictions[f"probs_ec{level}"] = 1 - level_probs.detach()
+
+        return loss, logging_dict, predictions
