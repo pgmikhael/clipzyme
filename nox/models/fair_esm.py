@@ -22,7 +22,7 @@ class FairEsm(AbstractModel):
         self.args = args
         torch.hub.set_dir(args.pretrained_hub_dir)
         self.model, self.alphabet = torch.hub.load(
-            "facebookresearch/esm:main", args.esm_name
+            "facebookresearch/esm:v2.0.0", args.esm_name
         )
         self.batch_converter = self.alphabet.get_batch_converter()
         self.register_buffer("devicevar", torch.zeros(1, dtype=torch.int8))

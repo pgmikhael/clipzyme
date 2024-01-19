@@ -36,7 +36,8 @@ class HierarchicalECClassification(Metric, Nox):
     @property
     def metric_keys(self):
         return [f"probs_ec{i}" for i in range(1, 5, 1)] + [
-            f"golds_ec1{i}" for i in range(1, 5, 1)
+            # f"golds_ec1{i}" for i in range(1, 5, 1)
+            f"golds_ec{i}" for i in range(1, 5, 1)
         ]
 
     def update(self, predictions_dict, args) -> Dict:

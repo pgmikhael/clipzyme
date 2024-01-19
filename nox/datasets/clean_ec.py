@@ -156,10 +156,11 @@ class CLEAN_EC(AbstractDataset):
             raise Exception(METAFILE_NOTFOUND_ERR.format(args.dataset_file_path, e))
 
     def post_process(self, args):
-        pickle.dump(
-            self.quickprot_caches,
-            open("/Mounts/rbg-storage1/datasets/Metabo/quickprot_caches.p", "wb"),
-        )
+        if self.args.use_protein_graphs:
+            pickle.dump(
+                self.quickprot_caches,
+                open("/Mounts/rbg-storage1/datasets/Metabo/quickprot_caches.p", "wb"),
+            )
 
         ecs = sorted(
             list(
@@ -184,10 +185,11 @@ class CLEAN_EC(AbstractDataset):
     ) -> List[dict]:
         dataset = []
         sgroup = "test" if split_group == "test" else "train"
+        if self.args.skip_missing_structures:
+            print("Skipping samples with missing structures")
+        if self.args.skip_missing_msa:
+            print("Skipping samples with seq len over 1022")
         for entry in tqdm(self.metadata_json[sgroup]):
-            if self.skip_sample(entry):
-                continue
-
             ec = entry["EC number"]
             sample = {
                 "uniprot_id": entry["Entry"],
@@ -195,6 +197,8 @@ class CLEAN_EC(AbstractDataset):
                 "sequence": entry["Sequence"],
                 "sample_id": entry["Entry"],
             }
+            if self.skip_sample(sample, entry):
+                continue
 
             # make prot graph if missing
             if self.args.use_protein_graphs:
@@ -217,10 +221,17 @@ class CLEAN_EC(AbstractDataset):
 
         return dataset
 
-    def skip_sample(self, sample) -> bool:
+    def skip_sample(self, sample, entry=None) -> bool:
         """
         Return True if sample should be skipped and not included in data
         """
+        if (
+            self.args.skip_missing_structures
+            and sample["uniprot_id"] not in self.alphafold_files
+        ):
+            return True
+        if self.args.skip_missing_msa and len(sample["sequence"]) >= 1022:
+            return True
         return False
 
     def get_split_group_dataset(self, processed_dataset, split_group):
@@ -334,7 +345,18 @@ class CLEAN_EC(AbstractDataset):
             parser (argparse.ArgumentParser): argument parser
         """
         AbstractDataset.add_args(parser)
-
+        parser.add_argument(
+            "--skip_missing_structures",
+            action="store_true",
+            default=False,
+            help="whether to skip samples with missing structures",
+        )
+        parser.add_argument(
+            "--skip_missing_msa",
+            action="store_true",
+            default=False,
+            help="whether to skip samples with missing msa",
+        )
         parser.add_argument(
             "--test_dataset_path",
             type=str,
@@ -384,11 +406,11 @@ class CLEAN_EC(AbstractDataset):
             help="directory where msa transformer embeddings are stored.",
         )
 
-    @staticmethod
-    def set_args(args) -> None:
-        args.dataset_file_path = (
-            "/Mounts/rbg-storage1/datasets/Metabo/CLEAN/app/data/split100.csv"
-        )
+    # @staticmethod
+    # def set_args(args) -> None:
+    #     args.dataset_file_path = (
+    #         "/Mounts/rbg-storage1/datasets/Metabo/CLEAN/app/data/split50.csv"
+    #     )
 
     @property
     def SUMMARY_STATEMENT(self) -> None:
@@ -403,3 +425,43 @@ class CLEAN_EC(AbstractDataset):
         * Number of ECs: {num_ecs}
         """
         return statement
+
+
+@register_object("clean_ec_transformer", "dataset")
+class CLEANECTransformer(CLEAN_EC):
+    def create_dataset(
+        self, split_group: Literal["train", "dev", "test"]
+    ) -> List[dict]:
+        dataset = super(CLEANECTransformer, CLEANECTransformer).create_dataset(
+            self, split_group
+        )
+        new_dataset = []
+        for sample in dataset:
+            if len(sample["ec"]) == 1:
+                if self.skip_sample(sample):
+                    continue
+                new_dataset.append(sample)
+            else:  # TODO: will need to do more for other models than ec_transformer
+                for ec in sample["ec"]:
+                    new_sample = copy.deepcopy(sample)
+                    new_sample["ec"] = [ec]
+                    if self.skip_sample(new_sample):
+                        continue
+                    new_dataset.append(new_sample)
+
+        return new_dataset
+
+    def skip_sample(self, sample, entry=None) -> bool:
+        """
+        Return True if sample should be skipped and not included in data
+        """
+        sup_skip = super(CLEANECTransformer, CLEANECTransformer).skip_sample(
+            self, sample, entry
+        )
+        if sup_skip:
+            return True
+        for ec in sample["ec"]:
+            if "n" in ec:
+                return True
+
+        return False
