@@ -222,7 +222,11 @@ class HierarchicalECLoss(Nox):
 
     def __call__(self, model_output, batch, model, args):
         logging_dict, predictions = OrderedDict(), OrderedDict()
-        logits = model_output["ec_logits"]
+        logits = (
+            model_output["ec_logits"]
+            if "ec_logits" in model_output
+            else model_output["logit"]
+        )
         probs = torch.softmax(logits, dim=-1)
         batch_size, _ = logits.shape
 
@@ -241,7 +245,9 @@ class HierarchicalECLoss(Nox):
                     for ec in level4_ecs
                 ]
             ).to(logits.device)
-            level_probs = scatter(probs, target_index, dim=1, reduce="sum")
+            if target_index.sum() > logits.shape[0]:
+                import pdb; pdb.set_trace()
+            level_probs = scatter(probs.float(), target_index, dim=1, reduce=args.probs_reduce_type)
             level_loss = (
                 F.cross_entropy(torch.log_softmax(level_probs, -1), batch[f"ec{level}"])
                 * args.hierarchical_ec_loss_lambdas[int(level) - 1]
@@ -259,6 +265,13 @@ class HierarchicalECLoss(Nox):
             default=[1.0, 1.0, 1.0, 1.0],
             type=float,
             help="weight for each level",
+        )
+        parser.add_argument(
+            "--probs_reduce_type",
+            default="sum",
+            opions=["sum", "mean", "max"],
+            type=str,
+            help="how to reduce probs for each level",
         )
 
 
@@ -306,7 +319,7 @@ class BottomUpECLoss(Nox):
             ).to(logits.device)
             # combine probabilities into the right index for this level yvec
             # level_probs = 1 - scatter(1 - probs, target_index, dim=1, reduce="mul")
-            level_probs = scatter(probs, target_index, dim=1, reduce="sum")  # log
+            level_probs = scatter(probs.float(), target_index, dim=1, reduce=args.probs_reduce_type)
             level_probs = torch.exp(level_probs)
             # BCE loss doesn't support autocasting
             with torch.cuda.amp.autocast(enabled=False):
@@ -321,6 +334,11 @@ class BottomUpECLoss(Nox):
             predictions[f"golds_ec{level}"] = batch[f"ec{level}"]
             predictions[f"probs_ec{level}"] = 1 - level_probs.detach()
 
+        # for classification metrics
+        predictions["golds"] = batch["ec4"]
+        predictions["probs"] = torch.sigmoid(logits).detach()
+        predictions["preds"] = (predictions["probs"] > 0.5).float()
+
         return loss, logging_dict, predictions
 
     @staticmethod
@@ -331,6 +349,13 @@ class BottomUpECLoss(Nox):
             default=[1.0, 1.0, 1.0, 1.0],
             type=float,
             help="weight for each level",
+        )
+        parser.add_argument(
+            "--probs_reduce_type",
+            default="sum",
+            choices=["sum", "mean", "max"],
+            type=str,
+            help="how to reduce probs for each level",
         )
 
 
@@ -363,6 +388,11 @@ class MultiLabelECLoss(Nox):
         predictions["golds_ec"] = batch["ec"]
         predictions["probs_ec"] = torch.sigmoid(logits).detach()
 
+        # for classification metrics
+        predictions["golds"] = batch["ec4"]
+        predictions["probs"] = torch.sigmoid(logits).detach()
+        predictions["preds"] = (predictions["probs"] > 0.5).float()
+
         ###############
 
         # For metrics
@@ -381,10 +411,71 @@ class MultiLabelECLoss(Nox):
             ).to(logits.device)
             # combine probabilities into the right index for this level yvec
             # level_probs = 1 - scatter(1 - probs, target_index, dim=1, reduce="mul")
-            level_probs = scatter(probs, target_index, dim=1, reduce="sum")  # log
+            level_probs = scatter(probs.float(), target_index, dim=1, reduce=args.probs_reduce_type)  # log
             level_probs = torch.exp(level_probs)
 
             predictions[f"golds_ec{level}"] = batch[f"ec{level}"]
             predictions[f"probs_ec{level}"] = 1 - level_probs.detach()
 
         return loss, logging_dict, predictions
+
+    @staticmethod
+    def add_args(parser):
+        parser.add_argument(
+            "--probs_reduce_type",
+            default="sum",
+            choices=["sum", "mean", "max"],
+            type=str,
+            help="how to reduce probs for each level",
+        )
+
+
+@register_object("focal_ec_loss", "loss")
+class FocalLoss(Nox):
+    def __init__(self): 
+        super(FocalLoss, self).__init__()
+
+    def __call__(self, model_output, batch, model, args):
+        self.gamma = args.focal_gamma
+        if args.focal_alpha==None:
+            self.alpha=1
+        else:
+            self.alpha = torch.Tensor(alpha).view(-1, 1)
+    
+        logging_dict, predictions = OrderedDict(), OrderedDict()
+        logits = (
+            model_output["ec_logits"]
+            if "ec_logits" in model_output
+            else model_output["logit"]
+        )
+
+        BCE_loss = F.binary_cross_entropy_with_logits(logits, batch['ec4'], reduction='none')
+        pt = torch.exp(-BCE_loss) # prevents nans when probability 0
+        focal_loss = self.alpha * (1-pt)**self.gamma * BCE_loss
+        loss = focal_loss.mean()
+        
+        logging_dict["ec_loss"] = loss.detach()
+        predictions["golds_ec"] = batch["ec"]
+        predictions["probs_ec"] = torch.sigmoid(logits).detach()
+
+        # for classification metrics
+        predictions["golds"] = batch["ec4"]
+        predictions["probs"] = torch.sigmoid(logits).detach()
+        predictions["preds"] = (predictions["probs"] > 0.5).float()
+
+        return loss, logging_dict, predictions
+    
+    @staticmethod
+    def add_args(parser):
+        parser.add_argument( # code default was gamma=0, but paper default is gamma=1
+            "--focal_gamma",
+            default=1,
+            type=int,
+            help="gamma for focal loss",
+        )
+        parser.add_argument(
+            "--focal_alpha",
+            default=None,
+            type=float,
+            help="alpha for focal loss",
+        )

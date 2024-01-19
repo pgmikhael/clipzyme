@@ -101,6 +101,7 @@ import nox.models.protmol
 import nox.models.noncanonnet
 import nox.models.wln
 import nox.models.reaction_center_classifier
+import nox.models.ec_transformer
 
 # comet
 import nox.loggers.comet

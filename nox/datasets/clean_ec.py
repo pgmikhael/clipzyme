@@ -221,7 +221,7 @@ class CLEAN_EC(AbstractDataset):
 
         return dataset
 
-    def skip_sample(self, sample, entry) -> bool:
+    def skip_sample(self, sample, entry=None) -> bool:
         """
         Return True if sample should be skipped and not included in data
         """
@@ -406,11 +406,11 @@ class CLEAN_EC(AbstractDataset):
             help="directory where msa transformer embeddings are stored.",
         )
 
-    @staticmethod
-    def set_args(args) -> None:
-        args.dataset_file_path = (
-            "/Mounts/rbg-storage1/datasets/Metabo/CLEAN/app/data/split50.csv"
-        )
+    # @staticmethod
+    # def set_args(args) -> None:
+    #     args.dataset_file_path = (
+    #         "/Mounts/rbg-storage1/datasets/Metabo/CLEAN/app/data/split50.csv"
+    #     )
 
     @property
     def SUMMARY_STATEMENT(self) -> None:
@@ -425,3 +425,43 @@ class CLEAN_EC(AbstractDataset):
         * Number of ECs: {num_ecs}
         """
         return statement
+
+
+@register_object("clean_ec_transformer", "dataset")
+class CLEANECTransformer(CLEAN_EC):
+    def create_dataset(
+        self, split_group: Literal["train", "dev", "test"]
+    ) -> List[dict]:
+        dataset = super(CLEANECTransformer, CLEANECTransformer).create_dataset(
+            self, split_group
+        )
+        new_dataset = []
+        for sample in dataset:
+            if len(sample["ec"]) == 1:
+                if self.skip_sample(sample):
+                    continue
+                new_dataset.append(sample)
+            else:  # TODO: will need to do more for other models than ec_transformer
+                for ec in sample["ec"]:
+                    new_sample = copy.deepcopy(sample)
+                    new_sample["ec"] = [ec]
+                    if self.skip_sample(new_sample):
+                        continue
+                    new_dataset.append(new_sample)
+
+        return new_dataset
+
+    def skip_sample(self, sample, entry=None) -> bool:
+        """
+        Return True if sample should be skipped and not included in data
+        """
+        sup_skip = super(CLEANECTransformer, CLEANECTransformer).skip_sample(
+            self, sample, entry
+        )
+        if sup_skip:
+            return True
+        for ec in sample["ec"]:
+            if "n" in ec:
+                return True
+
+        return False
