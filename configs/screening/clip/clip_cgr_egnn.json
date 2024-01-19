@@ -25,7 +25,7 @@
       "use_protein_msa": [true],
       "protein_msa_dir": ["/Mounts/rbg-storage1/datasets/Enzymes/embed_msa_transformer"],
       "train_esm_with_graph": [true],
-      "esm_dir": ["/Mounts/rbg-storage1/snapshots/metabolomics/esm2/checkpoints/esm2_t30_150M_UR50D.pt"],
+      "train_esm_dir": ["/Mounts/rbg-storage1/snapshots/metabolomics/esm2/checkpoints/esm2_t30_150M_UR50D.pt"],
       "use_one_hot_mol_features": [false],
       "chemprop_node_dim": [9],
       "chemprop_edge_dim": [3],
