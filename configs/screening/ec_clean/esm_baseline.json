@@ -1,7 +1,7 @@
 {
     "script": "main",
     "cartesian_hyperparams": {
-      "batch_size": [4],
+      "batch_size": [6],
       "precision": ["bf16"],
       "accumulate_grad_batches": [1],
       "dataset_name": ["clean_ec"],
@@ -12,6 +12,8 @@
       "model_name": ["classifier"],
       "model_name_for_encoder": ["fair_esm2"],
       "esm_name": ["esm2_t30_150M_UR50D"],
+      "pretrained_hub_dir": ["/data/rsg/chemistry/snapshots/metabolomics"],
+      "focal_gamma": [0, 2],
       "esm_hidden_layer": [30],
       "classifier_mlp_input_dim": [640],
       "classifier_mlp_layer_configuration": ["640 640"],
@@ -22,10 +24,11 @@
       "lr_decay": [0.1],
       "lr": [5e-5],
       "weight_decay": [0.05],
-      "loss_names": ["multi_label_ec_loss"],
+      "loss_names": ["focal_ec_loss"],
       "skip_missing_structures": [true],
       "skip_missing_msa": [true],
-      "metric_names": ["hierarchical_ec_classification"],
+      "metric_names": ["classification"],
+      "task_type": ["multilabel"],
       "monitor": ["val_f1_ec4"],
       "checkpoint_save_last": [false],
       "num_workers": [24],
@@ -43,8 +46,8 @@
       "logger_name": ["wandb"],
       "workspace": ["peteranditamar"],
       "project_name": ["enzymes"],
-      "logger_tags": ["ec esm 150M baseline"]
+      "logger_tags": ["ec esm 150M baseline focal_loss"]
     },
-    "available_gpus": ["4,5,6,7"]
+    "available_gpus": ["0,1,2,3", "4,5,6,7"]
   }
   
