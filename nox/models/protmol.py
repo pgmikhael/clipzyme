@@ -232,8 +232,8 @@ class EnzymeReactionCLIP(AbstractModel):
         self.protein_encoder = get_object(args.protein_encoder, "model")(args)
         # option to train esm
         if args.train_esm_with_graph:
-            self.esm_dir = args.esm_dir
-            model, alphabet = pretrained.load_model_and_alphabet(args.esm_dir)
+            self.esm_dir = args.train_esm_dir
+            model, alphabet = pretrained.load_model_and_alphabet(args.train_esm_dir)
             self.esm_model = model
             self.alphabet = alphabet
             self.batch_converter = alphabet.get_batch_converter()
@@ -561,6 +561,12 @@ class EnzymeReactionCLIP(AbstractModel):
             action="store_true",
             default=False,
             help="train ESM model with graph NN.",
+        )
+        parser.add_argument(
+            "--train_esm_dir",
+            type=str,
+            default="/Mounts/rbg-storage1/snapshots/metabolomics/esm2/checkpoints/esm2_t33_650M_UR50D.pt",
+            help="directory to load esm model from",
         )
 
 
