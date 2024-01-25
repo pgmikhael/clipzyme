@@ -229,6 +229,8 @@ class ScreeningEnzymes(AbstractDataset):
                 if self.args.use_protein_msa:
                     feats = data["receptor"].x
                     msa_embed = torch.load(self.msa_files[uniprot_id])
+                    if self.args.replace_esm_with_msa:
+                        data["receptor"].x = msa_embed
                     data["receptor"].x = torch.concat([feats, msa_embed], dim=-1)
                     data["receptor"].msa = msa_embed
 
@@ -340,6 +342,12 @@ class ScreeningEnzymes(AbstractDataset):
             type=int,
             default=None,
             help="skip proteins longer than max_protein_length",
+        )
+        parser.add_argument(
+            "--replace_esm_with_msa",
+            action="store_true",
+            default=False,
+            help="whether to use ONLY the protein MSAs",
         )
 
     @staticmethod

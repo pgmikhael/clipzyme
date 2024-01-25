@@ -926,6 +926,12 @@ class EnzymeMap(AbstractDataset):
             help="directory where msa transformer embeddings are stored.",
         )
         parser.add_argument(
+            "--replace_esm_with_msa",
+            action="store_true",
+            default=False,
+            help="whether to use ONLY the protein MSAs",
+        )
+        parser.add_argument(
             "--ec_level",
             type=int,
             default=3,
@@ -2255,65 +2261,32 @@ class EnzymeMapGraph(EnzymeMap):
                 item["sequence_annotation"] = scores
 
             if self.args.use_protein_graphs:
-                # load the protein graph
-                graph_path = os.path.join(
-                    self.args.protein_graphs_dir,
-                    "processed",
-                    f"{item['uniprot_id']}_graph.pt",
-                )
-                data = torch.load(graph_path)
-                if data is None:
-                    structure_path = os.path.join(
-                        self.args.protein_structures_dir,
-                        f"AF-{item['uniprot_id']}-F1-model_v4.cif",
-                    )
-                    assert os.path.exists(
-                        structure_path
-                    ), f"Structure path {graph_path} does not exist"
-                    print(
-                        f"Structure path does exist, but graph path does not exist {graph_path} so making graph"
-                    )
-
-                    data = self.create_protein_graph(item)
-                    torch.save(data, graph_path)
-
-                if hasattr(data, "x") and not hasattr(data["receptor"], "x"):
-                    data["receptor"].x = data.x
-
-                if not hasattr(data, "structure_sequence"):
-                    data.structure_sequence = "".join(
-                        [protein_letters_3to1[char] for char in data["receptor"].seq]
-                    )
-
-                keep_keys = {
-                    "receptor",
-                    "structure_sequence",
-                    ("receptor", "contact", "receptor"),
-                }
-
-                data_keys = data.to_dict().keys()
-                for d_key in data_keys:
-                    if not d_key in keep_keys:
-                        delattr(data, d_key)
-
-                coors = data["receptor"].pos
-                feats = data["receptor"].x
-                edge_index = data["receptor", "contact", "receptor"].edge_index
-                assert (
-                    coors.shape[0] == feats.shape[0]
-                ), f"Number of nodes do not match between coors ({coors.shape[0]}) and feats ({feats.shape[0]})"
-
-                assert (
-                    max(edge_index[0]) < coors.shape[0]
-                    and max(edge_index[1]) < coors.shape[0]
-                ), "Edge index contains node indices not present in coors"
+                if self.args.cache_path:
+                    try:
+                        graph_path_cache = os.path.join(
+                            self.args.cache_path,
+                            f"{item['uniprot_id']}_graph.pt",
+                        )
+                        data = torch.load(graph_path_cache)
+                        if data is None:
+                            data = self.load_protein_graph(item)
+                            torch.save(data, graph_path_cache)
+                    except:
+                        data = self.load_protein_graph(item)
+                        torch.save(data, graph_path_cache)
+                else:
+                    data = self.load_protein_graph(item)
 
                 if self.args.use_protein_msa:
+                    feats = data["receptor"].x
                     msa_embed = torch.load(
                         os.path.join(self.args.protein_msa_dir, f"{uniprot_id}.pt")
                     )
-                    data["receptor"].x = torch.concat([feats, msa_embed], dim=-1)
-                    data["receptor"].msa = msa_embed
+                    if self.args.replace_esm_with_msa:
+                        data["receptor"].x = msa_embed
+                    else:
+                        data["receptor"].x = torch.concat([feats, msa_embed], dim=-1)
+                        data["receptor"].msa = msa_embed
 
                 item["graph"] = data
 
@@ -2323,6 +2296,57 @@ class EnzymeMapGraph(EnzymeMap):
             print(
                 f"Could not load sample {sample['uniprot_id']} because of an exception {e}"
             )
+
+    def load_protein_graph(self, item):
+        # load the protein graph
+        graph_path = os.path.join(
+            self.args.protein_graphs_dir,
+            "processed",
+            f"{item['uniprot_id']}_graph.pt",
+        )
+        try:
+            data = torch.load(graph_path)
+        except:
+            data = self.create_protein_graph(item)
+            torch.save(data, graph_path)
+        if data is None:
+            try:
+                data = self.create_protein_graph(item)
+                torch.save(data, graph_path)
+            except:
+                return
+
+        if hasattr(data, "x") and not hasattr(data["receptor"], "x"):
+            data["receptor"].x = data.x
+
+        if not hasattr(data, "structure_sequence"):
+            data.structure_sequence = "".join(
+                [protein_letters_3to1[char] for char in data["receptor"].seq]
+            )
+
+        keep_keys = {
+            "receptor",
+            "structure_sequence",
+            ("receptor", "contact", "receptor"),
+        }
+
+        data_keys = data.to_dict().keys()
+        for d_key in data_keys:
+            if not d_key in keep_keys:
+                delattr(data, d_key)
+
+        coors = data["receptor"].pos
+        feats = data["receptor"].x
+        edge_index = data["receptor", "contact", "receptor"].edge_index
+        assert (
+            coors.shape[0] == feats.shape[0]
+        ), f"Number of nodes do not match between coors ({coors.shape[0]}) and feats ({feats.shape[0]})"
+
+        assert (
+            max(edge_index[0]) < coors.shape[0] and max(edge_index[1]) < coors.shape[0]
+        ), "Edge index contains node indices not present in coors"
+
+        return data
 
     @staticmethod
     def add_args(parser) -> None:
