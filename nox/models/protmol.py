@@ -724,6 +724,48 @@ class EnzymeReactionCLIPPretrained(EnzymeReactionCLIP):
         )
 
 
+@register_object("enzyme_reaction_clip_wldn", "model")
+class EnzymeReactionCLIPWLDN(EnzymeReactionCLIPPretrained):
+    def __init__(self, args):
+        super(EnzymeReactionCLIPWLDN, self).__init__(args)
+        wln_diff_args = copy.deepcopy(args)
+        wln_diff_args.chemprop_node_dim = args.chemprop_hidden_dim
+        # wln_diff_args.chemprop_num_layers = 1
+        self.wln_diff = DMPNNEncoder(wln_diff_args)
+        del self.wln
+
+    def encode_reaction(self, batch):
+        gat_output = self.substrate_encoder.gat_global_attention(batch["reactants"])
+        cs = gat_output["node_features"]
+        c_tildes = gat_output["node_features_attn"]  # node contexts
+        reactant_node_feats = self.substrate_encoder.lin(
+            torch.cat([cs, c_tildes], dim=-1)
+        )
+
+        gat_output = self.substrate_encoder.gat_global_attention(batch["products"])
+        cs = gat_output["node_features"]
+        c_tildes = gat_output["node_features_attn"]  # node contexts
+        product_node_feats = self.substrate_encoder.lin(
+            torch.cat([cs, c_tildes], dim=-1)
+        )
+
+        difference_vectors = product_node_feats - reactant_node_feats
+
+        product_graph = batch["products"].clone()
+        product_graph.x = difference_vectors
+
+        # apply a separate WLN to the difference graph
+        wln_diff_output = self.wln_diff(product_graph)
+        diff_node_feats = wln_diff_output["node_features"]
+        diff_node_feats, mask = to_dense_batch(
+            diff_node_feats, batch=product_graph.batch
+        )
+        feats = diff_node_feats.sum(1)  # sum over all nodes
+        if feats.shape[-1] != self.args.protein_dim:
+            feats = self.substrate_projection(feats)
+        return feats
+
+
 @register_object("protmol_clip_multiobjective_small_cgr_heid", "model")
 class ProteinMoleculeCLIPMultiObjSmallCGRHeid(AbstractModel):
     def __init__(self, args):
