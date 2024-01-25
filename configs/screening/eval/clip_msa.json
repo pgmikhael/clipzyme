@@ -1,14 +1,14 @@
 {
     "script": "main",
     "cartesian_hyperparams": {
-      "batch_size": [24],
+      "batch_size": [6],
       "precision": ["bf16"],
       "accumulate_grad_batches": [1],
       "dataset_name": ["screening_enzymes"],
       "lightning_name": ["base"],
       "model_name": ["enzyme_reaction_clip"],
       "use_protein_msa": [true],
-      "checkpoint_path": ["/Mounts/rbg-storage1/snapshots/metabolomics/4add9a242ca4f896cd31da4d0d129c63/4add9a242ca4f896cd31da4d0d129c63epoch=8.ckpt"],
+      "checkpoint_path": ["/Mounts/rbg-storage1/snapshots/metabolomics/2dfca251b0dd0e478da1a569ba32b735/2dfca251b0dd0e478da1a569ba32b735epoch=26.ckpt"],
       "chemprop_node_dim": [9],
       "chemprop_edge_dim": [3],
       "protein_encoder": ["egnn_sparse_network"],
@@ -20,7 +20,7 @@
       "norm_feats": [true],
       "norm_coors": [true],
       "update_feats": [true],
-      "update_coors": [false],
+      "update_coors": [true],
       "egcl_layers": [6],
       "use_sinusoidal": [true],
       "protein_graphs_dir": ["/Mounts/rbg-storage1/datasets/Metabo/quickprot_caches"],
@@ -30,7 +30,7 @@
       "chemprop_pool": ["none"],
       "compute_metrics_every_step": [true],
       "callback_names": ["lr_monitor checkpointer"],
-      "max_epochs": [10],
+      "max_epochs": [30],
       "lr_decay": [0.1],
       "lr": [1e-4],
       "weight_decay": [0.05],
@@ -51,10 +51,10 @@
       "shuffle_eval_loader": [false],
       "from_checkpoint": [true],
       "save_hiddens": [true],
-      "inference_dir": ["/Mounts/rbg-storage1/results/metabolomics/clip"],
+      "inference_dir": ["/Mounts/rbg-storage1/results/metabolomics/clip/"],
       "num_sanity_val_steps": [0],
       "val_check_interval": [1.0],
-      "gpus": [1],
+      "gpus": [4],
       "ignore_warnings": [false],
       "dropout": [0],
       "checkpoint_dir": ["/Mounts/rbg-storage1/snapshots/metabolomics"],
@@ -64,6 +64,6 @@
       "logger_tags": ["clip msa"],
       "cache_path": ["/storage/enzymes/quickprot_caches"]
     },
-    "available_gpus": ["0"]
+    "available_gpus": ["4,5,6,7"]
   }
   
