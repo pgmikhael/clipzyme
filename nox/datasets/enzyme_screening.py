@@ -231,8 +231,9 @@ class ScreeningEnzymes(AbstractDataset):
                     msa_embed = torch.load(self.msa_files[uniprot_id])
                     if self.args.replace_esm_with_msa:
                         data["receptor"].x = msa_embed
-                    data["receptor"].x = torch.concat([feats, msa_embed], dim=-1)
-                    data["receptor"].msa = msa_embed
+                    else:
+                        data["receptor"].x = torch.concat([feats, msa_embed], dim=-1)
+                        data["receptor"].msa = msa_embed
 
                 item["graph"] = data
 
