@@ -14,7 +14,7 @@
     "lightning_name": ["base"],
     "model_name": ["enzyme_reaction_clip"],
     "use_protein_msa": [false],
-    "checkpoint_path": ["/Mounts/rbg-storage1/snapshots/metabolomics/3d8bf1a2ffbb560d7c82caaefc494227/3d8bf1a2ffbb560d7c82caaefc494227epoch=9.ckpt"],
+    "checkpoint_path": ["/Mounts/rbg-storage1/snapshots/metabolomics/bf6b607124c5cca3430fc0c2ee1148dd/bf6b607124c5cca3430fc0c2ee1148ddepoch=26.ckpt"],
     "relax_checkpoint_matching": [true],
     "chemprop_node_dim": [9],
     "chemprop_edge_dim": [3],
@@ -27,7 +27,7 @@
     "norm_feats": [true],
     "norm_coors": [true],
     "update_feats": [true],
-    "update_coors": [false],
+    "update_coors": [true],
     "egcl_layers": [6],
     "use_sinusoidal": [true],
     "protein_graphs_dir": ["/Mounts/rbg-storage1/datasets/Metabo/quickprot_caches"],
@@ -55,7 +55,8 @@
     "logger_name": ["wandb"],
     "workspace": ["peteranditamar"],
     "project_name": ["enzymes"],
-    "logger_tags": ["clip eval egnn"]
+    "logger_tags": ["clip eval egnn"],
+    "cache_path": ["/storage/enzymes/quickprot_caches"]
   },
-  "available_gpus": ["1,2,3,4"]
+  "available_gpus": ["4,5,6,7"]
 }

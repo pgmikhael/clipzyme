@@ -3,10 +3,12 @@
   "cartesian_hyperparams": {
     "batch_size": [8],
     "precision": ["bf16"],
-    "accumulate_grad_batches": [1],
+    "accumulate_grad_batches": [2],
     "dataset_name": ["enzymemap_reaction_graph"],
     "dataset_file_path": ["/Mounts/rbg-storage1/datasets/Enzymes/EnzymeMap/version2/enzymemap_v2_brenda2_blip.json"],
     "dataset_cache_path": ["/Mounts/rbg-storage1/users/pgmikhael/nox/cache/cached_egnn_blip_dataset_version2.p"],
+    "from_checkpoint": [true],
+    "checkpoint_path": ["/Mounts/rbg-storage1/snapshots/metabolomics/6a518ff6eda2b4a4299e9e1523b24d27/6a518ff6eda2b4a4299e9e1523b24d27epoch=15.ckpt"],
     "remove_duplicate_reactions": [true],
     "use_pesto_scores": [false],
     "max_protein_length": [650], 
@@ -27,7 +29,7 @@
     "freeze_esm": [false],
     "esm_hidden_layer": [33],
     "chemprop_hidden_dim": [1280],
-    "max_epochs": [30],
+    "max_epochs": [20],
     "chemprop_node_dim": [9],
     "chemprop_edge_dim": [3],
     "chemprop_num_layers": [5],  
@@ -62,5 +64,5 @@
     "logger_tags": ["clip esm"],
     "cache_path": ["/storage/enzymes/quickprot_caches"]
   },
-  "available_gpus": ["0,1,2,3"]
+  "available_gpus": ["4,5,6,7"]
 }
