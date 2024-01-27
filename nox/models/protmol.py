@@ -266,31 +266,6 @@ class EnzymeReactionCLIP(AbstractModel):
         if args.do_matching_task:
             self.mlp = get_object(args.mlp_name, "model")(args)
 
-        if args.do_ec_task:
-            self.logit_ec_scale = nn.Parameter(
-                torch.ones([]) * torch.log(torch.tensor(1 / 0.07))
-            )
-            if args.ec_model_model_path is not None:  # load pretrained model
-                state_dict_ec = torch.load(args.ec_model_model_path)
-                state_dict_ec_copy = {
-                    k.replace("model.", "", 1): v
-                    for k, v in state_dict_ec["state_dict"].items()
-                }
-                ec_args = state_dict_ec["hyper_parameters"]["args"]
-                assert (
-                    args.ec_model_name == ec_args.ec_model_name
-                ), "ec model name must match"
-                self.ec_head = get_object(args.ec_model_name, "model")(ec_args)
-                self.ec_head.load_state_dict(
-                    {
-                        k[len("model.") :]: v
-                        for k, v in state_dict["state_dict"].items()
-                        if k.startswith("model")
-                    }
-                )
-            else:
-                self.ec_head = get_object(args.ec_model_name, "model")(args)
-
         if self.reaction_clip_model_path is not None:
             self.load_state_dict(state_dict_copy)
 
@@ -476,13 +451,171 @@ class EnzymeReactionCLIP(AbstractModel):
                 [concat_hiddens.new_ones(bs), concat_hiddens.new_zeros(bs)], dim=0
             )
 
-        if self.args.do_ec_task:
-            assert (
-                "protein_features" in output
-            ), "output must have protein features to predict EC"
-            output.update(self.ec_head(output["protein_features"]))
-
         return output
+
+    @staticmethod
+    def add_args(parser) -> None:
+        DMPNNEncoder.add_args(parser)
+        parser.add_argument(
+            "--mlp_name",
+            type=str,
+            action=set_nox_type("model"),
+            default="mlp_classifier",
+            help="Name of mlp to use",
+        )
+        parser.add_argument(
+            "--do_matching_task",
+            action="store_true",
+            default=False,
+            help="do molecule-protein matching",
+        )
+        parser.add_argument(
+            "--protein_encoder",
+            type=str,
+            action=set_nox_type("model"),
+            default="fair_esm2",
+            help="Name of encoder to use",
+        )
+        parser.add_argument(
+            "--reaction_clip_model_path",
+            type=str,
+            default=None,
+            help="path to saved model if loading from pretrained",
+        )
+        parser.add_argument(
+            "--aggregate_over_edges",
+            action="store_true",
+            default=False,
+            help="use gat implementation.",
+        )
+        parser.add_argument(
+            "--clip_freeze_esm",
+            action="store_true",
+            default=False,
+            help="use gat implementation.",
+        )
+        parser.add_argument(
+            "--use_as_protein_encoder",
+            action="store_true",
+            default=False,
+            help="use gat implementation.",
+        )
+        parser.add_argument(
+            "--use_as_mol_encoder",
+            action="store_true",
+            default=False,
+            help="use gat implementation.",
+        )
+        parser.add_argument(
+            "--train_esm_with_graph",
+            action="store_true",
+            default=False,
+            help="train ESM model with graph NN.",
+        )
+        parser.add_argument(
+            "--train_esm_dir",
+            type=str,
+            default="/Mounts/rbg-storage1/snapshots/metabolomics/esm2/checkpoints/esm2_t33_650M_UR50D.pt",
+            help="directory to load esm model from",
+        )
+
+
+@register_object("enzyme_reaction_clip_ec", "model")
+class EnzymeReactionCLIPEC(EnzymeReactionCLIP):
+    def __init__(self, args):
+        super(EnzymeReactionCLIPEC, self).__init__(args)
+        # the idea being that this protein_encoder produces both the protein and ec predictions
+        # if pretrained ec model, load it
+        if args.ec_model_model_path is not None:  # load pretrained model
+            state_dict_ec = torch.load(args.ec_model_model_path)
+            state_dict_ec_copy = {
+                k.replace("model.", "", 1): v
+                for k, v in state_dict_ec["state_dict"].items()
+            }
+            ec_args = state_dict_ec["hyper_parameters"]["args"]
+            assert (
+                args.protein_encoder == ec_args.protein_encoder
+            ), "ec model name must match"
+            assert (
+                args.vocab_path == ec_args.vocab_path
+            ), "pretrained model has different vocab"
+            self.protein_encoder = get_object(args.protein_encoder, "model")(ec_args)
+            self.protein_encoder.load_state_dict(state_dict_ec_copy)
+
+    def encode_protein(self, batch):
+        if self.args.use_protein_graphs and self.args.train_esm_with_graph:
+            sequences = [
+                (i, s) for i, s in enumerate(batch["graph"].structure_sequence)
+            ]
+            repr_layer = len(self.esm_model.layers)
+            _, _, batch_tokens = self.batch_converter(sequences)
+            batch_tokens = batch_tokens.to(self.logit_scale.device)
+            mask = torch.logical_and(
+                torch.logical_and(
+                    (batch_tokens != self.alphabet.cls_idx),
+                    (batch_tokens != self.alphabet.eos_idx),
+                ),
+                (batch_tokens != self.alphabet.padding_idx),
+            )
+            out = self.esm_model(batch_tokens, repr_layers=[repr_layer])
+            representations = out["representations"][repr_layer][mask]
+            batch["graph"]["receptor"].x = representations
+            if self.args.use_protein_msa:
+                msa = batch["graph"]["receptor"].msa
+                batch["graph"]["receptor"].x = torch.concat(
+                    [representations, msa], dim=-1
+                )
+
+        protein_output = self.protein_encoder(batch)
+        # apply normalization
+        protein_output["protein_features"] = self.ln_final(
+            protein_output["protein_features"]
+        )
+        return protein_output
+
+    def forward(self, batch) -> Dict:
+        output = {}
+        if getattr(self.args, "use_as_protein_encoder", False):
+            encoded_protein_output = self.encode_protein(batch)
+            protein_features = encoded_protein_output["protein_features"]
+
+            protein_features = protein_features / protein_features.norm(
+                dim=1, keepdim=True
+            )
+
+            output.update(
+                {
+                    "hidden": protein_features,
+                }
+            )
+            return output
+
+        if getattr(self.args, "use_as_mol_encoder", False):
+            substrate_features = self.encode_reaction(batch)
+            substrate_features = substrate_features / substrate_features.norm(
+                dim=1, keepdim=True
+            )
+            output.update(
+                {
+                    "hidden": substrate_features,
+                }
+            )
+            return output
+
+        substrate_features = self.encode_reaction(batch)
+        encoded_protein_output = self.encode_protein(batch)
+        protein_features = encoded_protein_output["protein_features"]
+
+        # normalized features
+        substrate_features = substrate_features / substrate_features.norm(
+            dim=1, keepdim=True
+        )
+        protein_features = protein_features / protein_features.norm(dim=1, keepdim=True)
+
+        encoded_protein_output["protein_hiddens"] = protein_features
+        encoded_protein_output["substrate_hiddens"] = substrate_features
+
+        return encoded_protein_output
 
     @staticmethod
     def add_args(parser) -> None:
@@ -561,12 +694,6 @@ class EnzymeReactionCLIP(AbstractModel):
             action="store_true",
             default=False,
             help="train ESM model with graph NN.",
-        )
-        parser.add_argument(
-            "--train_esm_dir",
-            type=str,
-            default="/Mounts/rbg-storage1/snapshots/metabolomics/esm2/checkpoints/esm2_t33_650M_UR50D.pt",
-            help="directory to load esm model from",
         )
 
 
@@ -777,7 +904,7 @@ class ProteinMoleculeCLIPMultiObjSmallCGRHeid(AbstractModel):
         self.use_as_matching_classifier = getattr(
             args, "use_as_matching_classifier", False
         )
-
+        #  4709
         # protein encoder
         self.protein_tokenizer = AutoTokenizer.from_pretrained(args.esm_model_version)
         config = EsmConfig.from_pretrained(args.esm_model_version)

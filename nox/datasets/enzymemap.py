@@ -2242,7 +2242,13 @@ class EnzymeMapGraph(EnzymeMap):
             # ecs as tensors
             split_ec = ec.split(".")
             for k, v in self.args.ec_levels.items():
-                item[f"ec{k}"] = v.get(".".join(split_ec[: int(k)]), -1)
+                if not self.args.ec_levels_one_hot: # index encoding
+                    item[f"ec{k}"] = v.get(".".join(split_ec[: int(k)]), -1)
+                else: # one hot encoding
+                    yvec = torch.zeros(len(v))
+                    yvec[v[".".join(split_ec[: int(k)])]] = 1
+                    item[f"ec{k}"] = yvec
+                    
 
             if self.args.load_wln_cache_in_dataset:
                 item["product_candidates"] = self.cache.get(rowid)
@@ -2342,6 +2348,16 @@ class EnzymeMapGraph(EnzymeMap):
 
         return data
 
+    @staticmethod
+    def add_args(parser) -> None:
+        """Add class specific args"""
+        super(EnzymeMapGraph, EnzymeMapGraph).add_args(parser)
+        parser.add_argument(
+                "--ec_levels_one_hot",
+                action="store_true",
+                default=False,
+                help="whether to use one hot encoding for ec levels",
+            )
 
 @register_object("enzymemap_reactions_msa", "dataset")
 class EnzymeMapMSA(
