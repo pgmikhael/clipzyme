@@ -1,9 +1,0 @@
-{
-  "script": "main",
-  "train_config": "configs/enzymes/active_site_3d.json",
-  "log_dir": "/Mounts/rbg-storage1/logs/metabo/",
-  "available_gpus": [1],
-  "eval_args": {
-    "batch_size" : [5]
-  }
-}

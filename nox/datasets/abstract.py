@@ -8,7 +8,6 @@ import os
 from collections import Counter
 import numpy as np
 from torch.utils import data
-from nox.utils.loading import get_sample_loader
 from nox.utils.classes import Nox, set_nox_type, classproperty
 from nox.utils.messages import METAFILE_NOTFOUND_ERR, LOAD_FAIL_MSG
 from rich import print as rprint
@@ -73,10 +72,6 @@ class AbstractDataset(data.Dataset, Nox):
             args (argparse.ArgumentParser)
             split_group (str)
         """
-        try:
-            self.input_loader = get_sample_loader(split_group, args)
-        except:
-            print(f"Couldn't create input_loader: {args.input_loader_name}")
         self.load_dataset(args)
 
     def post_process(self, args):

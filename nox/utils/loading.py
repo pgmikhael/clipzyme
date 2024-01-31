@@ -8,7 +8,6 @@ from nox.utils.registry import get_object
 import torch
 from torch.utils import data
 from nox.utils.sampler import DistributedWeightedSampler
-from nox.utils.augmentations import get_augmentations_by_split
 
 try:
     from pytorch_lightning.utilities.cloud_io import load as pl_load
@@ -284,28 +283,6 @@ def concat_all_gather(tensor):
     torch.distributed.all_gather(tensors_gather, tensor, async_op=False)
     output = torch.cat(tensors_gather, dim=0)
     return output
-
-
-def get_sample_loader(split_group: Literal["train", "dev", "test"], args: Namespace):
-    """[summary]
-
-    Parameters
-    ----------
-    ``split_group`` : str
-        dataset split according to which the augmentation is selected (choices are ['train', 'dev', 'test'])
-    ``args`` : Namespace
-        global args
-
-    Returns
-    -------
-    abstract_loader
-        sample loader (DicomLoader for dicoms or OpenCVLoader pngs). see sybil.loaders.image_loaders
-    """
-    augmentations = get_augmentations_by_split(split_group, args)
-
-    return get_object(args.input_loader_name, "input_loader")(
-        args.cache_path, augmentations, args
-    )
 
 
 def get_lightning_model(args: Namespace):

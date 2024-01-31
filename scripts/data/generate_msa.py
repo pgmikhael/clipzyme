@@ -9,8 +9,6 @@
 import sys
 import os
 
-# sys.path.append(os.path.dirname(os.path.realpath(".")))
-# from nox.utils.hhblits_msa import read_msa, sample_msa
 import subprocess
 import shutil
 import multiprocessing
