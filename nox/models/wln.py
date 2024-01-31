@@ -343,11 +343,12 @@ class WLDN(AbstractModel):
                 nn.Linear(args.gat_hidden_dim, 1),
             )
 
-        self.use_cache = (args.cache_path is not None) and (
-            not args.load_wln_cache_in_dataset
-        )
-        if self.use_cache:
-            self.cache = WLDN_Cache(os.path.join(args.cache_path), "pt")
+        if getattr(args, "load_wln_cache_in_dataset", False):
+            self.use_cache = (args.cache_path is not None) and (
+                not args.load_wln_cache_in_dataset
+            )
+            if self.use_cache:
+                self.cache = WLDN_Cache(os.path.join(args.cache_path), "pt")
         if self.args.test:
             assert not self.args.train
 

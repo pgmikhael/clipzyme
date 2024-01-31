@@ -249,18 +249,18 @@ class EnzymeReactionCLIP(AbstractModel):
         )
 
         wln_diff_args = copy.deepcopy(args)
+        if args.model_name != "enzyme_reaction_clip_wldnv1":
+            self.wln = DMPNNEncoder(args)  # WLN for mol representation
+            wln_diff_args = copy.deepcopy(args)
+            wln_diff_args.chemprop_edge_dim = args.chemprop_hidden_dim
+            # wln_diff_args.chemprop_num_layers = 1
+            self.wln_diff = DMPNNEncoder(wln_diff_args)
 
-        self.wln = DMPNNEncoder(args)  # WLN for mol representation
-        wln_diff_args = copy.deepcopy(args)
-        wln_diff_args.chemprop_edge_dim = args.chemprop_hidden_dim
-        # wln_diff_args.chemprop_num_layers = 1
-        self.wln_diff = DMPNNEncoder(wln_diff_args)
-
-        # mol: attention pool
-        self.final_linear = nn.Linear(
-            args.chemprop_hidden_dim, args.chemprop_hidden_dim, bias=False
-        )
-        self.attention_fc = nn.Linear(args.chemprop_hidden_dim, 1, bias=False)
+            # mol: attention pool
+            self.final_linear = nn.Linear(
+                args.chemprop_hidden_dim, args.chemprop_hidden_dim, bias=False
+            )
+            self.attention_fc = nn.Linear(args.chemprop_hidden_dim, 1, bias=False)
 
         # classifier
         if args.do_matching_task:
@@ -891,6 +891,113 @@ class EnzymeReactionCLIPWLDN(EnzymeReactionCLIPPretrained):
         if feats.shape[-1] != self.args.protein_dim:
             feats = self.substrate_projection(feats)
         return feats
+
+
+@register_object("enzyme_reaction_clip_wldnv1", "model")
+class EnzymeReactionCLIPWLDN(EnzymeReactionCLIPPretrained):
+    def __init__(self, args):
+        super(EnzymeReactionCLIPWLDN, self).__init__(args)
+        del self.substrate_encoder.reactivity_net
+
+    def encode_reaction(self, batch):
+        gat_output = self.substrate_encoder.wln(batch["reactants"])
+        reactant_node_feats = gat_output["node_features"]
+
+        gat_output = self.substrate_encoder.wln(batch["products"])
+        product_node_feats = gat_output["node_features"]
+
+        difference_vectors = product_node_feats - reactant_node_feats
+
+        product_graph = batch["products"].clone()
+        product_graph.x = difference_vectors
+
+        # apply a separate WLN to the difference graph
+        wln_diff_output = self.substrate_encoder.wln_diff(product_graph)
+        diff_node_feats = wln_diff_output["node_features"]
+        diff_node_feats, mask = to_dense_batch(
+            diff_node_feats, batch=product_graph.batch
+        )
+        feats = diff_node_feats.sum(1)  # sum over all nodes
+        if feats.shape[-1] != self.args.protein_dim:
+            feats = self.substrate_projection(feats)
+        return feats
+
+    def add_args(parser) -> None:
+        parser.add_argument(
+            "--substrate_model_path",
+            type=str,
+            default=None,
+            help="path to saved model if loading from pretrained",
+        )
+        parser.add_argument(
+            "--substrate_encoder",
+            type=str,
+            action=set_nox_type("model"),
+            default="full_reaction_encoder",
+            help="Rxn String Encoder",
+        )
+        parser.add_argument(
+            "--mlp_name",
+            type=str,
+            action=set_nox_type("model"),
+            default="mlp_classifier",
+            help="Name of mlp to use",
+        )
+        parser.add_argument(
+            "--do_matching_task",
+            action="store_true",
+            default=False,
+            help="do molecule-protein matching",
+        )
+        parser.add_argument(
+            "--protein_encoder",
+            type=str,
+            action=set_nox_type("model"),
+            default="fair_esm2",
+            help="Name of encoder to use",
+        )
+        parser.add_argument(
+            "--reaction_clip_model_path",
+            type=str,
+            default=None,
+            help="path to saved model if loading from pretrained",
+        )
+        parser.add_argument(
+            "--aggregate_over_edges",
+            action="store_true",
+            default=False,
+            help="use gat implementation.",
+        )
+        parser.add_argument(
+            "--clip_freeze_esm",
+            action="store_true",
+            default=False,
+            help="use gat implementation.",
+        )
+        parser.add_argument(
+            "--use_as_protein_encoder",
+            action="store_true",
+            default=False,
+            help="use gat implementation.",
+        )
+        parser.add_argument(
+            "--use_as_mol_encoder",
+            action="store_true",
+            default=False,
+            help="use gat implementation.",
+        )
+        parser.add_argument(
+            "--train_esm_with_graph",
+            action="store_true",
+            default=False,
+            help="train ESM model with graph NN.",
+        )
+        parser.add_argument(
+            "--train_esm_dir",
+            type=str,
+            default="/Mounts/rbg-storage1/snapshots/metabolomics/esm2/checkpoints/esm2_t33_650M_UR50D.pt",
+            help="directory to load esm model from",
+        )
 
 
 @register_object("protmol_clip_multiobjective_small_cgr_heid", "model")
