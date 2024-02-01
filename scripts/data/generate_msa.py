@@ -126,19 +126,19 @@ parser.add_argument("--cpus", type=int, default=2, help="Number of cpus.")
 parser.add_argument(
     "--msa_target_directory",
     type=str,
-    default="/Mounts/rbg-storage1/datasets/Enzymes/EnzymeMap/hhblits_msas",
+    default="/home/datasets/Enzymes/EnzymeMap/hhblits_msas",
     help="directory where msa files are stored.",
 )
 parser.add_argument(
     "--database_directory",
     type=str,
-    default="/data/rsg/mammogram/HHSuite/uniclust30_2018_08/uniclust30_2018_08",
+    default="/home/HHSuite/uniclust30_2018_08/uniclust30_2018_08",
     help="directory where UniClust30 is stored.",
 )
 parser.add_argument(
     "--embedding_target_directory",
     type=str,
-    default="/Mounts/rbg-storage1/datasets/Enzymes/EnzymeMap/hhblits_embeds",
+    default="/home/datasets/Enzymes/EnzymeMap/hhblits_embeds",
     help="directory where msa transformer embeddings are stored.",
 )
 parser.add_argument(
@@ -262,7 +262,7 @@ if __name__ == "__main__":
         if not os.path.exists(args.embedding_target_directory):
             os.mkdir(args.embedding_target_directory)
 
-        torch.hub.set_dir("/Mounts/rbg-storage1/snapshots/metabolomics")
+        torch.hub.set_dir("/home/snapshots/metabolomics")
         msa_model, msa_alphabet = torch.hub.load(
             "facebookresearch/esm:main", "esm_msa1b_t12_100M_UR50S"
         )

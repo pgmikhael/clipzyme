@@ -10,9 +10,9 @@
     "use_as_protein_encoder": [true],
     "from_checkpoint": [true],
     "save_hiddens": [true],
-    "inference_dir": ["/Mounts/rbg-storage1/results/metabolomics/clip"],
+    "inference_dir": ["/home/results/metabolomics/clip"],
     "checkpoint_path": [
-      "/Mounts/rbg-storage1/snapshots/metabolomics/a27ef7e19454a7fdeb25e6f2295609e9/a27ef7e19454a7fdeb25e6f2295609e9epoch=9.ckpt"
+      "/home/snapshots/metabolomics/a27ef7e19454a7fdeb25e6f2295609e9/a27ef7e19454a7fdeb25e6f2295609e9epoch=9.ckpt"
   ],
     "lightning_name": ["base"],
     "model_name": ["enzyme_reaction_clip_pretrained"],
@@ -41,8 +41,8 @@
     "update_coors": [false],
     "egcl_layers": [6],
     "use_sinusoidal": [true],
-    "protein_graphs_dir": ["/Mounts/rbg-storage1/datasets/Metabo/quickprot_caches"],
-    "protein_structures_dir": ["/Mounts/rbg-storage1/datasets/Metabo/AlphaFoldEnzymes/"],
+    "protein_graphs_dir": ["/home/datasets/Metabo/quickprot_caches"],
+    "protein_structures_dir": ["/home/datasets/Metabo/AlphaFoldEnzymes/"],
     "chemprop_num_layers": [5],
     "chemprop_hidden_dim": [480],
     "chemprop_pool": ["none"],
@@ -63,7 +63,7 @@
     "gpus": [5],
     "ignore_warnings": [false],
     "dropout": [0],
-    "checkpoint_dir": ["/Mounts/rbg-storage1/snapshots/metabolomics"],
+    "checkpoint_dir": ["/home/snapshots/metabolomics"],
     "logger_name": ["wandb"],
     "workspace": ["peteranditamar"],
     "project_name": ["enzymes"],

@@ -1,8 +1,8 @@
 ## To install requirements:
 
 ```
-conda create -n nox python=3.10
-conda activate nox
+conda create -n clipzyme python=3.10
+conda activate clipzyme
 python -m pip install rdkit
 python -m pip install numpy==1.26.0 pandas==2.1.1 scikit-image==0.19.1 scikit-learn==1.3.2 scipy==1.11.2 tqdm==4.62.3 GitPython==3.1.27 comet-ml==3.28.1 wandb==0.12.19
 python -m pip install torch==2.0.1+cu118 torchvision==0.15.2+cu118 --extra-index-url https://download.pytorch.org/whl/cu118
