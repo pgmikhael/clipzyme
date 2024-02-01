@@ -28,11 +28,9 @@ import nox.lightning.base
 
 # optimizers
 import nox.learning.optimizers.basic
-import nox.learning.optimizers.lamb
 
 # scheduler
 import nox.learning.schedulers.basic
-import nox.learning.schedulers.noam
 import nox.learning.schedulers.warmup
 
 # losses
@@ -46,7 +44,6 @@ import nox.learning.metrics.representation
 
 # callbacks
 import nox.callbacks.basic
-import nox.callbacks.swa
 
 # models
 import nox.models.classifier
@@ -56,6 +53,7 @@ import nox.models.fair_esm
 import nox.models.egnn
 import nox.models.protmol
 import nox.models.wln
+import nox.models.seq2seq
 
 # comet
 import nox.loggers.wandb
