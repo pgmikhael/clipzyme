@@ -15,7 +15,7 @@ from typing import List, Union
 import sys
 
 sys.path.append(os.path.dirname(os.path.realpath(".")))
-from nox.utils.colabfold_msa import get_queries, msa_to_str, safe_filename
+from clipzyme.utils.colabfold_msa import get_queries, msa_to_str, safe_filename
 
 logger = logging.getLogger(__name__)
 

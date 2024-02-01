@@ -16,10 +16,10 @@ from pytorch_lightning import _logger as log
 import inspect
 import torch_geometric
 
-from nox.utils.parsing import parse_args
-from nox.utils.registry import get_object
-import nox.utils.loading as loaders
-from nox.utils.callbacks import set_callbacks
+from clipzyme.utils.parsing import parse_args
+from clipzyme.utils.registry import get_object
+import clipzyme.utils.loading as loaders
+from clipzyme.utils.callbacks import set_callbacks
 from rich import print
 
 from pytorch_lightning.strategies import DDPStrategy

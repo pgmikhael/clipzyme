@@ -8,8 +8,8 @@ import subprocess
 import multiprocessing
 import pickle
 import json
-import nox.utils.parsing as parsing
-from nox.utils.registry import md5
+import clipzyme.utils.parsing as parsing
+from clipzyme.utils.registry import md5
 
 EXPERIMENT_CRASH_MSG = "ALERT! job:[{}] has crashed! Check logfile at:[{}]"
 CONFIG_NOT_FOUND_MSG = "ALERT! {} config {} file does not exist!"
@@ -106,7 +106,6 @@ def worker(script, gpu, job_queue, done_queue):
 
 
 if __name__ == "__main__":
-
     args = parser.parse_args()
     if not os.path.exists(args.config_path):
         print(CONFIG_NOT_FOUND_MSG.format("experiment", args.config_path))
