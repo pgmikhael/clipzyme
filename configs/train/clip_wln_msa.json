@@ -80,8 +80,7 @@
       "logger_name": ["wandb"],
       "workspace": ["anonymous"],
       "project_name": ["enzymes"],
-      "logger_tags": ["clip msa wln"],
-      "cache_path": ["/storage/enzymes/quickprot_caches"]
+      "logger_tags": ["clip msa wln"]
     },
     "available_gpus": ["2,3,4,5,6,7"]
   }

@@ -54,8 +54,7 @@
     "logger_name": ["wandb"],
     "workspace": ["anonymous"],
     "project_name": ["enzymes"],
-    "logger_tags": ["clip eval egnn"],
-    "cache_path": ["/storage/enzymes/quickprot_caches"]
+    "logger_tags": ["clip eval egnn"]
   },
   "available_gpus": ["0,1,2,3"]
 }
