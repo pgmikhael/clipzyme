@@ -21,13 +21,13 @@ parser = argparse.ArgumentParser(
 parser.add_argument(
     "--react_dir_or_path",
     type=str,
-    default="/Mounts/rbg-storage1/datasets/Enzymes/EnzymeMap/raw_unmapped_brenda2022.csv",
+    default="/home/datasets/EnzymeMap/raw_unmapped_brenda2022.csv",
     help="Path to Enzyme Map entries file or IBM splits directory",
 )
 parser.add_argument(
     "-o",
     "--output_file_path",
-    default="/Mounts/rbg-storage1/datasets/Enzymes/ECReact/ecreact_dataset.json",
+    default="/home/datasets/ECReact/ecreact_dataset.json",
     help="Path to output file",
 )
 parser.add_argument(
@@ -60,6 +60,7 @@ parser.add_argument(
     default=False,
     help="whether to get isoforms",
 )
+
 
 def get_next_link(headers):
     if "Link" in headers:
@@ -100,6 +101,7 @@ def get_protein_fasta(uniprot):
 
     return
 
+
 def transform_ec_number(ec_str):
     """
     transform input formatted as [vEC1] [uEC2] [tEC3] [qEC4] into EC1.EC2.EC3.EC4
@@ -107,6 +109,7 @@ def transform_ec_number(ec_str):
     ec_digits = re.findall(r"\d+|-", ec_str)
     ec = ".".join(ec_digits)
     return ec
+
 
 def get_uniprots_from_ec(ec):
     """Get uniprot ids from ec number using uniprot api"""
@@ -151,16 +154,16 @@ if __name__ == "__main__":
         if args.from_ibm_splits:
             """Run first:
             rbt-preprocess.py \
-                /Mounts/rbg-storage1/datasets/Enzymes/EnzymeMap/rbt_processed/[DATASET]_smarts.txt \
-                /Mounts/rbg-storage1/datasets/Enzymes/EnzymeMap/rbt_processed/processed   \ 
-                --remove-patterns /Mounts/rbg-storage1/datasets/Enzymes/ECReact/patterns.txt \ 
-                --remove-molecules /Mounts/rbg-storage1/datasets/Enzymes/ECReact/molecules.txt \
+                /home/datasets/EnzymeMap/rbt_processed/[DATASET]_smarts.txt \
+                /home/datasets/EnzymeMap/rbt_processed/processed   \ 
+                --remove-patterns /home/datasets/ECReact/patterns.txt \ 
+                --remove-molecules /home/datasets/ECReact/molecules.txt \
                 --ec-level 4 --max-products 3 --split-products
             """
             formatted_dataset = {
-            "train": {"src": [], "tgt": []},
-            "valid": {"src": [], "tgt": []},
-            "test": {"src": [], "tgt": []},
+                "train": {"src": [], "tgt": []},
+                "valid": {"src": [], "tgt": []},
+                "test": {"src": [], "tgt": []},
             }
             vocab = set()
 
@@ -180,7 +183,9 @@ if __name__ == "__main__":
             dataset = []
             for split, data_items in formatted_dataset.items():
                 assert len(data_items["src"]) == len(data_items["tgt"])
-                for i, (src, tgt) in enumerate(zip(data_items["src"], data_items["tgt"])):
+                for i, (src, tgt) in enumerate(
+                    zip(data_items["src"], data_items["tgt"])
+                ):
                     reactants_str, ec_str = src.split("|")
                     if split != "test":
                         vocab.update(reactants_str.split(" "))
@@ -204,15 +209,15 @@ if __name__ == "__main__":
             #     for tok in vocab:
             #         f.write(tok)
             #         f.write("\n")
-        
+
             json.dump(dataset, open(args.output_file_path, "w"), indent=2)
-        
+
         else:
             dataset = pd.read_csv(args.react_dir_or_path)
             dataset = dataset.to_dict("records")
 
             json_dataset = []
-            for data_items in tqdm(dataset, ncols=100, total = len(dataset)):
+            for data_items in tqdm(dataset, ncols=100, total=len(dataset)):
                 if args.from_raw:
                     json_dataset.append(
                         {
@@ -226,10 +231,18 @@ if __name__ == "__main__":
                 else:
                     json_dataset.append(
                         {
-                            "reactants": data_items["unmapped"].split(">>")[0].split("."),
-                            "products": data_items["unmapped"].split(">>")[-1].split("."),
-                            "mapped_reactants": data_items["mapped"].split(">>")[0].split("."),
-                            "mapped_products": data_items["mapped"].split(">>")[-1].split("."),
+                            "reactants": data_items["unmapped"]
+                            .split(">>")[0]
+                            .split("."),
+                            "products": data_items["unmapped"]
+                            .split(">>")[-1]
+                            .split("."),
+                            "mapped_reactants": data_items["mapped"]
+                            .split(">>")[0]
+                            .split("."),
+                            "mapped_products": data_items["mapped"]
+                            .split(">>")[-1]
+                            .split("."),
                             "ec": data_items["ec_num"],
                             "rxnid": data_items["rxn_idx"],
                             "quality": data_items["quality"],

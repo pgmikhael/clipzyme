@@ -11,19 +11,19 @@ import pickle, os
 
 WSDL = "https://www.brenda-enzymes.org/soap/brenda_zeep.wsdl"
 LIGAND_URL = "https://brenda-enzymes.org/ligand.php?brenda_group_id={}"
-CHEBI_DB = json.load(open("/Mounts/rbg-storage1/datasets/Metabo/chebi_db.json", "r"))
+CHEBI_DB = json.load(open("/home/datasets/chebi_db.json", "r"))
 
 parser = argparse.ArgumentParser(description="Pulls substrate data from BRENDA")
 parser.add_argument(
     "-i",
     "--input_file_path",
-    default="/Mounts/rbg-storage1/datasets/Enzymes/Brenda/brenda_2022_2.json",
+    default="/home/datasets/Brenda/brenda_2022_2.json",
     help="Path to input file",
 )
 parser.add_argument(
     "-o",
     "--output_file_path",
-    default="/Mounts/rbg-storage1/datasets/Enzymes/Brenda/brenda_substrates.json",
+    default="/home/datasets/Brenda/brenda_substrates.json",
     help="Path to output file",
 )
 parser.add_argument(
@@ -178,7 +178,6 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.get_molecules:
-
         brenda_dataset = json.load(open(args.input_file_path, "r"))
 
         # get molecule names in brenda

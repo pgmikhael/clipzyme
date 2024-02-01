@@ -126,7 +126,7 @@ parser.add_argument("--cpus", type=int, default=2, help="Number of cpus.")
 parser.add_argument(
     "--msa_target_directory",
     type=str,
-    default="/home/datasets/Enzymes/EnzymeMap/hhblits_msas",
+    default="/home/datasets/EnzymeMap/hhblits_msas",
     help="directory where msa files are stored.",
 )
 parser.add_argument(
@@ -138,7 +138,7 @@ parser.add_argument(
 parser.add_argument(
     "--embedding_target_directory",
     type=str,
-    default="/home/datasets/Enzymes/EnzymeMap/hhblits_embeds",
+    default="/home/datasets/EnzymeMap/hhblits_embeds",
     help="directory where msa transformer embeddings are stored.",
 )
 parser.add_argument(

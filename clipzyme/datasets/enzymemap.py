@@ -90,13 +90,13 @@ class EnzymeMap(AbstractDataset):
 
         self.ec2uniprot = pickle.load(
             open(
-                "/Mounts/rbg-storage1/datasets/Enzymes/EnzymeMap/ec2uniprot.p",
+                "/home/datasets/EnzymeMap/ec2uniprot.p",
                 "rb",
             )
         )
         self.uniprot2sequence = pickle.load(
             open(
-                "/Mounts/rbg-storage1/datasets/Enzymes/EnzymeMap/uniprot2sequence.p",
+                "/home/datasets/EnzymeMap/uniprot2sequence.p",
                 "rb",
             )
         )
@@ -111,12 +111,8 @@ class EnzymeMap(AbstractDataset):
         )
 
         # products to remove based on smiles or pattern
-        remove_patterns_path = (
-            "/Mounts/rbg-storage1/datasets/Enzymes/ECReact/patterns.txt"
-        )
-        remove_molecules_path = (
-            "/Mounts/rbg-storage1/datasets/Enzymes/ECReact/molecules.txt"
-        )
+        remove_patterns_path = "/home/datasets/ECReact/patterns.txt"
+        remove_molecules_path = "/home/datasets/ECReact/molecules.txt"
 
         self.remove_patterns = []
         self.remove_molecules = []
@@ -147,7 +143,7 @@ class EnzymeMap(AbstractDataset):
         ):
             self.uniprot2split = pickle.load(
                 open(
-                    "/Mounts/rbg-storage1/datasets/Enzymes/EnzymeMap/mmseq_splits_precomputed.p",
+                    "/home/datasets/EnzymeMap/mmseq_splits_precomputed.p",
                     "rb",
                 )
             )
@@ -854,13 +850,13 @@ class EnzymeMap(AbstractDataset):
         parser.add_argument(
             "--uniprot2cluster_path",
             type=str,
-            default="/Mounts/rbg-storage1/datasets/Enzymes/EnzymeMap/mmseq_clusters_updated.p",
+            default="/home/datasets/EnzymeMap/mmseq_clusters_updated.p",
             help="path to uniprot2cluster pickle",
         )
         parser.add_argument(
             "--esm_dir",
             type=str,
-            default="/Mounts/rbg-storage1/snapshots/metabolomics/esm2/checkpoints/esm2_t33_650M_UR50D.pt",
+            default="/home/snapshots/metabolomics/esm2/checkpoints/esm2_t33_650M_UR50D.pt",
             help="directory to load esm model from",
         )
         parser.add_argument(
@@ -890,7 +886,7 @@ class EnzymeMap(AbstractDataset):
         parser.add_argument(
             "--protein_msa_dir",
             type=str,
-            default="/Mounts/rbg-storage1/datasets/Enzymes/embed_msa_transformer",
+            default="/home/datasets/embed_msa_transformer",
             help="directory where msa transformer embeddings are stored.",
         )
         parser.add_argument(
@@ -963,7 +959,7 @@ class EnzymeMap(AbstractDataset):
         parser.add_argument(
             "--pesto_scores_directory",
             type=str,
-            default="/Mounts/rbg-storage1/datasets/Enzymes/ECReact/pesto_ligands",
+            default="/home/datasets/ECReact/pesto_ligands",
             help="load pesto scores from directory predictions",
         )
         parser.add_argument(

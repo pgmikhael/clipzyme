@@ -317,7 +317,7 @@ class EnzymeReactionCLIP(AbstractModel):
         parser.add_argument(
             "--train_esm_dir",
             type=str,
-            default="/Mounts/rbg-storage1/snapshots/metabolomics/esm2/checkpoints/esm2_t33_650M_UR50D.pt",
+            default="/home/snapshots/metabolomics/esm2/checkpoints/esm2_t33_650M_UR50D.pt",
             help="directory to load esm model from",
         )
 
@@ -755,6 +755,6 @@ class EnzymeReactionCLIPWLDN(EnzymeReactionCLIPPretrained):
         parser.add_argument(
             "--train_esm_dir",
             type=str,
-            default="/Mounts/rbg-storage1/snapshots/metabolomics/esm2/checkpoints/esm2_t33_650M_UR50D.pt",
+            default="/home/snapshots/metabolomics/esm2/checkpoints/esm2_t33_650M_UR50D.pt",
             help="directory to load esm model from",
         )

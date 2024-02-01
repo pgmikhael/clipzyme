@@ -133,14 +133,14 @@ class ScreeningEnzymes(AbstractDataset):
         try:
             self.metadata_json = pickle.load(open(args.dataset_file_path, "rb"))
             self.alphafold_files = pickle.load(
-                open("/Mounts/rbg-storage1/datasets/Metabo/alphafold_enzymes.p", "rb")
+                open("/home/datasets/alphafold_enzymes.p", "rb")
             )
             self.quickprot_caches = pickle.load(
-                open("/Mounts/rbg-storage1/datasets/Metabo/quickprot_caches.p", "rb")
+                open("/home/datasets/quickprot_caches.p", "rb")
             )
             self.msa_files = pickle.load(
                 open(
-                    "/Mounts/rbg-storage1/datasets/Enzymes/uniprot2msa_embedding.p",
+                    "/home/datasets/uniprot2msa_embedding.p",
                     "rb",
                 )
             )
@@ -305,7 +305,7 @@ class ScreeningEnzymes(AbstractDataset):
         parser.add_argument(
             "--esm_dir",
             type=str,
-            default="/Mounts/rbg-storage1/snapshots/metabolomics/esm2/checkpoints/esm2_t33_650M_UR50D.pt",
+            default="/home/snapshots/metabolomics/esm2/checkpoints/esm2_t33_650M_UR50D.pt",
             help="directory to load esm model from",
         )
         parser.add_argument(
@@ -335,7 +335,7 @@ class ScreeningEnzymes(AbstractDataset):
         parser.add_argument(
             "--protein_msa_dir",
             type=str,
-            default="/Mounts/rbg-storage1/datasets/Enzymes/EnzymeMap/embed_msa_transformer",
+            default="/home/datasets/EnzymeMap/embed_msa_transformer",
             help="directory where msa transformer embeddings are stored.",
         )
         parser.add_argument(
@@ -353,7 +353,9 @@ class ScreeningEnzymes(AbstractDataset):
 
     @staticmethod
     def set_args(args) -> None:
-        args.dataset_file_path = "/Mounts/rbg-storage1/datasets/Enzymes/uniprot2sequence_standard_set_structs.p"
+        args.dataset_file_path = (
+            "/home/datasets/uniprot2sequence_standard_set_structs.p"
+        )
 
     @property
     def SUMMARY_STATEMENT(self) -> None:

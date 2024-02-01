@@ -621,7 +621,7 @@ def get_parser():
         "--logger_tags", nargs="*", default=[], help="List of tags for logger"
     )
     parser.add_argument("--project_name", default="CancerCures", help="Comet project")
-    parser.add_argument("--workspace", default="pgmikhael", help="Comet workspace")
+    parser.add_argument("--workspace", default=None, help="Comet workspace")
     parser.add_argument(
         "--log_gen_image",
         action="store_true",
