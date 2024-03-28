@@ -1,4 +1,29 @@
-## To install requirements:
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://github.com/pgmikhael/CLIPZyme/blob/main/LICENSE.txt) 
+[![arXiv](https://img.shields.io/badge/arXiv-1234.56789-b31b1b.svg)](https://arxiv.org/abs/2402.06748)
+<!-- ![version](https://img.shields.io/badge/version-1.0.2-success) -->
+
+# CLIPZyme
+
+Reaction-Conditioned Virtual Screening of Enzymes
+
+
+
+Table of contents
+=================
+
+<!--ts-->
+   * [Installation](#installation)
+   * [Screening with CLIPZyme](#screening-with-clipzyme)
+        * [Using CLIPZyme's screening set](#using-clipzyme's-screening-set)
+        * [Using your own screening set](#using-your-own-screening-set)
+   * [Reproducing published results](#reproducing-published-results)
+        * [Data processing](#data-processing)
+        * [Training and evaluation](#training-and-evaluation)
+   * [Citation](#citation)
+    
+<!--te-->
+
+# Installation:
 
 ```
 conda create -n clipzyme python=3.10
@@ -14,34 +39,60 @@ python -m pip install biopython p_tqdm einops ninja easydict pyyaml
 python -m pip install imageio==2.24.0 ipdb pdbpp networkx==2.8.7 overrides pygsp pyemd moviepy 
 python -m pip install molvs==0.1.1 epam.indigo==1.9.0 fair-esm==2.0.0 
 ```
- 
-## Steps to reproduce results in the paper
-1. Install the requirements (above) by running the following commands:
-    - EnzymeMap: `https://doi.org/10.5281/zenodo.7841780`
-    - Terpene Synthases: `https://zenodo.org/records/10567437`
+# Screening with CLIPZyme
+
+## Using CLIPZyme's screening set
+
+## Using your own screening set
+
+1. In python shell or jupyter notebook (slow)
     
-2. To train the models presented in the tables below, run the following command:
+
+2. Batched (faster)
+
+---------------------
+
+# Reproducing published results
+
+## Data processing
+
+We obtain the data from the following sources:
+- [EnzymeMap:](`https://doi.org/10.5281/zenodo.7841780`) Heid et al. Enzymemap: Curation, validation and data-driven prediction of enzymatic reactions. 2023.
+- [Terpene Synthases:](`https://zenodo.org/records/10567437`) Samusevich et al. Discovery and characterization of terpene synthases powered by machine learning. 2024. 
+
+Our processed data is available at [here](`https://doi.org/10.5281/zenodo.5555555`). It consists of the following files:
+- `enzymemap.json`: contains the EnzymeMap dataset.
+- `terpene_synthases.json`: contains the Terpene Synthases dataset.
+- `enzymemap_screening.p`: contains the screening set.
+- `sequenceid2sequence.p`: contains the mapping form sequence ID to amino acids.
+
+
+## Training and evaluation
+1. To train the models presented in the tables below, run the following command:
     ```
     python scripts/dispatcher -c {config_path} -l {log_path}
     ```
-    where `{config_path}` is the path to the config file in the table below and `{log_path}` is the path in which to save the log file. For example, to run the first row in Table 1, run:
+    - `{config_path}` is the path to the config file in the table below 
+    - `{log_path}` is the path in which to save the log file. 
+    
+    For example, to run the first row in Table 1, run:
     ```
     python scripts/dispatcher -c configs/train/clip_egnn.json -l ./logs/
     ```
-3. Once you've trained the model, run the eval config to evaluate the model on the test set. For example, to evaluate the first row in Table 1, run:
+2. Once you've trained the model, run the eval config to evaluate the model on the test set. For example, to evaluate the first row in Table 1, run:
     ```
     python scripts/dispatcher -c configs/eval/clip_egnn.json -l ./logs/
     ```
-4. We perform all analysis in the jupyter notebook included [CLIPZyme_CLEAN.ipynb](analysis/CLIPZyme_CLEAN.ipynb). We first calculate the hidden representations of the screening using the eval configs above and collect them into one matrix (saved as a pickle file). These are loaded into the jupyter notebook as well as the test set. All tables are then generated in the notebook.
+3. We perform all analysis in the jupyter notebook included [CLIPZyme_CLEAN.ipynb](analysis/CLIPZyme_CLEAN.ipynb). We first calculate the hidden representations of the screening using the eval configs above and collect them into one matrix (saved as a pickle file). These are loaded into the jupyter notebook as well as the test set. All tables are then generated in the notebook.
 
 
-### Table 1 configs
-| Protein Encoder                                   | Reaction Encoder                             | BEDROC<sub>85</sub>(%) | BEDROC<sub>20</sub>(%) | EF<sub>0.05</sub> | EF<sub>0.1</sub> | Train Config Path | Eval Config Path |
-| ------------------------------------------------- | -------------------------------------------- | ---------------------- | ---------------------- | ---------------- | ---------------- | ----------- | ------------- |
-| ESM (weights frozen)                              | Ours (see Reaction Encoding Section)         | 17.84                  | 29.39                  | 6.61              | 4.17             | `configs/train/clip_esm_frozen.json`            | `configs/eval/clip_esm_frozen.json` |
-| ESM                                               | Ours (see Reaction Encoding Section)         | 36.91                  | 53.04                  | 11.93             | 6.84             | `configs/train/clip_esm.json`            | `configs/eval/clip_esm.json` |
-| MSA-Transformer (weights frozen) + EGNN           | Ours (see Reaction Encoding Section)         | 28.76                  | 46.53                  | 10.34             | 6.67             |    `configs/train/clip_msa.json`         | `configs/eval/clip_msa.json` |
-| ESM (weights frozen) + EGNN                       | CGR [Hoonakker et al. 2011]                  | 38.91                  | 57.58                  | 13.16             | 7.73             |  `configs/train/clip_cgr_egnn.json`           | `configs/eval/clip_cgr_egnn.json` |
-| ESM (weights frozen) + EGNN                       | Reaction SMILES                              | 29.94                  | 46.01                  | 10.34             | 6.32             | `configs/train/clip_cgr_rxn_string.json`       | `configs/eval/clip_rxn_str.json` |
-| ESM (weights frozen) + EGNN                       | WLDN [Jin et al. 2017]                       | 29.84                  | 46.70                  | 10.71             | 6.41             | `configs/train/clip_wldn.json`            | `configs/eval/clip_wldn.json` |
-| ESM (weights frozen) + EGNN                       | Ours (see Reaction Encoding Section)         | 44.69                  | 62.98                  | 14.09             | 8.06             | `configs/train/clip_egnn.json`            | `configs/eval/clip_egnn.json` |
+## Citation
+
+```
+@article{mikhael2024clipzyme,
+  title={CLIPZyme: Reaction-Conditioned Virtual Screening of Enzymes},
+  author={Mikhael, Peter G and Chinn, Itamar and Barzilay, Regina},
+  journal={arXiv preprint arXiv:2402.06748},
+  year={2024}
+}
+```
