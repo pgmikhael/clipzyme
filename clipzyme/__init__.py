@@ -22,6 +22,7 @@ import rdkit
 # data
 import clipzyme.datasets.enzymemap
 import clipzyme.datasets.enzyme_screening
+import clipzyme.datasets.reaction
 
 # lightning
 import clipzyme.lightning.base
