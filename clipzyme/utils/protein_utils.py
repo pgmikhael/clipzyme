@@ -8,6 +8,7 @@ from tqdm import tqdm
 import torch
 import os, sys, pickle, hashlib
 
+
 # Read PDB and CIF files
 def read_structure_file(protein_parser, raw_path, sample_id):
     structure = protein_parser.get_structure(sample_id, raw_path)
@@ -116,7 +117,9 @@ def precompute_node_embeddings(metadata_json, cache_dir, model_location=None):
 
     # already computed all ESM embeddings
     all_embeddings_cache_id = get_cache_id(model, names, seqs)
-    all_embeddings_cache_id_file = os.path.join(cache_dir, f"{all_embeddings_cache_id}.pt")
+    all_embeddings_cache_id_file = os.path.join(
+        cache_dir, f"{all_embeddings_cache_id}.pt"
+    )
     if os.path.exists(all_embeddings_cache_id_file):
         return torch.load(all_embeddings_cache_id_file)
 
@@ -196,7 +199,7 @@ def compute_node_embedding(data, **kwargs):
     model_location = kwargs["model_location"]
     alphabet = kwargs["alphabet"]
     batch_converter = kwargs["batch_converter"]
-   
+
     model.eval()
     # settings used
     toks_per_batch = 4096
@@ -206,21 +209,19 @@ def compute_node_embedding(data, **kwargs):
     seq = data.structure_sequence
     batch_labels, batch_strs, batch_tokens = batch_converter([(0, seq)])
     batch_toks = batch_tokens
-    
+
     assert all(-(model.num_layers + 1) <= i <= model.num_layers for i in repr_layers)
-    
+
     repr_layers = [
         (i + model.num_layers + 1) % (model.num_layers + 1) for i in repr_layers
     ]
 
     with torch.no_grad():
         out = model(batch_toks, repr_layers=repr_layers, return_contacts=False)
-        representations = {
-            layer: t for layer, t in out["representations"].items()
-        }
+        representations = {layer: t for layer, t in out["representations"].items()}
         truncate_len = min(truncation_seq_length, len(seq))
         seq_embedding = representations[33][0, 1 : truncate_len + 1].clone()
-    
+
     return seq_embedding
 
 

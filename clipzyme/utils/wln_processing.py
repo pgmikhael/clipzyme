@@ -126,9 +126,9 @@ def robust_edit_mol(rmol, edits):
 
     amap = {}
     for atom in rmol.GetAtoms():
-        amap[
-            atom_map_number2new_index[atom.GetIntProp("molAtomMapNumber")]
-        ] = atom.GetIdx()  # new index to old index
+        amap[atom_map_number2new_index[atom.GetIntProp("molAtomMapNumber")]] = (
+            atom.GetIdx()
+        )  # new index to old index
 
     # Apply the edits as predicted
     for x, y, t in edits:

@@ -3,6 +3,7 @@ From ColabFold: https://github.com/sokrypton/ColabFold/tree/main
     colabfold/batch.py
     colabfold/utils/py
 """
+
 from typing import List, Optional, Tuple, Union
 from pathlib import Path
 import pandas

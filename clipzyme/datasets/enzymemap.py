@@ -315,8 +315,9 @@ class EnzymeMap(AbstractDataset):
         sample = self.dataset[index]
 
         try:
-            reactants, products = copy.deepcopy(sample["reactants"]), copy.deepcopy(
-                sample["products"]
+            reactants, products = (
+                copy.deepcopy(sample["reactants"]),
+                copy.deepcopy(sample["products"]),
             )
 
             ec = sample["ec"]
@@ -579,9 +580,9 @@ class EnzymeMap(AbstractDataset):
                                 if str(self.args.held_out_ec_num) == ec:
                                     self.to_split[psample["hash_sample_id"]] = "test"
                                 else:
-                                    self.to_split[
-                                        psample["hash_sample_id"]
-                                    ] = products2split[p]
+                                    self.to_split[psample["hash_sample_id"]] = (
+                                        products2split[p]
+                                    )
 
                         else:
                             unique_sample_content = f"{reaction_string}{uniprot}{sample.get('organism', '')}"
@@ -594,9 +595,9 @@ class EnzymeMap(AbstractDataset):
                             ):
                                 self.to_split[sample["hash_sample_id"]] = "test"
                             else:
-                                self.to_split[
-                                    sample["hash_sample_id"]
-                                ] = products2split[".".join(sample["products"])]
+                                self.to_split[sample["hash_sample_id"]] = (
+                                    products2split[".".join(sample["products"])]
+                                )
 
         # random splitting
         elif self.args.split_type == "random":
@@ -635,9 +636,7 @@ class EnzymeMap(AbstractDataset):
         # Seed randomness
         random = Random(seed)
 
-        if (
-            self.args.scaffold_balanced
-        ):  # Put stuff that's bigger than half the val/test size into train, rest just order randomly
+        if self.args.scaffold_balanced:  # Put stuff that's bigger than half the val/test size into train, rest just order randomly
             index_sets = list(scaffold_to_indices.values())
             big_index_sets = []
             small_index_sets = []
@@ -1332,8 +1331,9 @@ class EnzymeMapGraph(EnzymeMap):
         sample = self.dataset[index]
 
         try:
-            reactants, products = copy.deepcopy(sample["reactants"]), copy.deepcopy(
-                sample["products"]
+            reactants, products = (
+                copy.deepcopy(sample["reactants"]),
+                copy.deepcopy(sample["products"]),
             )
 
             ec = sample["ec"]
@@ -1406,7 +1406,7 @@ class EnzymeMapGraph(EnzymeMap):
                 "row_id": rowid,
                 "smiles": products,
                 "all_smiles": [],  # all_smiles,
-                "quality": sample["quality"]
+                "quality": sample["quality"],
                 # "bond_changes": stringify_sets(bond_changes)
             }
 

@@ -263,7 +263,6 @@ def edit_mol(rmol, edits):
     pred_mols = [Chem.MolFromSmiles(pred_smiles) for pred_smiles in pred_list]
 
     for i, mol in enumerate(pred_mols):
-
         # Check if we failed/succeeded in previous step
         if mol is None:
             # print('##### Unparseable mol: {}'.format(pred_list[i]))
@@ -335,7 +334,6 @@ def get_changed_bonds(rxn_smi):
     # Look at changed bonds
     bonds_prev = {}
     for bond in reactants.GetBonds():
-
         begin_atom_num = (
             bond.GetBeginAtom().GetProp("molAtomMapNumber")
             if bond.GetBeginAtom().HasProp("molAtomMapNumber")
@@ -432,7 +430,6 @@ def product_is_recoverable(rmol, pmol, gedits, bonds_as_doubles=True):
         pred_smiles_sani = set(sanitize_smiles(smi) for smi in pred_smiles)
         pred_smiles = set(pred_smiles)
         if not psmiles <= pred_smiles:
-
             # Try again with kekulized form
             Chem.Kekulize(rmol)
             pred_smiles_kek = edit_mol(rmol, cbonds)

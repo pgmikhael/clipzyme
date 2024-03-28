@@ -47,7 +47,7 @@ def read_files(data_to_load, args):
     )
     if args.debug:
         data_cache = data_cache.replace(".pkl", "_debug.pkl")
-    
+
     if not args.no_graph_cache and not os.path.exists(data_cache):
         if not os.path.exists(os.path.dirname(data_cache)):
             try:
@@ -76,9 +76,9 @@ def parse_pdb(pdb_id, pdb_path, models=None, chains=None):
     """
     all_res, all_atom, all_pos = [], [], []
     # biopython PDB parser
-    if pdb_path[-3:] == 'pdb':
+    if pdb_path[-3:] == "pdb":
         parser = Bio.PDB.PDBParser()
-    elif pdb_path[-3:] == 'cif':
+    elif pdb_path[-3:] == "cif":
         parser = Bio.PDB.MMCIFParser()
     structure = parser.get_structure(pdb_id, pdb_path)  # name, path
     # (optional) select subset of models
@@ -141,7 +141,7 @@ def process_data(pdb_id2prot_dict, args):
         item["receptor_seq"] = subset[1]
         item["receptor_xyz"] = subset[2]
         # if len(subset[2]) != len(item['sequence']):
-            # return None
+        # return None
 
     # convert to HeteroData graph objects
     for item in pdb_id2prot_dict.values():
@@ -190,9 +190,9 @@ def convert_pdb(all_res, all_atom, all_pos, args):
         atom_names = all_atom
         seq = all_res
         pos = all_pos
-    
+
     assert pos.shape[0] == len(seq) == len(atom_names)
-        
+
     return atom_names, seq, pos
 
 
@@ -314,7 +314,7 @@ def compute_embeddings(pdb_id2prot_dict, args):
         else:
             rec_graph_x = torch.cat([rec_reps[idx][0], rec_reps[idx][1]], dim=1)
         pdb_id2prot_graph_node_feat[pdb] = rec_graph_x
-    
+
     if not args.no_graph_cache:
         with open(esm_cache, "wb+") as f:
             pickle.dump(pdb_id2prot_graph_node_feat, f)

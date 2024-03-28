@@ -475,9 +475,9 @@ class SupervisedCLIPLoss(Nox):
             )
             predictions["golds"] = mask_positives
         else:
-            predictions[
-                "golds"
-            ] = mask_positives.t()  # so that mask is prots @ substrates
+            predictions["golds"] = (
+                mask_positives.t()
+            )  # so that mask is prots @ substrates
 
         predictions["logits"] = logits
         predictions["probs"] = probs
