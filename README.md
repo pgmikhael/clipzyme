@@ -16,6 +16,8 @@ Table of contents
    * [Screening with CLIPZyme](#screening-with-clipzyme)
         * [Using CLIPZyme's screening set](#using-clipzyme's-screening-set)
         * [Using your own screening set](#using-your-own-screening-set)
+            * [Interactive (slow)](#interactive-slow)
+            * [Batched (fast)](#batched-fast)
    * [Reproducing published results](#reproducing-published-results)
         * [Data processing](#data-processing)
         * [Training and evaluation](#training-and-evaluation)
@@ -25,30 +27,130 @@ Table of contents
 
 # Installation:
 
+1. Clone the repository:
+```bash
+git clone https://github.com/pgmikhael/CLIPZyme.git
 ```
-conda create -n clipzyme python=3.10
-conda activate clipzyme
-python -m pip install rdkit
-python -m pip install numpy==1.26.0 pandas==2.1.1 scikit-image==0.19.1 scikit-learn==1.3.2 scipy==1.11.2 tqdm==4.62.3 GitPython==3.1.27 comet-ml==3.28.1 wandb==0.12.19
-python -m pip install torch==2.0.1+cu118 torchvision==0.15.2+cu118 --extra-index-url https://download.pytorch.org/whl/cu118
-python -m pip install pytorch-lightning==2.0.9 torchmetrics==0.11.4
-python -m pip install torch_geometric==2.3.1
-python -m pip install pyg_lib torch_scatter torch_sparse torch_cluster torch_spline_conv -f https://data.pyg.org/whl/torch-2.0.1+cu118.html
-python -m pip install wget bioservices==1.9.0 pubchempy==1.0.4 openpyxl==3.0.10 transformers==4.25.1 rxn-chem-utils==1.0.4 rxn-utils==1.1.3
-python -m pip install biopython p_tqdm einops ninja easydict pyyaml
-python -m pip install imageio==2.24.0 ipdb pdbpp networkx==2.8.7 overrides pygsp pyemd moviepy 
-python -m pip install molvs==0.1.1 epam.indigo==1.9.0 fair-esm==2.0.0 
+2. Install the dependencies:
+```bash
+conda create env -f environment.yml
+pip install clipzyme
 ```
+
 # Screening with CLIPZyme
 
 ## Using CLIPZyme's screening set
 
+1. Download the screening set and extract the files into `files/`.
+
+```bash
+
+wget https://github.com/pgmikhael/clipzyme/releases/download/v1.0.0/clipzyme_screening_set.zip
+
+unzip clipzyme_screening_set.zip -d files/
+```
+
+```python
+import pickle
+from clipzyme import CLIPZyme
+
+## Load the screening set
+##-----------------------
+screenset = pickle.load(open(f"files/clipzyme_screening_set.p", 'rb'))
+screen_hiddens = screenset["hiddens"] # hidden representations (261907, 1280)
+screen_unis = screenset["uniprots"] # uniprot ids (261907,)
+
+## Load the model and obtain the hidden representations of a reaction
+##-------------------------------------------------------------------
+model = CLIPZyme(checkpoint_path="files/clipzyme_model.pt")
+reaction = "[CH3:1][N+:2]([CH3:3])([CH3:4])[CH2:5][CH:6]=[O:7].[O:9]=[O:10].[OH2:8]>>[CH3:1][N+:2]([CH3:3])([CH3:4])[CH2:5][C:6](=[O:7])[OH:8].[OH:9][OH:10]"
+reaction_embedding = model.extract_reaction_features(reaction) # (1,1280)
+
+enzyme_scores = screen_hiddens @ reaction_embedding.T # (261907, 1)
+
+```
+
 ## Using your own screening set
 
-1. In python shell or jupyter notebook (slow)
-    
+Prepare your data as a CSV in the following format, and save it as `files/new_data.csv`. For the cases where we wish only to obtain the hidden representations of the sequences, the `reaction` column can be left empty (and vice versa).
 
-2. Batched (faster)
+| reaction | sequence | protein_id | cif |
+|----------|----------|------------|-----|
+| [CH3:1][N+:2]([CH3:3])([CH3:4])[CH2:5][CH:6]=[O:7].[O:9]=[O:10].[OH2:8]>>[CH3:1][N+:2]([CH3:3])([CH3:4])[CH2:5][C:6](=[O:7])[OH:8].[OH:9][OH:10] |MGLSDGEWQLVLNVWGKVEAD<br>IPGHGQEVLIRLFKGHPETLE<br>KFDKFKHLKSEDEMKASEDLK<br>KHGATVLTALGGILKKKGHHE<br>AELKPLAQSHATKHKIPIKYL<br>EFISEAIIHVLHSRHPGDFGA<br>DAQGAMNKALELFRKDIAAKY<br>KELGYQG | P69905 | 1a0s.cif |
+
+
+### Interactive (slow)
+    
+```python
+from clipzyme import CLIPZyme
+from clipzyme import ReactionDataset
+
+## Create reaction dataset
+#-------------------------
+reaction_dataset = ReactionDataset(
+  dataset_file_path = "files/new_data.csv",
+  esm_dir = "/path/to/esm2_t33_650M_UR50D.pt",
+  protein_cache_dir = "/path/to/protein_cache",
+)
+
+## Load the model
+#----------------
+model = CLIPZyme(checkpoint_path="files/clipzyme_model.pt")
+
+## For reaction-enzyme pair
+#--------------------------
+for batch in reaction_dataset:
+  output = model(batch) 
+  enzyme_scores = output.scores
+  protein_hiddens = output.protein_hiddens
+  reaction_hiddens = output.reaction_hiddens
+
+## For sequences only
+#--------------------
+for batch in reaction_dataset:
+  protein_hiddens = model.extract_protein_features(batch) 
+  
+## For reactions only
+#--------------------
+for batch in reaction_dataset:
+  reaction_hiddens = model.extract_reaction_features(batch)
+
+```
+
+### Batched (fast)
+
+1. Update the screening config `configs/screening.json` with the path to your data and indicate what you want to save and where:
+
+
+```JSON
+{
+  "dataset_file_path": ["files/new_data.csv"],
+  "inference_dir": ["/where/to/save/embeddings_and_scores"],
+  "save_hiddens": [true], # whether to save the hidden representations
+  "save_predictions": [true], # whether to save the reaction-enzyme pair scores
+  "use_as_protein_encoder": [true], # whether to use the model as a protein encoder only
+  "use_as_reaction_encoder": [true] # whether to use the model as a reaction encoder only
+  ...
+}
+```
+
+
+
+2. Run the dispatcher with the screening config:
+
+```bash
+python scripts/dispatcher.py -c configs/screening.json -l ./logs/
+```
+
+3. Load the saved embeddings and scores:
+
+```python
+from clipzyme import collect_screening_results
+
+screen_hiddens, screen_unis, enzyme_scores = collect_screening_results("configs/screening.json")
+
+```
+
 
 ---------------------
 
@@ -70,20 +172,20 @@ Our processed data is available at [here](`https://doi.org/10.5281/zenodo.555555
 ## Training and evaluation
 1. To train the models presented in the tables below, run the following command:
     ```
-    python scripts/dispatcher -c {config_path} -l {log_path}
+    python scripts/dispatcher.py -c {config_path} -l {log_path}
     ```
     - `{config_path}` is the path to the config file in the table below 
     - `{log_path}` is the path in which to save the log file. 
     
     For example, to run the first row in Table 1, run:
     ```
-    python scripts/dispatcher -c configs/train/clip_egnn.json -l ./logs/
+    python scripts/dispatcher.py -c configs/train/clip_egnn.json -l ./logs/
     ```
 2. Once you've trained the model, run the eval config to evaluate the model on the test set. For example, to evaluate the first row in Table 1, run:
     ```
-    python scripts/dispatcher -c configs/eval/clip_egnn.json -l ./logs/
+    python scripts/dispatcher.py -c configs/eval/clip_egnn.json -l ./logs/
     ```
-3. We perform all analysis in the jupyter notebook included [CLIPZyme_CLEAN.ipynb](analysis/CLIPZyme_CLEAN.ipynb). We first calculate the hidden representations of the screening using the eval configs above and collect them into one matrix (saved as a pickle file). These are loaded into the jupyter notebook as well as the test set. All tables are then generated in the notebook.
+3. We perform all analysis in the jupyter notebook included [Results.ipynb](analysis/Results.ipynb). We first calculate the hidden representations of the screening using the eval configs above and collect them into one matrix (saved as a pickle file). These are loaded into the jupyter notebook as well as the test set. All tables are then generated in the notebook.
 
 
 ## Citation

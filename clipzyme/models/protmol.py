@@ -20,7 +20,9 @@ class EnzymeReactionCLIP(AbstractModel):
         self.args = args
         self.reaction_clip_model_path = copy.copy(args.reaction_clip_model_path)
         self.use_as_protein_encoder = getattr(args, "use_as_protein_encoder", False)
-        self.use_as_mol_encoder = getattr(args, "use_as_mol_encoder", False)
+        self.use_as_mol_encoder = getattr(args, "use_as_mol_encoder", False) or getattr(
+            args, "use_as_reaction_encoder", False
+        )  # keep mol for backward compatibility
         args.train_esm_with_graph = getattr(args, "train_esm_with_graph", False)
 
         if args.reaction_clip_model_path is not None:
@@ -200,7 +202,9 @@ class EnzymeReactionCLIP(AbstractModel):
             )
             return output
 
-        if getattr(self.args, "use_as_mol_encoder", False):
+        if getattr(self.args, "use_as_mol_encoder", False) or getattr(
+            self.args, "use_as_reaction_encoder", False
+        ):
             substrate_features = self.encode_reaction(batch)
             substrate_features = substrate_features / substrate_features.norm(
                 dim=1, keepdim=True

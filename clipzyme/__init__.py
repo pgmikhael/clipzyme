@@ -63,5 +63,6 @@ import clipzyme.loggers.tensorboard
 from clipzyme.datasets.reaction import ReactionDataset
 from clipzyme.lightning.clipzyme import CLIPZyme
 from clipzyme.utils.registry import get_object
+from clipzyme.utils.screening import collect_screening_results
 
-__all__ = ["CLIPZyme", "ReactionDataset", "get_object"]
+__all__ = ["CLIPZyme", "ReactionDataset", "get_object", "collect_screening_results"]

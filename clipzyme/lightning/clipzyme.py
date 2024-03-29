@@ -54,19 +54,27 @@ class CLIPZymeOutput(NamedTuple):
 
 
 class CLIPZyme(pl.LightningModule):
-    def __init__(self, args: argparse.Namespace, device: Optional[str] = None) -> None:
+    def __init__(
+        self,
+        args: argparse.Namespace = None,
+        checkpoint_path: str = None,
+        device: Optional[str] = None,
+    ) -> None:
         """
         Initialize a trained clipzyme model for inference.
 
         Parameters
         ----------
+        args: argparse.Namespace
+            Arguments from command line.
         checkpoint_path: str
             Path to a clipzyme checkpoint.
         device: str
             If provided, will run inference using this device.
             By default uses GPU, if available.
         """
-        checkpoint_path = args.checkpoint_path
+        if args is not None:
+            checkpoint_path = args.checkpoint_path
         # Check if path exists
         if (checkpoint_path is None) or (not os.path.exists(checkpoint_path)):
             try:
@@ -101,9 +109,9 @@ class CLIPZyme(pl.LightningModule):
         args : argparse.Namespace
             Arguments from command line.
         """
-        self.save_hiddens = args.save_hiddens
-        self.save_predictions = args.save_predictions
-        if args.save_hiddens or args.save_predictions:
+        self.save_hiddens = getattr(args, "save_hiddens", False)
+        self.save_predictions = getattr(args, "save_predictions", False)
+        if self.save_hiddens or self.save_predictions:
             checkpoint_path = Path(args.checkpoint_path)
             dataset_path = Path(args.dataset_file_path)
             hiddens_dir = os.path.join(
@@ -112,7 +120,7 @@ class CLIPZyme(pl.LightningModule):
             os.makedirs(hiddens_dir, exist_ok=True)
             self.hiddens_dir = Path(hiddens_dir)
 
-        if args.save_predictions:
+        if self.save_predictions:
             self.predictions_dir = os.path.join(hiddens_dir, "predictions")
             os.makedirs(self.predictions_dir, exist_ok=True)
             self.predictions_dir = Path(self.predictions_dir)
@@ -152,8 +160,6 @@ class CLIPZyme(pl.LightningModule):
         self,
         batch,
         batch_idx: int = 0,
-        extract_protein_features: bool = False,
-        extract_reaction_features: bool = False,
     ) -> CLIPZymeOutput:
         """
         Forward pass of the model.
@@ -191,18 +197,11 @@ class CLIPZyme(pl.LightningModule):
             reaction_scores = torch.einsum(
                 "bx,bx->b", reaction_hiddens, protein_hiddens
             )
-        if extract_protein_features:
-            protein_hiddens = (
-                model_output["hidden"]
-                if self.use_as_protein_encoder
-                else model_output["protein_hiddens"]
-            )
-        if extract_reaction_features:
-            reaction_hiddens = (
-                model_output["hidden"]
-                if self.use_as_protein_encoder
-                else model_output["substrate_hiddens"]
-            )
+
+        if self.use_as_protein_encoder:
+            protein_hiddens = model_output["hidden"]
+        if self.use_as_reaction_encoder:
+            reaction_hiddens = model_output["hidden"]
 
         output = CLIPZymeOutput(
             scores=reaction_scores,
