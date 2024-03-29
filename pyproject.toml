@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "clipzyme"
-version = "0.0.1"
+version = "0.0.3"
 description = "Reaction-Conditioned Virtual Screening of Enzymes"
 authors = ["Peter G Mikhael <pgmikhael@csail.mit.edu>"]
 license = "Apache 2.0"
