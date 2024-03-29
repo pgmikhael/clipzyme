@@ -59,3 +59,9 @@ import clipzyme.models.seq2seq
 # comet
 import clipzyme.loggers.wandb
 import clipzyme.loggers.tensorboard
+
+from clipzyme.datasets.reaction import ReactionDataset
+from clipzyme.lightning.clipzyme import CLIPZyme
+from clipzyme.utils.registry import get_object
+
+__all__ = ["CLIPZyme", "ReactionDataset", "get_object"]
