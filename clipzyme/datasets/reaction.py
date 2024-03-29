@@ -1,4 +1,5 @@
 import os
+import argparse
 from typing import List, Union
 from rich import print
 from tqdm import tqdm
@@ -28,13 +29,26 @@ protein_letters_3to1.update({k.upper(): v for k, v in protein_letters_3to1.items
 
 @register_object("reactions_dataset", "dataset")
 class ReactionDataset(data.Dataset):
-    def __init__(self, args) -> None:
+    def __init__(
+        self,
+        args: argparse.Namespace = None,
+        dataset_file_path: str = None,
+        esm_dir: str = None,
+        protein_cache_dir: str = None,
+    ) -> None:
         """
         Create a dataset of reactions and proteins from a CSV file
 
         Parameters
         ----------
         args: argparse.Namespace
+            Arguments from command line
+        dataset_file_path: str
+            Path to CSV file with headers ['reaction', 'sequence', 'protein_id', 'cif']
+        esm_dir: str
+            Path to ESM model directory
+        protein_cache_dir: str
+            Directory to save/load protein graphs
 
         Raises
         ------
@@ -42,11 +56,17 @@ class ReactionDataset(data.Dataset):
             If CSV file does not have headers ['reaction', 'sequence', 'protein_id', 'cif']
         """
         super(ReactionDataset, self).__init__()
-        # check if csv file has correct headers
-        csv_path = args.dataset_file_path
-        esm_dir = args.esm_dir
-        protein_cache_dir = args.protein_cache_dir
 
+        if args is None:
+            csv_path = dataset_file_path
+            esm_dir = esm_dir
+            protein_cache_dir = protein_cache_dir
+        else:
+            csv_path = args.dataset_file_path
+            esm_dir = args.esm_dir
+            protein_cache_dir = args.protein_cache_dir
+
+        # check if csv file has correct headers
         with open(csv_path, "r") as f:
             headers = f.readline().strip().split(",")
             if (
