@@ -4,7 +4,7 @@
 
 # CLIPZyme
 
-Reaction-Conditioned Virtual Screening of Enzymes
+Implementation of the paper [**CLIPZyme: Reaction-Conditioned Virtual Screening of Enzymes**](https://github.com/pgmikhael/CLIPZyme/blob/main/LICENSE.txt)
 
 
 
