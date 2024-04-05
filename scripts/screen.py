@@ -117,7 +117,21 @@ if __name__ == "__main__":
         "--checkpoint_path",
         type=str,
         default=None,
-        help="Filename of model snapshot to load[default: None]",
+        help="Filename of model snapshot to load [default: None]",
+    )
+    parser.add_argument(
+        "--use_as_protein_encoder",
+        type=bool,
+        action="store_true",
+        default=False,
+        help="Use the model as a protein encoder [default: False]",
+    )
+    parser.add_argument(
+        "--use_as_reaction_encoder",
+        type=bool,
+        action="store_true",
+        default=False,
+        help="Use the model as a reaction encoder [default: False]",
     )
     # results args
     parser.add_argument(

@@ -95,7 +95,7 @@ class CLIPZyme(pl.LightningModule):
             self.device = "cuda" if torch.cuda.is_available() else "cpu"
 
         # Load model
-        self.model = self.load_model(checkpoint_path)
+        self.model = self.load_model(checkpoint_path, args)
 
         # prep directories
         self.prepare_directories(args)
@@ -126,7 +126,9 @@ class CLIPZyme(pl.LightningModule):
             self.predictions_dir = Path(self.predictions_dir)
             self.predictions_path = os.path.join(self.hiddens_dir, "predictions.csv")
 
-    def load_model(self, path: str) -> EnzymeReactionCLIP:
+    def load_model(
+        self, path: str, screen_args: argparse.Namespace
+    ) -> EnzymeReactionCLIP:
         """
         Load model from path.
 
@@ -143,6 +145,10 @@ class CLIPZyme(pl.LightningModule):
         # Load checkpoint
         checkpoint = torch.load(path, map_location="cpu")
         args = checkpoint["args"]
+        # set relevant args
+        for key in ["use_as_protein_encoder", "use_as_reaction_encoder"]:
+            setattr(args, key, getattr(screen_args, key, False))
+            setattr(self, key, getattr(screen_args, key, False))
         model = EnzymeReactionCLIP(args)
 
         # Remove model from param names
@@ -231,7 +237,7 @@ class CLIPZyme(pl.LightningModule):
         output = self.forward(batch, batch_idx)
         if self.save_hiddens or self.save_predictions:
             self.save_outputs(output)
-        return output
+        return
 
     def on_test_epoch_end(self) -> None:
         self.clean_up()

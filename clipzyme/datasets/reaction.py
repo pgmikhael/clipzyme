@@ -35,6 +35,8 @@ class ReactionDataset(data.Dataset):
         dataset_file_path: str = None,
         esm_dir: str = None,
         protein_cache_dir: str = None,
+        use_as_protein_encoder: bool = False,
+        use_as_reaction_encoder: bool = False,
     ) -> None:
         """
         Create a dataset of reactions and proteins from a CSV file
@@ -49,6 +51,10 @@ class ReactionDataset(data.Dataset):
             Path to ESM model directory
         protein_cache_dir: str
             Directory to save/load protein graphs
+        use_as_protein_encoder: bool
+            Use dataset as protein encoder and do not consider reactions in data filtering
+        use_as_reaction_encoder: bool
+            Use dataset as reaction encoder and do not consider proteins in data filtering
 
         Raises
         ------
@@ -61,10 +67,14 @@ class ReactionDataset(data.Dataset):
             csv_path = dataset_file_path
             esm_dir = esm_dir
             protein_cache_dir = protein_cache_dir
+            self.use_as_protein_encoder = use_as_protein_encoder
+            self.use_as_reaction_encoder = use_as_reaction_encoder
         else:
             csv_path = args.dataset_file_path
             esm_dir = args.esm_dir
             protein_cache_dir = args.protein_cache_dir
+            self.use_as_protein_encoder = args.use_as_protein_encoder
+            self.use_as_reaction_encoder = args.use_as_reaction_encoder
 
         # check if csv file has correct headers
         with open(csv_path, "r") as f:
@@ -157,21 +167,25 @@ class ReactionDataset(data.Dataset):
         bool
             True if sample should be skipped
         """
-        # if sequence is unknown
-        sequence = sample["sequence"]
-        if len(sequence) == 0:
-            return True
+        # if dataset is not used only as reaction encoder
+        if not self.use_as_reaction_encoder:
+            # if sequence is unknown
+            sequence = sample["sequence"]
+            if len(sequence) == 0:
+                return True
 
-        if len(sequence) > 650:
-            return True
+            if len(sequence) > 650:
+                return True
 
-        # check if cif file exists
-        if not os.path.exists(sample["cif_path"]):
-            return True
+            # check if cif file exists
+            if not os.path.exists(sample["cif_path"]):
+                return True
 
-        # if no bond changes
-        if len(sample["bond_changes"]) == 0:
-            return True
+        # if dataset is not used only as protein encoder
+        if not self.use_as_protein_encoder:
+            # if no bond changes
+            if len(sample["bond_changes"]) == 0:
+                return True
 
         return False
 

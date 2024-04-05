@@ -129,10 +129,14 @@ for batch in reaction_dataset:
   "save_hiddens": [true], # whether to save the hidden representations
   "save_predictions": [true], # whether to save the reaction-enzyme pair scores
   "use_as_protein_encoder": [true], # whether to use the model as a protein encoder only
-  "use_as_reaction_encoder": [true] # whether to use the model as a reaction encoder only
+  "use_as_reaction_encoder": [true], # whether to use the model as a reaction encoder only
+  "protein_cache_dir": ["/path/to/protein_cache"], # where to save the protein cache
+  "gpus": [8], # number of gpus to use
   ...
 }
 ```
+
+If you want to use specific GPUs, you can specify them in the `available_gpus` field. For example, to use GPUs 0, 1, and 2, set `available_gpus` to `["0,1,2"]`.
 
 
 
