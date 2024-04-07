@@ -6,6 +6,8 @@ import pickle
 from p_tqdm import p_map
 from functools import partial
 import pandas as pd
+from clipzyme.utils.wln_processing import get_bond_changes
+from clipzyme.utils.pyg import from_mapped_smiles
 
 
 class ScreeningResults(NamedTuple):
@@ -105,3 +107,31 @@ def collect_screening_results(config_path: str) -> ScreeningResults:
     )
 
     return output
+
+
+def process_mapped_reaction(
+    reaction: str, bond_changes=None, use_one_hot_mol_features: bool = False
+):
+    reactants, products = reaction.split(">>")
+
+    reactants, atom_map2new_index = from_mapped_smiles(
+        reactants,
+        encode_no_edge=True,
+        use_one_hot_encoding=use_one_hot_mol_features,
+    )
+    products, _ = from_mapped_smiles(
+        products,
+        encode_no_edge=True,
+        use_one_hot_encoding=use_one_hot_mol_features,
+    )
+
+    if bond_changes is None:
+        bond_changes = get_bond_changes(reaction)
+
+    bond_changes = [
+        (atom_map2new_index[int(u)], atom_map2new_index[int(v)], btype)
+        for u, v, btype in bond_changes
+    ]
+    bond_changes = [(min(x, y), max(x, y), t) for x, y, t in bond_changes]
+    reactants.bond_changes = bond_changes
+    return reactants, products

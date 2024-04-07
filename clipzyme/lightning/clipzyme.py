@@ -1,4 +1,4 @@
-from typing import Optional, List, NamedTuple
+from typing import Optional, List, NamedTuple, Union
 from io import BytesIO
 from zipfile import ZipFile
 from urllib.request import urlopen
@@ -9,6 +9,9 @@ from rich import print
 import pytorch_lightning as pl
 import argparse
 from clipzyme.models.protmol import EnzymeReactionCLIP
+from clipzyme.utils.screening import process_mapped_reaction
+from clipzyme.utils.protein_utils import create_protein_graph
+from clipzyme.utils.loading import default_collate
 
 CHECKPOINT_URL = "https://github.com/pgmikhael/clipzyme/releases/download/v1.0.0/clipzyme_checkpoints.zip"  # TODO: Update this
 
@@ -73,6 +76,7 @@ class CLIPZyme(pl.LightningModule):
             If provided, will run inference using this device.
             By default uses GPU, if available.
         """
+        super(CLIPZyme, self).__init__()
         if args is not None:
             checkpoint_path = args.checkpoint_path
         # Check if path exists
@@ -86,19 +90,16 @@ class CLIPZyme(pl.LightningModule):
                     f"Model checkpoint not found at {checkpoint_path} and failed to download model. {e}"
                 )
 
-        # Set device
-        if device is not None:
-            self.device = device
-        elif self.device is not None:  # set in lightning module
-            pass
-        else:
-            self.device = "cuda" if torch.cuda.is_available() else "cpu"
-
         # Load model
         self.model = self.load_model(checkpoint_path, args)
 
         # prep directories
         self.prepare_directories(args)
+
+        # Set device
+        if device is not None:
+            self.device = device
+            self.model = self.model.to(self.device)
 
     def prepare_directories(self, args: argparse.Namespace) -> None:
         """
@@ -144,7 +145,7 @@ class CLIPZyme(pl.LightningModule):
         """
         # Load checkpoint
         checkpoint = torch.load(path, map_location="cpu")
-        args = checkpoint["args"]
+        args = checkpoint["hyper_parameters"]["args"]
         # set relevant args
         for key in ["use_as_protein_encoder", "use_as_reaction_encoder"]:
             setattr(args, key, getattr(screen_args, key, False))
@@ -154,8 +155,6 @@ class CLIPZyme(pl.LightningModule):
         # Remove model from param names
         state_dict = {k[6:]: v for k, v in checkpoint["state_dict"].items()}
         model.load_state_dict(state_dict)  # type: ignore
-        if self.device == "cuda":
-            model.to("cuda")
 
         # Set eval
         model.eval()
@@ -176,10 +175,6 @@ class CLIPZyme(pl.LightningModule):
             Batch of data.
         batch_idx : int, optional
             batch id, by default 0
-        extract_protein_features : bool, optional
-            whether to return protein features, by default False
-        extract_reaction_features : bool, optional
-            whether to return reaction features, by default False
 
         Returns
         -------
@@ -275,7 +270,12 @@ class CLIPZyme(pl.LightningModule):
                 )
                 torch.save(score.item(), predictions_filename)
 
-    def extract_protein_features(self, batch: dict) -> torch.Tensor:
+    def extract_protein_features(
+        self,
+        batch: dict = None,
+        cif_path: Union[str, List[str]] = None,
+        esm_path: str = None,
+    ) -> torch.Tensor:
         """
         Extract protein features from model.
 
@@ -289,11 +289,26 @@ class CLIPZyme(pl.LightningModule):
         torch.Tensor
             Protein features.
         """
-        self.use_as_protein_encoder = True
-        model_output = self.model(batch)
-        return model_output["protein_hiddens"]
+        self.model.args.use_as_protein_encoder = True
 
-    def extract_reaction_features(self, batch: dict) -> torch.Tensor:
+        if cif_path is not None:
+            assert (
+                esm_path is not None
+            ), "If manually extracting protein embedding, then `esm_path` must be provided"
+            if isinstance(cif_path, str):
+                cif_path = [cif_path]
+            protein_graphs = [
+                create_protein_graph(cif_path=cpath, esm_path=esm_path)
+                for cpath in cif_path
+            ]
+            batch = default_collate([{"graph": g} for g in protein_graphs])
+
+        model_output = self.model(batch)
+        return model_output["hidden"]
+
+    def extract_reaction_features(
+        self, batch: dict = None, reaction: Union[str, List[str]] = None
+    ) -> torch.Tensor:
         """
         Extract reaction features from model.
 
@@ -307,9 +322,31 @@ class CLIPZyme(pl.LightningModule):
         torch.Tensor
             Reaction features.
         """
-        self.use_as_reaction_encoder = True
+        self.model.args.use_as_reaction_encoder = True
+        if reaction is not None:
+            if isinstance(reaction, str):
+                reaction = [reaction]
+            reactions = [process_mapped_reaction(rxn) for rxn in reaction]
+            batch = default_collate(
+                [
+                    {
+                        "reactants": rxn[0],
+                        "products": rxn[1],
+                    }
+                    for rxn in reactions
+                ]
+            )
         model_output = self.model(batch)
-        return model_output["substrate_hiddens"]
+
+        return model_output["hidden"]
+
+    def store_in_predictions(self, preds: dict, storage_dict: dict) -> dict:
+        for key, val in storage_dict.keys():
+            if torch.is_tensor(val) and val.requires_grad:
+                preds[key] = val.detach()
+            else:
+                preds[key] = val
+        return preds
 
     def clean_up(self):
         """

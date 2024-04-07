@@ -56,15 +56,15 @@ from clipzyme import CLIPZyme
 
 ## Load the screening set
 ##-----------------------
-screenset = pickle.load(open(f"files/clipzyme_screening_set.p", 'rb'))
+screenset = pickle.load(open("files/clipzyme_screening_set.p", 'rb'))
 screen_hiddens = screenset["hiddens"] # hidden representations (261907, 1280)
 screen_unis = screenset["uniprots"] # uniprot ids (261907,)
 
 ## Load the model and obtain the hidden representations of a reaction
 ##-------------------------------------------------------------------
-model = CLIPZyme(checkpoint_path="files/clipzyme_model.pt")
+model = CLIPZyme(checkpoint_path="files/clipzyme_model.ckpt")
 reaction = "[CH3:1][N+:2]([CH3:3])([CH3:4])[CH2:5][CH:6]=[O:7].[O:9]=[O:10].[OH2:8]>>[CH3:1][N+:2]([CH3:3])([CH3:4])[CH2:5][C:6](=[O:7])[OH:8].[OH:9][OH:10]"
-reaction_embedding = model.extract_reaction_features(reaction) # (1,1280)
+reaction_embedding = model.extract_reaction_features(reaction=reaction) # (1,1280)
 
 enzyme_scores = screen_hiddens @ reaction_embedding.T # (261907, 1)
 
@@ -95,7 +95,7 @@ reaction_dataset = ReactionDataset(
 
 ## Load the model
 #----------------
-model = CLIPZyme(checkpoint_path="files/clipzyme_model.pt")
+model = CLIPZyme(checkpoint_path="files/clipzyme_model.ckpt")
 
 ## For reaction-enzyme pair
 #--------------------------

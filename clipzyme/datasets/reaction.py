@@ -14,7 +14,7 @@ from torch_geometric.data import Data as pygData
 from esm import pretrained
 from clipzyme.utils.registry import register_object
 from clipzyme.utils.wln_processing import get_bond_changes
-from clipzyme.utils.pyg import from_mapped_smiles
+from clipzyme.utils.screening import process_mapped_reaction
 from clipzyme.utils.protein_utils import (
     read_structure_file,
     filter_resolution,
@@ -304,29 +304,12 @@ class ReactionDataset(data.Dataset):
         sample = self.dataset[index]
 
         try:
-            reactants, products = (
-                copy.deepcopy(sample["reactants"]),
-                copy.deepcopy(sample["products"]),
+            reactants, products = process_mapped_reaction(
+                sample["reaction"],
+                sample["bond_changes"],
+                use_one_hot_mol_features=self.args.use_one_hot_mol_features,
             )
             protein_id = sample["protein_id"]
-
-            reactants, atom_map2new_index = from_mapped_smiles(
-                ".".join(reactants),
-                encode_no_edge=True,
-                use_one_hot_encoding=self.args.use_one_hot_mol_features,
-            )
-            products, _ = from_mapped_smiles(
-                ".".join(products),
-                encode_no_edge=True,
-                use_one_hot_encoding=self.args.use_one_hot_mol_features,
-            )
-
-            bond_changes = [
-                (atom_map2new_index[int(u)], atom_map2new_index[int(v)], btype)
-                for u, v, btype in sample["bond_changes"]
-            ]
-            bond_changes = [(min(x, y), max(x, y), t) for x, y, t in bond_changes]
-            reactants.bond_changes = bond_changes
             sample_id = sample["sample_id"]
 
             item = {
