@@ -127,6 +127,11 @@ if __name__ == "__main__":
         help="Batch size for training [default: 128]",
     )
     parser.add_argument(
+        "--precision",
+        default="bf16",
+        help="precision to use for eval",
+    )
+    parser.add_argument(
         "--num_workers",
         type=int,
         default=8,
@@ -181,6 +186,11 @@ if __name__ == "__main__":
         type=str,
         default="logs/test",
         help="Where to save the arguments of the run",
+    )
+    parser.add_argument(
+        "--experiment_name",
+        type=str,
+        help="defined either automatically by dispatcher.py or time in main.py. Keep without default",
     )
 
     args = parser.parse_args()

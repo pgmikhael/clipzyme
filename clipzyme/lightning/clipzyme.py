@@ -277,7 +277,7 @@ class CLIPZyme(pl.LightningModule):
         self,
         batch: dict = None,
         cif_path: Union[str, List[str]] = None,
-        esm_path: str = None,
+        esm_dir: str = None,
     ) -> torch.Tensor:
         """
         Extract protein features from model.
@@ -296,12 +296,15 @@ class CLIPZyme(pl.LightningModule):
 
         if cif_path is not None:
             assert (
-                esm_path is not None
-            ), "If manually extracting protein embedding, then `esm_path` must be provided"
+                esm_dir is not None
+            ), "If manually extracting protein embedding, then `esm_dir` must be provided"
             if isinstance(cif_path, str):
                 cif_path = [cif_path]
             protein_graphs = [
-                create_protein_graph(cif_path=cpath, esm_path=esm_path)
+                create_protein_graph(
+                    cif_path=cpath,
+                    esm_path=os.path.join(esm_dir, "esm2_t33_650M_UR50D.pt"),
+                )
                 for cpath in cif_path
             ]
             batch = default_collate([{"graph": g} for g in protein_graphs])

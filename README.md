@@ -37,6 +37,7 @@ conda create env -f environment.yml
 pip install clipzyme
 ```
 
+3. Download ESM-2 checkpoint `esm2_t33_650M_UR50D`. The `esm_dir` argument should point to this directory.
 # Screening with CLIPZyme
 
 ## Using CLIPZyme's screening set
@@ -89,7 +90,7 @@ from clipzyme import ReactionDataset
 #-------------------------
 reaction_dataset = ReactionDataset(
   dataset_file_path = "files/new_data.csv",
-  esm_dir = "/path/to/esm2_t33_650M_UR50D.pt",
+  esm_dir = "/path/to/esm2_dir",
   protein_cache_dir = "/path/to/protein_cache",
 )
 
@@ -130,8 +131,9 @@ for batch in reaction_dataset:
   "save_predictions": [true], # whether to save the reaction-enzyme pair scores
   "use_as_protein_encoder": [true], # whether to use the model as a protein encoder only
   "use_as_reaction_encoder": [true], # whether to use the model as a reaction encoder only
-  "protein_cache_dir": ["/path/to/protein_cache"], # where to save the protein cache
-  "gpus": [8], # number of gpus to use
+  "esm_dir": ["/data/esm/checkpoints"], path to ESM-2 checkpoints
+  "gpus": [8], # number of gpus to use,
+  "protein_cache_dir": ["/path/to/protein_cache"], # where to save the protein cache [optional]
   ...
 }
 ```
@@ -169,8 +171,8 @@ We obtain the data from the following sources:
 Our processed data is available at [here](`https://doi.org/10.5281/zenodo.5555555`). It consists of the following files:
 - `enzymemap.json`: contains the EnzymeMap dataset.
 - `terpene_synthases.json`: contains the Terpene Synthases dataset.
-- `enzymemap_screening.p`: contains the screening set.
-- `sequenceid2sequence.p`: contains the mapping form sequence ID to amino acids.
+- `clipzyme_screening_set.p`: contains the screening set as dict of UniProt IDs and precomputed protein embeddings.
+- `uniprot2sequence.p`: contains the mapping form sequence ID to amino acids.
 
 
 ## Training and evaluation
