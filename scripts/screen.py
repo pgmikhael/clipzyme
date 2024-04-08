@@ -20,6 +20,24 @@ torch.multiprocessing.set_sharing_strategy("file_system")
 
 def eval(args):
     # legacy
+    if hasattr(args, "gpus") and not hasattr(pl.Trainer, "add_argparse_args"):
+        args.devices = args.gpus
+
+    # using gpus
+    if (isinstance(args.gpus, str) and len(args.gpus.split(",")) > 1) or (
+        isinstance(args.gpus, int) and args.gpus > 1
+    ):
+        args.strategy = "ddp"
+        # should not matter since we set our sampler, in 2.0 this is default True and used to be called replace_sampler_ddp
+        args.use_distributed_sampler = False
+    else:
+        if not hasattr(pl.Trainer, "add_argparse_args"):  # lightning 2.0
+            # args.strategy = "auto"
+            args.strategy = "ddp"  # should be overwritten later in main
+        else:  # legacy
+            args.strategy = None
+            args.replace_sampler_ddp = False
+
     if not hasattr(pl.Trainer, "from_argparse_args"):
 
         def cast_type(val):
@@ -37,7 +55,7 @@ def eval(args):
         trainer_args = {
             k: cast_type(v) for k, v in vars(args).items() if k in trainer_arg_names
         }
-        if int(args.devices) > 1:
+        if int(args.gpus) > 1:
             trainer_args["strategy"] = DDPStrategy(find_unused_parameters=True)
             args.strategy = "ddp"  # important for loading
         else:
@@ -55,6 +73,8 @@ def eval(args):
     args.global_rank = trainer.global_rank
     args.local_rank = trainer.local_rank
 
+    # hard code dataset name
+    args.dataset_name = "reactions_dataset"
     dataset = loaders.get_eval_dataset_loader(args, split="test", shuffle=False)
 
     # print args
@@ -121,17 +141,21 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--use_as_protein_encoder",
-        type=bool,
         action="store_true",
         default=False,
         help="Use the model as a protein encoder [default: False]",
     )
     parser.add_argument(
         "--use_as_reaction_encoder",
-        type=bool,
         action="store_true",
         default=False,
         help="Use the model as a reaction encoder [default: False]",
+    )
+    parser.add_argument(
+        "--gpus",
+        type=int,
+        default=None,
+        help="Number of GPUs to train on",
     )
     # results args
     parser.add_argument(
@@ -155,8 +179,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--results_path",
         type=str,
-        default="logs/test.args",
-        help="Where to save the result logs",
+        default="logs/test",
+        help="Where to save the arguments of the run",
     )
 
     args = parser.parse_args()

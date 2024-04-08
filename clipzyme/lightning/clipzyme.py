@@ -1,5 +1,6 @@
 from typing import Optional, List, NamedTuple, Union
 from io import BytesIO
+import shutil
 from zipfile import ZipFile
 from urllib.request import urlopen
 from pathlib import Path
@@ -54,6 +55,7 @@ class CLIPZymeOutput(NamedTuple):
     scores: torch.Tensor
     protein_hiddens: torch.Tensor
     reaction_hiddens: torch.Tensor
+    sample_ids: List[str]
 
 
 class CLIPZyme(pl.LightningModule):
@@ -158,7 +160,7 @@ class CLIPZyme(pl.LightningModule):
 
         # Set eval
         model.eval()
-        print(f"Loaded model from {path}")
+        print(f"[bold] Loaded model from {path}")
         return model
 
     def forward(
@@ -246,23 +248,24 @@ class CLIPZyme(pl.LightningModule):
         outputs : ClipZymeOutput
             Output of the model.
         """
-        if outputs.protein_hiddens is not None:
-            protein_hiddens = outputs.protein_hiddens.cpu()
-            for idx, protein_hidden in enumerate(protein_hiddens):
-                predictions_filename = self.hiddens_dir.joinpath(
-                    f"sample_{outputs.sample_ids[idx]}.protein.pt"
-                )
-                torch.save(protein_hidden, predictions_filename)
+        if self.save_hiddens:
+            if outputs.protein_hiddens is not None:
+                protein_hiddens = outputs.protein_hiddens.cpu()
+                for idx, protein_hidden in enumerate(protein_hiddens):
+                    predictions_filename = self.hiddens_dir.joinpath(
+                        f"sample_{outputs.sample_ids[idx]}.protein.pt"
+                    )
+                    torch.save(protein_hidden, predictions_filename)
 
-        if outputs.reaction_hidden is not None:
-            reaction_hiddens = outputs.reaction_hidden.cpu()
-            for idx, reaction_hidden in enumerate(reaction_hiddens):
-                predictions_filename = self.hiddens_dir.joinpath(
-                    f"sample_{outputs.sample_ids[idx]}.reaction.pt"
-                )
-                torch.save(reaction_hidden, predictions_filename)
+            if outputs.reaction_hiddens is not None:
+                reaction_hiddens = outputs.reaction_hiddens.cpu()
+                for idx, reaction_hidden in enumerate(reaction_hiddens):
+                    predictions_filename = self.hiddens_dir.joinpath(
+                        f"sample_{outputs.sample_ids[idx]}.reaction.pt"
+                    )
+                    torch.save(reaction_hidden, predictions_filename)
 
-        if outputs.scores is not None:
+        if self.save_predictions:
             scores = outputs.scores.cpu()
             for idx, score in enumerate(scores):
                 predictions_filename = self.predictions_dir.joinpath(
@@ -341,7 +344,7 @@ class CLIPZyme(pl.LightningModule):
         return model_output["hidden"]
 
     def store_in_predictions(self, preds: dict, storage_dict: dict) -> dict:
-        for key, val in storage_dict.keys():
+        for key, val in storage_dict.items():
             if torch.is_tensor(val) and val.requires_grad:
                 preds[key] = val.detach()
             else:
@@ -358,8 +361,8 @@ class CLIPZyme(pl.LightningModule):
             with open(self.predictions_path, "w") as f:
                 f.write("sample_id,score\n")
                 for score_file in self.predictions_dir.iterdir():
-                    score = torch.load(self.predictions_dir.joinpath(score_file))
-                    f.write(f"{score_file.stem},{score}\n")
+                    score = torch.load(score_file)
+                    f.write(f"{score_file.stem.split('.')[0]},{score}\n")
 
-            self.predictions_dir.rmdir()
+            shutil.rmtree(self.predictions_dir)
         print("Done")

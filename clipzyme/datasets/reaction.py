@@ -236,7 +236,7 @@ class ReactionDataset(data.Dataset):
 
             node_embeddings_args = {
                 "model": self.esm_model,
-                "model_location": self.esm_dir,
+                "model_location": "",
                 "alphabet": self.alphabet,
                 "batch_converter": self.batch_converter,
             }
@@ -302,15 +302,14 @@ class ReactionDataset(data.Dataset):
 
     def __getitem__(self, index):
         sample = self.dataset[index]
+        sample_id = sample["sample_id"]
 
         try:
             reactants, products = process_mapped_reaction(
                 sample["reaction"],
                 sample["bond_changes"],
-                use_one_hot_mol_features=self.args.use_one_hot_mol_features,
             )
             protein_id = sample["protein_id"]
-            sample_id = sample["sample_id"]
 
             item = {
                 "reactants": reactants,
