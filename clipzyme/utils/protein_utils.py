@@ -293,30 +293,16 @@ def get_sequences_from_structure(protein_parser, file_path):
     return sequence
 
 
-# Process SDF files and SMILES
-# def read_ligand_files():
-#     pass
-# # add ligand graphs or other protein graphs to existing graph
-# def combine_graphs():
-#     pass
-# - Parallel processing
-# #     - Complex generation
-# #     - ESM embeddings
-# #     - AF downloading
-# - Can compute intelligent splits
-#     - mmseqs split
-#     - random split
-#     - easy to add additional splitting
-
-
 def create_protein_graph(cif_path: str, esm_path: str) -> Union[pygData, None]:
     """
     Create pyg protein graph from CIF file
 
     Parameters
     ----------
-    sample : dict
-        dataset sample
+    cif_path : str
+        Path to CIF file
+    esm_path : str
+        Path to ESM model (esm2_t33_650M_UR50D.pt)
 
     Returns
     -------

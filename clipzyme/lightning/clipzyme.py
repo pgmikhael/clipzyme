@@ -14,7 +14,7 @@ from clipzyme.utils.screening import process_mapped_reaction
 from clipzyme.utils.protein_utils import create_protein_graph
 from clipzyme.utils.loading import default_collate
 
-CHECKPOINT_URL = "https://github.com/pgmikhael/clipzyme/releases/download/v1.0.0/clipzyme_checkpoints.zip"  # TODO: Update this
+CHECKPOINT_URL = "https://github.com/pgmikhael/clipzyme/releases/download/v0.0.5/clipzyme_files.zip"  # TODO: Update this
 
 
 def download_and_extract(remote_model_url: str, local_model_dir) -> List[str]:
@@ -286,6 +286,10 @@ class CLIPZyme(pl.LightningModule):
         ----------
         batch : dict
             Batch of data.
+        cif_path : Union[str, List[str]], optional
+            Path to CIF file, by default None
+        esm_dir : str, optional
+            Path to ESM model (esm2_t33_650M_UR50D), by default None
 
         Returns
         -------
@@ -322,6 +326,8 @@ class CLIPZyme(pl.LightningModule):
         ----------
         batch : dict
             Batch of data.
+        reaction : Union[str, List[str]], optional
+            Mapped raction string, by default None
 
         Returns
         -------
@@ -347,6 +353,21 @@ class CLIPZyme(pl.LightningModule):
         return model_output["hidden"]
 
     def store_in_predictions(self, preds: dict, storage_dict: dict) -> dict:
+        """
+        Store values in predictions.
+
+        Parameters
+        ----------
+        preds : dict
+            prediction dictionary
+        storage_dict : dict
+            dictionary from which to get values
+
+        Returns
+        -------
+        dict
+            updated predictions dictionary
+        """
         for key, val in storage_dict.items():
             if torch.is_tensor(val) and val.requires_grad:
                 preds[key] = val.detach()

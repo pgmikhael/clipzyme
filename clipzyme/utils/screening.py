@@ -112,6 +112,23 @@ def collect_screening_results(config_path: str) -> ScreeningResults:
 def process_mapped_reaction(
     reaction: str, bond_changes=None, use_one_hot_mol_features: bool = False
 ):
+    """
+    Process a mapped reaction string into a PyG data object
+
+    Parameters
+    ----------
+    reaction : str
+        mapped reaction string
+    bond_changes : list, optional
+        list of bond change t (i,j,t) associated with edges (i,j), by default None
+    use_one_hot_mol_features : bool, optional
+        whether to use one-hot features for molecules , by default False
+
+    Returns
+    -------
+    tuple of PyG data objects
+        reactants and products as PyG data objects
+    """
     reactants, products = reaction.split(">>")
 
     reactants, atom_map2new_index = from_mapped_smiles(
