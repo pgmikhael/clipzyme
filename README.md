@@ -13,6 +13,7 @@ Table of contents
 
 <!--ts-->
    * [Installation](#installation)
+   * [Checkpoints and Data Files](#checkpoints-and-data-files)
    * [Screening with CLIPZyme](#screening-with-clipzyme)
         * [Using CLIPZyme's screening set](#using-clipzyme's-screening-set)
         * [Using your own screening set](#using-your-own-screening-set)
@@ -38,18 +39,28 @@ pip install clipzyme
 ```
 
 3. Download ESM-2 checkpoint `esm2_t33_650M_UR50D`. The `esm_dir` argument should point to this directory.
+
+# Checkpoints and Data Files:
+
+The model checkpoint and data are available on Zenodo [here](https://zenodo.org/records/10950376):
+
+- [clipzyme_data.zip](https://zenodo.org/records/10950376/files/clipzyme_data.zip?download=1):
+  - `enzymemap.json`: contains the EnzymeMap dataset.
+  - `cached_enzymemap.p`: contains the processed EnzymeMap dataset.
+  - `clipzyme_screening_set.p`: contains the screening set as dict of UniProt IDs and precomputed protein embeddings.
+  - `uniprot2sequence.p`: contains the mapping form sequence ID to amino acids.
+
+- [clipzyme_model.zip](https://zenodo.org/records/10950376/files/clipzyme_model.zip?download=1):
+  - `clipzyme_model.ckpt`: the trained model checkpoint.
+
+
+
 # Screening with CLIPZyme
 
 ## Using CLIPZyme's screening set
 
-1. Download the screening set and extract the files into `files/`.
+First, download the screening set and extract the files into `files/`.
 
-```bash
-
-wget https://github.com/pgmikhael/clipzyme/releases/download/v1.0.0/clipzyme_screening_set.zip
-
-unzip clipzyme_screening_set.zip -d files/
-```
 
 ```python
 import pickle
@@ -168,11 +179,7 @@ We obtain the data from the following sources:
 - [EnzymeMap:](`https://doi.org/10.5281/zenodo.7841780`) Heid et al. Enzymemap: Curation, validation and data-driven prediction of enzymatic reactions. 2023.
 - [Terpene Synthases:](`https://zenodo.org/records/10567437`) Samusevich et al. Discovery and characterization of terpene synthases powered by machine learning. 2024. 
 
-Our processed data is available at [here](`https://doi.org/10.5281/zenodo.5555555`). It consists of the following files:
-- `enzymemap.json`: contains the EnzymeMap dataset.
-- `terpene_synthases.json`: contains the Terpene Synthases dataset.
-- `clipzyme_screening_set.p`: contains the screening set as dict of UniProt IDs and precomputed protein embeddings.
-- `uniprot2sequence.p`: contains the mapping form sequence ID to amino acids.
+Our processed data is can be downloaded from [here](https://zenodo.org/records/10950376). 
 
 
 ## Training and evaluation
@@ -196,7 +203,7 @@ Our processed data is available at [here](`https://doi.org/10.5281/zenodo.555555
 
 ## Citation
 
-```
+```bibtex
 @article{mikhael2024clipzyme,
   title={CLIPZyme: Reaction-Conditioned Virtual Screening of Enzymes},
   author={Mikhael, Peter G and Chinn, Itamar and Barzilay, Regina},
