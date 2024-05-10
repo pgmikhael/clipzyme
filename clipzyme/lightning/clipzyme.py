@@ -1,10 +1,9 @@
 from typing import Optional, List, NamedTuple, Union
-from io import BytesIO
+import wget
 import shutil
-from zipfile import ZipFile
-from urllib.request import urlopen
 from pathlib import Path
 import os
+import subprocess
 import torch
 from rich import print
 import pytorch_lightning as pl
@@ -14,16 +13,33 @@ from clipzyme.utils.screening import process_mapped_reaction
 from clipzyme.utils.protein_utils import create_protein_graph
 from clipzyme.utils.loading import default_collate
 
-CHECKPOINT_URL = "https://github.com/pgmikhael/clipzyme/releases/download/v0.0.5/clipzyme_files.zip"  # TODO: Update this
+CHECKPOINT_URL = "https://zenodo.org/records/10950376/files/clipzyme_model.zip"
 
 
-def download_and_extract(remote_model_url: str, local_model_dir) -> List[str]:
-    resp = urlopen(remote_model_url)
-    os.makedirs(local_model_dir, exist_ok=True)
-    with ZipFile(BytesIO(resp.read())) as zip_file:
-        all_files_and_dirs = zip_file.namelist()
-        zip_file.extractall(local_model_dir)
-    assert len(all_files_and_dirs) == 1, "Expected only one file in the zip"
+def download_and_extract(remote_model_url: str, local_model_dir: str) -> str:
+    """
+    Download and extract model.
+
+    Parameters
+    ----------
+    remote_model_url : str
+        link to model file
+    local_model_dir : str
+        local directory to save model
+
+    Returns
+    -------
+    str
+        name of model file
+    """
+    zipfile = wget.download(remote_model_url, out=local_model_dir)
+    # unzip
+    subprocess.call(f"unzip {zipfile} -d {local_model_dir}", shell=True)
+    # remove zip
+    os.remove(zipfile)
+    # get all files and dirs
+    all_files_and_dirs = os.listdir(local_model_dir)
+    assert len(all_files_and_dirs) == 1, "More than one file in model directory"
     return all_files_and_dirs[0]
 
 
