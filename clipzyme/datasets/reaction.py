@@ -98,6 +98,7 @@ class ReactionDataset(data.Dataset):
 
         print("Preparing dataset")
         csv_dataset = pd.read_csv(csv_path)
+        csv_dataset = csv_dataset.fillna("")
         self.dataset = self.create_dataset(csv_dataset)
 
         self.protein_cache_dir = protein_cache_dir

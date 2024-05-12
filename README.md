@@ -34,24 +34,40 @@ git clone https://github.com/pgmikhael/CLIPZyme.git
 ```
 2. Install the dependencies:
 ```bash
-conda create env -f environment.yml
-pip install clipzyme
+cd clipzyme
+conda env create -f environment.yml
+conda activate clipzyme
+python -m pip install clipzyme
 ```
 
-3. Download ESM-2 checkpoint `esm2_t33_650M_UR50D`. The `esm_dir` argument should point to this directory.
+3. Download ESM-2 checkpoint `esm2_t33_650M_UR50D`. The `esm_dir` argument should point to this directory. The following command will download the checkpoint directly:
+```bash
+wget https://dl.fbaipublicfiles.com/fair-esm/models/esm2_t33_650M_UR50D.pt
+```
 
 # Checkpoints and Data Files:
 
 The model checkpoint and data are available on Zenodo [here](https://zenodo.org/records/10950376):
 
 - [clipzyme_data.zip](https://zenodo.org/records/10950376/files/clipzyme_data.zip?download=1):
-  - `enzymemap.json`: contains the EnzymeMap dataset.
-  - `cached_enzymemap.p`: contains the processed EnzymeMap dataset.
-  - `clipzyme_screening_set.p`: contains the screening set as dict of UniProt IDs and precomputed protein embeddings.
-  - `uniprot2sequence.p`: contains the mapping form sequence ID to amino acids.
+  - The following commands will download the checkpoint directly: 
+  ```
+  wget https://zenodo.org/records/10950376/files/clipzyme_data.zip
+  unzip clipzyme_data.zip -d files
+  ```
+  - Note that the data files should be extracted into the `files/` directory.
+      - `enzymemap.json`: contains the EnzymeMap dataset.
+      - `cached_enzymemap.p`: contains the processed EnzymeMap dataset.
+      - `clipzyme_screening_set.p`: contains the screening set as dict of UniProt IDs and precomputed protein embeddings.
+      - `uniprot2sequence.p`: contains the mapping form sequence ID to amino acids.
 
 - [clipzyme_model.zip](https://zenodo.org/records/10950376/files/clipzyme_model.zip?download=1):
-  - `clipzyme_model.ckpt`: the trained model checkpoint.
+  - The following command will download the checkpoint directly: 
+  ```
+  wget https://zenodo.org/records/10950376/files/clipzyme_model.zip
+  unzip clipzyme_model.zip -d files
+  ```
+    - `clipzyme_model.ckpt`: the trained model checkpoint.
 
 
 
@@ -102,7 +118,7 @@ from clipzyme import ReactionDataset
 reaction_dataset = ReactionDataset(
   dataset_file_path = "files/new_data.csv",
   esm_dir = "/path/to/esm2_dir",
-  protein_cache_dir = "/path/to/protein_cache",
+  protein_cache_dir = "/path/to/protein_cache", # optional, where to cache processed protein graphs
 )
 
 ## Load the model
