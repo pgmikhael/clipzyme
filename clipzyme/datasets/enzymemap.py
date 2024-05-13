@@ -89,33 +89,6 @@ class EnzymeMap(AbstractDataset):
             k: 0 if v is None else len(v) for k, v in self.uniprot2sequence.items()
         }
 
-        # products to remove based on smiles or pattern
-        remove_patterns_path = "files/ecreact/patterns.txt"
-        remove_molecules_path = "files/ecreact/molecules.txt"
-
-        self.remove_patterns = []
-        self.remove_molecules = []
-
-        for line in open(remove_patterns_path):
-            if not line.startswith("//") and line.strip():
-                self.remove_patterns.append(line.split("//")[0].strip())
-
-        self.remove_patterns = [
-            rdk.MolFromSmarts(smart_pattern) for smart_pattern in self.remove_patterns
-        ]
-
-        for line in open(remove_molecules_path):
-            if not line.startswith("//") and line.strip():
-                smiles = line.split("//")[0].strip()
-                mol = rdk.MolFromSmiles(smiles)
-                if mol:
-                    self.remove_molecules.append(rdk.MolToSmiles(mol))
-                    self.remove_molecules.append(
-                        Chem.CanonSmiles(
-                            self.remove_molecules[-1].replace("[O-]", "[OH]")
-                        )
-                    )
-
     def create_dataset(
         self, split_group: Literal["train", "dev", "test"]
     ) -> List[dict]:
@@ -421,15 +394,6 @@ class EnzymeMap(AbstractDataset):
         for level in range(1, 5, 1):
             unique_classes = sorted(list(set(".".join(ec[:level]) for ec in ecs)))
             args.ec_levels[str(level)] = {c: i for i, c in enumerate(unique_classes)}
-
-    def remove_from_products(self, product):
-        mol = Chem.MolFromSmiles(product)
-        for mol_pattern in self.remove_patterns:
-            if mol.HasSubstructMatch(mol_pattern):
-                return True
-        if product in self.remove_molecules:
-            return True
-        return False
 
     def create_protein_graph(self, sample):
         try:
