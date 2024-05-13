@@ -47,12 +47,12 @@ wget https://dl.fbaipublicfiles.com/fair-esm/models/esm2_t33_650M_UR50D.pt
 
 # Checkpoints and Data Files:
 
-The model checkpoint and data are available on Zenodo [here](https://zenodo.org/records/10950376):
+The model checkpoint and data are available on Zenodo [here](https://zenodo.org/records/11187895):
 
-- [clipzyme_data.zip](https://zenodo.org/records/10950376/files/clipzyme_data.zip?download=1):
+- [clipzyme_data.zip](https://zenodo.org/records/11187895/files/clipzyme_data.zip?download=1):
   - The following commands will download the checkpoint directly: 
   ```
-  wget https://zenodo.org/records/10950376/files/clipzyme_data.zip
+  wget https://zenodo.org/records/11187895/files/clipzyme_data.zip
   unzip clipzyme_data.zip -d files
   ```
   - Note that the data files should be extracted into the `files/` directory.
@@ -61,10 +61,10 @@ The model checkpoint and data are available on Zenodo [here](https://zenodo.org/
       - `clipzyme_screening_set.p`: contains the screening set as dict of UniProt IDs and precomputed protein embeddings.
       - `uniprot2sequence.p`: contains the mapping form sequence ID to amino acids.
 
-- [clipzyme_model.zip](https://zenodo.org/records/10950376/files/clipzyme_model.zip?download=1):
+- [clipzyme_model.zip](https://zenodo.org/records/11187895/files/clipzyme_model.zip?download=1):
   - The following command will download the checkpoint directly: 
   ```
-  wget https://zenodo.org/records/10950376/files/clipzyme_model.zip
+  wget https://zenodo.org/records/11187895/files/clipzyme_model.zip
   unzip clipzyme_model.zip -d files
   ```
     - `clipzyme_model.ckpt`: the trained model checkpoint.
@@ -195,7 +195,7 @@ We obtain the data from the following sources:
 - [EnzymeMap:](`https://doi.org/10.5281/zenodo.7841780`) Heid et al. Enzymemap: Curation, validation and data-driven prediction of enzymatic reactions. 2023.
 - [Terpene Synthases:](`https://zenodo.org/records/10567437`) Samusevich et al. Discovery and characterization of terpene synthases powered by machine learning. 2024. 
 
-Our processed data is can be downloaded from [here](https://zenodo.org/records/10950376). 
+Our processed data is can be downloaded from [here](https://zenodo.org/records/11187895). 
 
 
 ## Training and evaluation

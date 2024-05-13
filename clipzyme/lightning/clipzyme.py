@@ -13,7 +13,7 @@ from clipzyme.utils.screening import process_mapped_reaction
 from clipzyme.utils.protein_utils import create_protein_graph
 from clipzyme.utils.loading import default_collate
 
-CHECKPOINT_URL = "https://zenodo.org/records/10950376/files/clipzyme_model.zip"
+CHECKPOINT_URL = "https://zenodo.org/records/11187895/files/clipzyme_model.zip"
 
 
 def download_and_extract(remote_model_url: str, local_model_dir: str) -> str:
