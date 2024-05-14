@@ -216,6 +216,20 @@ Our processed data is can be downloaded from [here](https://zenodo.org/records/1
     ```
 3. We perform all analysis in the jupyter notebook included [Results.ipynb](analysis/Results.ipynb). We first calculate the hidden representations of the screening using the eval configs above and collect them into one matrix (saved as a pickle file). These are loaded into the jupyter notebook as well as the test set. All tables are then generated in the notebook.
 
+## Downloading Batched AlphaFold Database Structures
+
+Assuming you have a list of uniprot IDs (called `uniprot_ids`) you can run the following to create a .txt file with the Google Storage urls for the AF2 structures:
+```
+file_paths = [f"gs://public-datasets-deepmind-alphafold-v4/AF-{u}-F1-model_v4.cif" for u in uniprot_ids]
+output_file = 'uniprot_cif_paths.txt' 
+open(output_file, 'w') as file:
+    file.write('\n'.join(file_paths))
+```
+Then install gsutils (https://cloud.google.com/storage/docs/gsutil_install) and run the following command:
+```
+cat uniprot_cif_paths.txt | gsutil -m cp -I /path/to/output/dir/
+```
+
 
 ## Citation
 
