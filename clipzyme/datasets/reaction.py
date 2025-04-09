@@ -207,7 +207,10 @@ class ReactionDataset(data.Dataset):
         try:
             raw_path = sample["cif_path"]
             sample_id = sample["sample_id"]
-            protein_parser = Bio.PDB.MMCIFParser()
+            if raw_path[-3:] == "pdb":
+                protein_parser = Bio.PDB.PDBParser()
+            elif raw_path[-3:] == "cif":
+                protein_parser = Bio.PDB.MMCIFParser()
             protein_resolution = "residue"
             graph_edge_args = {"knn_size": 10}
             center_protein = True
@@ -304,7 +307,6 @@ class ReactionDataset(data.Dataset):
     def __getitem__(self, index):
         sample = self.dataset[index]
         sample_id = sample["sample_id"]
-
         try:
             reactants, products = process_mapped_reaction(
                 sample["reaction"],
@@ -332,11 +334,15 @@ class ReactionDataset(data.Dataset):
                         torch.save(data, graph_path_cache)
                 except:
                     data = self.create_protein_graph(item)
+                    if data is None:
+                        raise ValueError(
+                            f"Could not create protein graph for:  {protein_id}"
+                        )
                     torch.save(data, graph_path_cache)
             else:
                 data = self.create_protein_graph(item)
 
-                item["graph"] = data
+            item["graph"] = data
 
             return item
 
