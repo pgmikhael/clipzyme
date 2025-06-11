@@ -52,7 +52,7 @@ wget https://dl.fbaipublicfiles.com/fair-esm/models/esm2_t33_650M_UR50D.pt
 
 The model checkpoint and data are available on Zenodo [here](https://doi.org/10.5281/zenodo.11187747):
 
-- [clipzyme_data.zip](https://zenodo.org/records/11187747/files/clipzyme_data.zip?download=1):
+- [clipzyme_data.zip](https://zenodo.org/records/15161343/files/clipzyme_data.zip?download=1):
   - The following commands will download the checkpoint directly: 
   ```
   wget https://zenodo.org/records/11187747/files/clipzyme_data.zip
@@ -64,7 +64,7 @@ The model checkpoint and data are available on Zenodo [here](https://doi.org/10.
       - `clipzyme_screening_set.p`: contains the screening set as dict of UniProt IDs and precomputed protein embeddings.
       - `uniprot2sequence.p`: contains the mapping form sequence ID to amino acids.
 
-- [clipzyme_model.zip](https://zenodo.org/records/11187747/files/clipzyme_model.zip?download=1):
+- [clipzyme_model.zip](https://zenodo.org/records/15161343/files/clipzyme_model.zip?download=1):
   - The following command will download the checkpoint directly: 
   ```
   wget https://zenodo.org/records/11187747/files/clipzyme_model.zip
