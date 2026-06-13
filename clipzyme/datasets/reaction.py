@@ -23,7 +23,6 @@ from clipzyme.utils.protein_utils import (
     compute_node_embedding,
 )
 
-
 protein_letters_3to1.update({k.upper(): v for k, v in protein_letters_3to1.items()})
 
 
@@ -138,7 +137,7 @@ class ReactionDataset(data.Dataset):
                 "reactants": reactants,
                 "products": products,
                 "cif_path": row["cif"],
-                "sample_id": f"sample_{rowid}",
+                "sample_id": row["protein_id"],
             }
             # get bond changes
             try:
