@@ -1,0 +1,10 @@
+positive_train_pkl: data/protein_train_cofactors.pkl
+positive_dev_pkl: data/protein_dev_cofactors.pkl
+positive_test_pkl: data/protein_test_cofactors.pkl
+negative_train_csv: data/protein_train_no_cofactors.csv
+negative_dev_csv: data/protein_dev_no_cofactors.csv
+negative_test_csv: data/protein_test_no_cofactors.csv
+positive_embedding_map_json: data/protein_embedding_map.json
+negative_embedding_map_json: data/protein_negative_embedding_map.json
+reaction_cofactor_dataset_pkl: data/reaction_cofactor_dataset.pkl
+vocab_json: data/organic_cofactor_vocabulary_filtered.json

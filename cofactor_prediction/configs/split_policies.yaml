@@ -1,0 +1,31 @@
+legacy_original:
+  description: "Original provided split files for continuity; may contain overlap."
+  include_overlap_diagnostics: true
+
+random_disjoint:
+  description: "Protein-disjoint random split over global deduplicated proteins."
+  ratios:
+    train: 0.8
+    dev: 0.1
+    test: 0.1
+  enforce_protein_disjoint: true
+
+balanced_rule_disjoint_v3:
+  description: "Rule- and protein-disjoint positive split with greedy multi-restart assignment."
+  ratios:
+    train: 0.8
+    dev: 0.1
+    test: 0.1
+  enforce_protein_disjoint: true
+  enforce_rule_disjoint: true
+  n_restarts: 64
+  objective:
+    maximize_testable_cofactors: true
+    max_ratio_deviation_weight: 120.0
+    testable_weight: 1000.0
+    test_coverage_weight: 20.0
+
+label_filter:
+  min_train_support: 5
+  min_test_support: 1
+  include_no_cofactor: true

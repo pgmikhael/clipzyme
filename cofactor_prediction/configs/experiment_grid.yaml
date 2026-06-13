@@ -1,0 +1,75 @@
+paths_config: cofactor_prediction/configs/paths.yaml
+
+seeds: [42, 1337, 2025]
+split_types: [legacy_original, random_disjoint, balanced_rule_disjoint_v3]
+
+inventory:
+  drop_missing_embeddings: true
+
+split:
+  min_train_support: 5
+  min_test_support: 1
+  n_restarts: 64
+
+dataset:
+  include_no_cofactor: true
+  min_train_support: 5
+
+knn:
+  enabled: true
+  k_list: [1, 3, 5, 10, 20, 50]
+
+mlp:
+  enabled: true
+  config_file: cofactor_prediction/configs/experiment_grid.yaml
+  config_names:
+    - mlp_ce_unweighted_dropout0
+    - mlp_ce_weighted_dropout0
+    - mlp_focal_weighted_gamma2_dropout0
+    - mlp_ce_weighted_dropout03
+
+mlp_configs:
+  mlp_ce_unweighted_dropout0:
+    hidden_dims: [512, 256]
+    dropout: 0.0
+    learning_rate: 0.001
+    weight_decay: 0.0001
+    batch_size: 128
+    max_epochs: 120
+    patience: 20
+    loss_type: ce
+    use_class_weights: false
+
+  mlp_ce_weighted_dropout0:
+    hidden_dims: [512, 256]
+    dropout: 0.0
+    learning_rate: 0.001
+    weight_decay: 0.0001
+    batch_size: 128
+    max_epochs: 120
+    patience: 20
+    loss_type: ce
+    use_class_weights: true
+
+  mlp_focal_weighted_gamma2_dropout0:
+    hidden_dims: [512, 256]
+    dropout: 0.0
+    learning_rate: 0.001
+    weight_decay: 0.0001
+    batch_size: 128
+    max_epochs: 120
+    patience: 20
+    loss_type: focal
+    use_class_weights: true
+    focal_gamma: 2.0
+
+  mlp_ce_weighted_dropout03:
+    hidden_dims: [512, 256]
+    dropout: 0.3
+    learning_rate: 0.001
+    weight_decay: 0.0001
+    batch_size: 128
+    max_epochs: 120
+    patience: 20
+    loss_type: ce
+    use_class_weights: true

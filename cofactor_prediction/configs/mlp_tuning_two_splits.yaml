@@ -1,0 +1,127 @@
+# Additional MLP tuning grid focused on random_disjoint + balanced_rule_disjoint_v3.
+# Configs are intentionally moderate in size to keep run cost practical.
+
+config_names:
+  - mlp_tune_ce_weighted_dropout01_lr1e3
+  - mlp_tune_ce_weighted_dropout02_lr1e3
+  - mlp_tune_ce_weighted_dropout03_lr5e4
+  - mlp_tune_ce_weighted_dropout03_lr1e3_wd1e3
+  - mlp_tune_ce_weighted_dropout04_lr1e3
+  - mlp_tune_ce_unweighted_dropout03_lr1e3
+  - mlp_tune_focal_weighted_gamma1p5_dropout03
+  - mlp_tune_focal_weighted_gamma2p5_dropout03
+  - mlp_tune_ce_weighted_wide1024_512_dropout03
+  - mlp_tune_ce_weighted_narrow512_128_dropout03
+
+mlp_configs:
+  mlp_tune_ce_weighted_dropout01_lr1e3:
+    hidden_dims: [512, 256]
+    dropout: 0.1
+    learning_rate: 0.001
+    weight_decay: 0.0001
+    batch_size: 128
+    max_epochs: 140
+    patience: 24
+    loss_type: ce
+    use_class_weights: true
+
+  mlp_tune_ce_weighted_dropout02_lr1e3:
+    hidden_dims: [512, 256]
+    dropout: 0.2
+    learning_rate: 0.001
+    weight_decay: 0.0001
+    batch_size: 128
+    max_epochs: 140
+    patience: 24
+    loss_type: ce
+    use_class_weights: true
+
+  mlp_tune_ce_weighted_dropout03_lr5e4:
+    hidden_dims: [512, 256]
+    dropout: 0.3
+    learning_rate: 0.0005
+    weight_decay: 0.0001
+    batch_size: 128
+    max_epochs: 160
+    patience: 28
+    loss_type: ce
+    use_class_weights: true
+
+  mlp_tune_ce_weighted_dropout03_lr1e3_wd1e3:
+    hidden_dims: [512, 256]
+    dropout: 0.3
+    learning_rate: 0.001
+    weight_decay: 0.001
+    batch_size: 128
+    max_epochs: 140
+    patience: 24
+    loss_type: ce
+    use_class_weights: true
+
+  mlp_tune_ce_weighted_dropout04_lr1e3:
+    hidden_dims: [512, 256]
+    dropout: 0.4
+    learning_rate: 0.001
+    weight_decay: 0.0001
+    batch_size: 128
+    max_epochs: 160
+    patience: 28
+    loss_type: ce
+    use_class_weights: true
+
+  mlp_tune_ce_unweighted_dropout03_lr1e3:
+    hidden_dims: [512, 256]
+    dropout: 0.3
+    learning_rate: 0.001
+    weight_decay: 0.0001
+    batch_size: 128
+    max_epochs: 140
+    patience: 24
+    loss_type: ce
+    use_class_weights: false
+
+  mlp_tune_focal_weighted_gamma1p5_dropout03:
+    hidden_dims: [512, 256]
+    dropout: 0.3
+    learning_rate: 0.001
+    weight_decay: 0.0001
+    batch_size: 128
+    max_epochs: 160
+    patience: 28
+    loss_type: focal
+    use_class_weights: true
+    focal_gamma: 1.5
+
+  mlp_tune_focal_weighted_gamma2p5_dropout03:
+    hidden_dims: [512, 256]
+    dropout: 0.3
+    learning_rate: 0.001
+    weight_decay: 0.0001
+    batch_size: 128
+    max_epochs: 160
+    patience: 28
+    loss_type: focal
+    use_class_weights: true
+    focal_gamma: 2.5
+
+  mlp_tune_ce_weighted_wide1024_512_dropout03:
+    hidden_dims: [1024, 512]
+    dropout: 0.3
+    learning_rate: 0.0007
+    weight_decay: 0.0001
+    batch_size: 96
+    max_epochs: 160
+    patience: 28
+    loss_type: ce
+    use_class_weights: true
+
+  mlp_tune_ce_weighted_narrow512_128_dropout03:
+    hidden_dims: [512, 128]
+    dropout: 0.3
+    learning_rate: 0.001
+    weight_decay: 0.0001
+    batch_size: 128
+    max_epochs: 140
+    patience: 24
+    loss_type: ce
+    use_class_weights: true
