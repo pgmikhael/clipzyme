@@ -154,3 +154,6 @@ Thumbs.db
 lightning_logs/
 wandb/
 tensorboard/
+
+# Checkpoints & data files (downloaded from Zenodo / ESM — never committed)
+files/

@@ -26,7 +26,7 @@ Table of contents
   - [Training and evaluation](#training-and-evaluation)
   - [Downloading Batched AlphaFold Database Structures](#downloading-batched-alphafold-database-structures)
   - [Citation](#citation)
-    
+- [CLIPZyme+](#clipzyme-1)
 <!--te-->
 
 # Installation:
@@ -240,6 +240,74 @@ Then install gsutils (https://cloud.google.com/storage/docs/gsutil_install) and
 ```
 cat uniprot_cif_paths.txt | gsutil -m cp -I /path/to/output/dir/
 ```
+
+---------------------
+
+# CLIPZyme+
+
+CLIPZyme+ predicts an enzyme's **cofactor** from its structure. It reuses the
+CLIPZyme protein encoder to produce a 1280-dim embedding per enzyme, then runs an
+ensemble of MLP classifiers over that embedding. `CLIPZymePlus` is inference-only
+and is used just like `CLIPZyme` with a `ReactionDataset`.
+
+The cofactor ensemble ships as a single checkpoint file. Download it from Zenodo
+into `files/` and point `cofactor_checkpoint_path` at it:
+
+```bash
+wget https://zenodo.org/records/20673359/files/clipzyme_plus_cofactor_ensemble.pt -P files/
+```
+
+```python
+from torch.utils.data import DataLoader
+from clipzyme import CLIPZymePlus, ReactionDataset
+from clipzyme.utils.loading import ignore_None_collate
+
+## Create reaction dataset (only structures are needed for cofactor prediction)
+#-----------------------------------------------------------------------------
+loader = DataLoader(
+    ReactionDataset(
+        dataset_file_path="files/new_data.csv",
+        esm_dir="/path/to/esm2_dir",
+        use_as_protein_encoder=True,
+    ),
+    batch_size=1,
+    collate_fn=ignore_None_collate,
+)
+
+## Load the model and predict cofactors
+#--------------------------------------
+model = CLIPZymePlus(
+    checkpoint_path="files/clipzyme_model.ckpt",
+    cofactor_checkpoint_path="files/clipzyme_plus_cofactor_ensemble.pt",
+)
+model = model.eval()
+
+for batch in loader:
+    output = model(batch)
+    print(output.sample_ids)            # protein ids
+    print(output.predicted_cofactor)    # top-1 cofactor class per sample
+    print(output.predicted_probability) # ensemble-mean probability
+    print(model.top_k(output, k=5))     # ranked predictions per sample
+```
+
+You can also predict directly from structure files or precomputed CLIPZyme
+embeddings (e.g. the screening set `hiddens`), without a `ReactionDataset`:
+
+```python
+# From structure files
+output = model.predict_from_structures(["1a0s.cif"], esm_dir="/path/to/esm2_dir")
+
+# From precomputed (N, 1280) protein embeddings
+output = model.predict_from_embeddings(screen_hiddens)
+```
+
+The cofactor ensemble checkpoint is a single self-contained `.pt` file holding
+each ensemble member's weights, architecture, and class names — no other files
+from the `cofactor_prediction` training code are needed at inference time.
+
+Code to reproduce the results of CLIPZyme+ (training the cofactor ensemble) is
+available in the `cofactor_prediction` branch. We also make a notebook available
+for inference, available [here](clipzyme_plus_pipeline.ipynb).
 
 
 ## Citation

@@ -38,7 +38,6 @@ import clipzyme.learning.schedulers.warmup
 import clipzyme.learning.losses.basic
 import clipzyme.learning.losses.contrastive
 
-
 # metrics
 import clipzyme.learning.metrics.basic
 import clipzyme.learning.metrics.representation
@@ -62,7 +61,14 @@ import clipzyme.loggers.tensorboard
 
 from clipzyme.datasets.reaction import ReactionDataset
 from clipzyme.lightning.clipzyme import CLIPZyme
+from clipzyme.lightning.clipzyme_plus import CLIPZymePlus
 from clipzyme.utils.registry import get_object
 from clipzyme.utils.screening import collect_screening_results
 
-__all__ = ["CLIPZyme", "ReactionDataset", "get_object", "collect_screening_results"]
+__all__ = [
+    "CLIPZyme",
+    "CLIPZymePlus",
+    "ReactionDataset",
+    "get_object",
+    "collect_screening_results",
+]
