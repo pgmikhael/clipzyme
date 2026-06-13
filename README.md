@@ -25,8 +25,8 @@ Table of contents
   - [Data processing](#data-processing)
   - [Training and evaluation](#training-and-evaluation)
   - [Downloading Batched AlphaFold Database Structures](#downloading-batched-alphafold-database-structures)
-  - [Citation](#citation)
 - [CLIPZyme+](#clipzyme-1)
+- [Citations](#citations)
 <!--te-->
 
 # Installation:
@@ -310,7 +310,9 @@ available in the `cofactor_prediction` branch. We also make a notebook available
 for inference, available [here](clipzyme_plus_pipeline.ipynb).
 
 
-## Citation
+# Citations
+
+For the CLIPZyme model and the results in the main paper, please cite:
 
 ```bibtex
 @article{mikhael2024clipzyme,
